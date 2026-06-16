@@ -1,2 +1,0 @@
-# Make this user the owner of all files
-@Hasan-Butt
