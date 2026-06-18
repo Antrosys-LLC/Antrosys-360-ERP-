@@ -47,7 +47,7 @@ export function LoginForm() {
           description: 'Invalid email or password. Please try again.',
         });
       } else {
-        router.push('/');
+        router.push('/cfo');
         router.refresh();
       }
     } catch {
