@@ -194,7 +194,7 @@ export default function KPITrackerPage() {
       </aside>
 
       {/* CONTENT INNER CONTAINER */}
-      <div className={`erp-content ${sidebarCollapsed ? "sidebar-collapsed" : ""} pt-4 px-6 md:px-8`}>
+      <div>
         
         {/* TOP BAR / NAVIGATION BREADCRUMBS */}
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-border">
