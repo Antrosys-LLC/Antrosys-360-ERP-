@@ -47,7 +47,13 @@ export function LoginForm() {
           description: 'Invalid email or password. Please try again.',
         });
       } else {
-        router.push('/');
+        const { getSession } = await import('next-auth/react');
+        const session = await getSession();
+        if (session?.user?.role === 'MANAGER') {
+          router.push('/manager');
+        } else {
+          router.push('/');
+        }
         router.refresh();
       }
     } catch {
