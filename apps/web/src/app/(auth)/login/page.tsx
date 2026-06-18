@@ -14,6 +14,7 @@ export default function LoginPage() {
           </div>
           <p className="text-sm text-muted-foreground">
             Sign in to your account to continue
+            Changes made by Haider 
           </p>
         </div>
 
