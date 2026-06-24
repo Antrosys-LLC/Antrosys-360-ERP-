@@ -136,7 +136,6 @@ const candidatesMock: Candidate[] = [
     files: 4,
     timeAgo: '',
     columnId: 'applied',
-    isDragging: true,
   },
   {
     id: 'c-3',
@@ -147,11 +146,6 @@ const candidatesMock: Candidate[] = [
     files: 0,
     timeAgo: '',
     columnId: 'applied',
-  },
-  {
-    id: 'c-drop',
-    isDropZone: true,
-    columnId: 'screening',
   },
   {
     id: 'c-4',
@@ -225,7 +219,7 @@ const metricsMock: Metric[] = [
 // ==========================================
 
 const HeaderTop = ({ user }: { user: User }) => (
-  <header className="flex items-center justify-between py-4 mb-6 border-b border-border">
+  <header className="flex items-center justify-between py-4 mb-6 border-b border-b-[var(--border)]">
     <div>
       <nav aria-label="Breadcrumb" className="text-xs font-semibold tracking-wider text-muted-foreground uppercase mb-1">
         HR & Talent <span className="mx-1" aria-hidden="true">&gt;</span> Recruitment
@@ -318,27 +312,26 @@ const JobRequisitionsTable = ({ jobs }: { jobs: JobRequisition[] }) => (
 
 const CandidateCard = ({ 
   candidate, 
-  onClick 
+  onClick,
+  onDragStart,
+  onDragEnd
 }: { 
   candidate: Candidate; 
-  onClick?: (candidate: Candidate) => void 
+  onClick?: (candidate: Candidate) => void;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
 }) => {
-  if (candidate.isDropZone) {
-    return (
-      <div className="w-full py-6 border-2 border-dashed border-primary bg-primary/5 rounded-[var(--radius)] flex items-center justify-center text-primary font-semibold text-sm">
-        Drop Candidate Here
-      </div>
-    );
-  }
-
   return (
     <article 
       onClick={() => onClick?.(candidate)}
       role="button"
       tabIndex={0}
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
       onKeyDown={(e) => e.key === 'Enter' && onClick?.(candidate)}
       className={`p-4 bg-card border rounded-[var(--radius)] flex flex-col ${onClick ? 'cursor-pointer hover:border-primary/50 transition-colors' : ''}
-      ${candidate.isDragging ? 'border-2 border-primary shadow-sm' : 'border-border shadow-sm'}
+      ${candidate.isDragging ? 'border-2 border-primary shadow-sm opacity-60 select-none' : 'border-border shadow-sm'}
     `}>
       <header className="flex justify-between items-start mb-2">
         <h4 className={`font-bold text-base ${candidate.isDragging ? 'text-primary' : 'text-foreground'}`}>
@@ -550,20 +543,55 @@ const CandidateSidePanel = ({
 // ==========================================
 
 export default function RecruitmentPage() {
+  const [candidates, setCandidates] = useState<Candidate[]>(candidatesMock);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
 
   const selectedCandidate = useMemo(() => {
     if (!selectedCandidateId) return null;
-    return candidatesMock.find(c => c.id === selectedCandidateId) || null;
-  }, [selectedCandidateId]);
+    return candidates.find(c => c.id === selectedCandidateId) || null;
+  }, [selectedCandidateId, candidates]);
 
   const handleCandidateClick = (candidate: Candidate) => {
-    // Note: You can add an API fetch right here in the future
     setSelectedCandidateId(candidate.id);
   };
 
   const closePanel = () => {
     setSelectedCandidateId(null);
+  };
+
+  // ==========================================
+  // DRAG & DROP HANDLERS
+  // ==========================================
+  
+  const handleDragStart = (e: React.DragEvent, candidateId: string) => {
+    e.dataTransfer.setData("text/plain", candidateId);
+    // Use a 0ms timeout so the browser captures the original look for the ghost preview 
+    // before applying active styles in the state layout.
+    setTimeout(() => {
+      setCandidates(prev => 
+        prev.map(c => c.id === candidateId ? { ...c, isDragging: true } : c)
+      );
+    }, 0);
+  };
+
+  const handleDragEnd = (candidateId: string) => {
+    setCandidates(prev => 
+      prev.map(c => c.id === candidateId ? { ...c, isDragging: false } : c)
+    );
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault(); // Essential to allow drop actions
+  };
+
+  const handleDrop = (e: React.DragEvent, targetColumnId: string) => {
+    e.preventDefault();
+    const candidateId = e.dataTransfer.getData("text/plain");
+    if (!candidateId) return;
+
+    setCandidates(prev => 
+      prev.map(c => c.id === candidateId ? { ...c, columnId: targetColumnId, isDragging: false } : c)
+    );
   };
 
   return (
@@ -576,37 +604,51 @@ export default function RecruitmentPage() {
 
         {/* Kanban Board Container */}
         <section aria-label="Candidate Pipeline" className="flex gap-4 overflow-x-auto pb-6">
-          {kanbanColumnsMock.map(column => (
-            <div key={column.id} className="flex-1 min-w-[280px]">
-              
-              <header className="flex items-center justify-between mb-3 px-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-wider">{column.title}</h3>
-                  <span className="px-2 py-0.5 bg-muted border border-border text-foreground text-xs font-bold rounded-md">
-                    {column.count}
-                  </span>
-                </div>
-                {column.hasMenu && (
-                  <button className="text-foreground hover:text-primary" aria-label={`More options for ${column.title}`}>
-                    <MoreHorizontal size={20} />
-                  </button>
-                )}
-              </header>
+          {kanbanColumnsMock.map(column => {
+            // Keep the baseline metrics accurate to the dashboard layouts while remaining dynamic
+            const initialItemCount = candidatesMock.filter(c => c.columnId === column.id).length;
+            const liveItemCount = candidates.filter(c => c.columnId === column.id).length;
+            const displayCount = column.count + (liveItemCount - initialItemCount);
 
-              <div className="bg-card border border-border rounded-[var(--radius)] p-3 flex flex-col gap-3 min-h-[500px]">
-                {candidatesMock
-                  .filter(c => c.columnId === column.id)
-                  .map(candidate => (
-                    <CandidateCard 
-                      key={candidate.id} 
-                      candidate={candidate} 
-                      onClick={handleCandidateClick}
-                    />
-                  ))}
+            return (
+              <div 
+                key={column.id} 
+                className="flex-1 min-w-[280px]"
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, column.id)}
+              >
+                
+                <header className="flex items-center justify-between mb-3 px-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-wider">{column.title}</h3>
+                    <span className="px-2 py-0.5 bg-muted border border-border text-foreground text-xs font-bold rounded-md">
+                      {displayCount}
+                    </span>
+                  </div>
+                  {column.hasMenu && (
+                    <button className="text-foreground hover:text-primary" aria-label={`More options for ${column.title}`}>
+                      <MoreHorizontal size={20} />
+                    </button>
+                  )}
+                </header>
+
+                <div className="bg-card border border-border rounded-[var(--radius)] p-3 flex flex-col gap-3 min-h-[500px]">
+                  {candidates
+                    .filter(c => c.columnId === column.id)
+                    .map(candidate => (
+                      <CandidateCard 
+                        key={candidate.id} 
+                        candidate={candidate} 
+                        onClick={handleCandidateClick}
+                        onDragStart={(e) => handleDragStart(e, candidate.id)}
+                        onDragEnd={() => handleDragEnd(candidate.id)}
+                      />
+                    ))}
+                </div>
+                
               </div>
-              
-            </div>
-          ))}
+            );
+          })}
         </section>
 
         <MetricsFooter metrics={metricsMock} />
