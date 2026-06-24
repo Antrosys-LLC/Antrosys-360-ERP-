@@ -6,7 +6,7 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint",
-    "db:migrate": "dotenv -e .env -- pnpm --filter api exec prisma migrate dev",
+    "db:migrate": "dotenv -e .env -- pnpm --filter api exec prisma migrate dev --name schema_update",
     "db:seed": "dotenv -e .env -- pnpm --filter api exec prisma db seed"
   },
   "devDependencies": {

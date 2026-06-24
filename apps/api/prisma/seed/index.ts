@@ -64,6 +64,9 @@ async function main() {
     }
   }
 
+  const { seedCfoData } = await import('./cfo.seed');
+  await seedCfoData();
+
   console.log('\n🎉 Seed completed successfully!');
 }
 
