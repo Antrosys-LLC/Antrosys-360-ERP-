@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Mail, Phone, Hash, Pencil, CheckCircle2, ChevronRight, ChevronDown, Download } from 'lucide-react';
+import React, { useState, useEffect, Suspense } from 'react';
+import { Mail, Phone, Hash, Pencil, CheckCircle2, ChevronRight, ChevronDown, Download, Loader2 } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 
 // ============================================================================
 // CENTRALIZED DATA STORES
 // ============================================================================
+
 
 const employeeHeaderData = {
   name: "Sara Javed",
@@ -110,8 +112,16 @@ const payslipsData = [
 // MAIN COMPONENT
 // ============================================================================
 
-export default function EmployeeDashboardPage() {
-  const [activeTab, setActiveTab] = useState("Attendance logs");
+function EmployeeDashboardContent() {
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState("Personal");
+
+  useEffect(() => {
+    if (tabParam) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
 
   const navigationTabs = [
     { name: "Personal" },
@@ -673,5 +683,20 @@ fill="none"
 
       </div>
     </div>
+  );
+}
+
+export default function EmployeeDashboardPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen bg-[#f8f9fa]">
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <span className="text-xs text-muted-foreground font-semibold">Loading profile...</span>
+        </div>
+      </div>
+    }>
+      <EmployeeDashboardContent />
+    </Suspense>
   );
 }

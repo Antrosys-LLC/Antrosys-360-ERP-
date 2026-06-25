@@ -186,7 +186,7 @@ export default function CFODashboard() {
 
       {/* TOP METRICS GRIDS */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {(dashboardQuery.isLoading ? Array.from({ length: 4 }) : metrics).map((metric, idx) => (
+        {(dashboardQuery.isLoading ? Array.from({ length: 4 }) : metrics).map((metric: any, idx) => (
           <div key={metric?.id ?? idx} className="bg-white p-5 rounded-xl border border-[#EBEAEF] shadow-sm flex flex-col justify-between">
             {metric ? (
               <>

@@ -17,6 +17,7 @@ enum Role {
   MANAGER
   TEAM_LEAD
   EMPLOYEE
+  SUB_MANAGER
 }
 
 enum InvoiceStatus {
@@ -85,6 +86,7 @@ model User {
   vendorPaymentsCreated VendorPayment[]   @relation("VendorPaymentsCreated")
   approvalTasksAssigned ApprovalTask[]    @relation("ApprovalTasksAssigned")
   financialEventsCreated FinancialEvent[] @relation("FinancialEventsCreated")
+  notifications         Notification[]
 
   @@map("users")
 }
@@ -109,6 +111,10 @@ model Employee {
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
   approvalTasksRequested ApprovalTask[]
+  attendances            Attendance[]
+  leaveRequests          LeaveRequest[]   @relation("EmployeeLeaves")
+  approvedLeaves         LeaveRequest[]   @relation("ApprovedLeaves")
+  announcements          Announcement[]
 
   @@map("employees")
 }
@@ -305,18 +311,41 @@ model FinancialEvent {
 }
 
 model Attendance {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String    @id @default(cuid())
+  employeeId String
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date       DateTime  @db.Date
+  checkIn    DateTime?
+  checkOut   DateTime?
+  status     String    // "PRESENT", "ABSENT", "LATE", "LEAVE"
+  hours      Decimal?  @db.Decimal(4, 2)
+  isFlagged  Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
+  @@unique([employeeId, date])
+  @@index([employeeId])
+  @@index([date])
   @@map("attendances")
 }
 
 model LeaveRequest {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String    @id @default(cuid())
+  employeeId   String
+  employee     Employee  @relation("EmployeeLeaves", fields: [employeeId], references: [id], onDelete: Cascade)
+  type         String    // "SICK", "ANNUAL", "CASUAL", "MATERNITY"
+  startDate    DateTime
+  endDate      DateTime
+  durationDays Int
+  status       String    // "PENDING", "APPROVED", "REJECTED"
+  reason       String?
+  approvedById String?
+  approvedBy   Employee? @relation("ApprovedLeaves", fields: [approvedById], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
+  @@index([employeeId])
+  @@index([status])
   @@map("leave_requests")
 }
 
@@ -330,9 +359,14 @@ model Recruitment {
 
 model Announcement {
   id        String   @id @default(cuid())
+  title     String
+  content   String
+  authorId  String
+  author    Employee @relation(fields: [authorId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([authorId])
   @@map("announcements")
 }
 
@@ -343,3 +377,50 @@ model Survey {
 
   @@map("surveys")
 }
+
+model TeamMoodPulse {
+  id         String   @id @default(cuid())
+  department String
+  date       DateTime @db.Date
+  happy      Int      @default(0)
+  neutral    Int      @default(0)
+  stressed   Int      @default(0)
+  unknown    Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([department, date])
+  @@map("team_mood_pulses")
+}
+
+model DepartmentKpi {
+  id              String   @id @default(cuid())
+  department      String   @unique
+  sprintVelocity  Int      @default(84)
+  bugResolution   Int      @default(72)
+  codeReview      Int      @default(78)
+  deliveryOnTime  Int      @default(91)
+  teamUtilization Int      @default(82)
+  openTickets     Int      @default(64)
+  documentation   Int      @default(48)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("department_kpis")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
+

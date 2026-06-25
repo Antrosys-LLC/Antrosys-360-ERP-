@@ -1,4 +1,4 @@
-export const enum Role {
+export enum Role {
   CEO = 'CEO',
   CFO = 'CFO',
   OPERATIONS_HEAD = 'OPERATIONS_HEAD',
@@ -8,4 +8,5 @@ export const enum Role {
   MANAGER = 'MANAGER',
   TEAM_LEAD = 'TEAM_LEAD',
   EMPLOYEE = 'EMPLOYEE',
+  SUB_MANAGER = 'SUB_MANAGER',
 }

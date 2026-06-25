@@ -74,7 +74,7 @@ async function writeAuditLog(
   tx: Prisma.TransactionClient,
   userId: string,
   action: MutationAction,
-  metadata: Record<string, unknown>,
+  metadata: Prisma.InputJsonValue,
 ) {
   await tx.auditLog.create({
     data: {

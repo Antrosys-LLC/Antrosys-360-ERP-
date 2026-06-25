@@ -51,6 +51,7 @@ type RoleKey =
   | 'FINANCE_MANAGER'
   | 'PROJECT_MANAGER'
   | 'MANAGER'
+  | 'SUB_MANAGER'
   | 'TEAM_LEAD'
   | 'EMPLOYEE';
 
@@ -69,6 +70,7 @@ export const ROLE_NAV_CONFIG: Record<RoleKey, NavItem[]> = {
   FINANCE_MANAGER: getNavForRole('FINANCE_MANAGER'),
   PROJECT_MANAGER: getNavForRole('PROJECT_MANAGER'),
   MANAGER: getNavForRole('MANAGER'),
+  SUB_MANAGER: getNavForRole('SUB_MANAGER'),
   TEAM_LEAD: getNavForRole('TEAM_LEAD'),
   EMPLOYEE: getNavForRole('EMPLOYEE'),
 };

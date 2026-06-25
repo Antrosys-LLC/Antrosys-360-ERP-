@@ -22,10 +22,11 @@ export async function middleware(request: NextRequest) {
     secret: process.env.NEXTAUTH_SECRET || 'fallback-secret-do-not-use-in-production',
   });
 
+
   // Handle public routes (e.g. login)
   if (publicRoutes.some((route) => pathname.startsWith(route))) {
     if (token) {
-      if (token.role === 'MANAGER') {
+      if (token.role === 'MANAGER' || token.role === 'SUB_MANAGER') {
         return NextResponse.redirect(new URL('/manager', request.url));
       }
       return NextResponse.redirect(new URL('/', request.url));
@@ -40,13 +41,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Redirect MANAGER role requesting root '/' to their dashboard '/manager'
-  if (token.role === 'MANAGER' && pathname === '/') {
+  // Redirect MANAGER/SUB_MANAGER role requesting root '/' to their dashboard '/manager'
+  if ((token.role === 'MANAGER' || token.role === 'SUB_MANAGER') && pathname === '/') {
     return NextResponse.redirect(new URL('/manager', request.url));
   }
 
-  // Restrict access to '/manager' routes to only the MANAGER role
-  if (pathname.startsWith('/manager') && token.role !== 'MANAGER') {
+  // Restrict access to '/manager' routes to MANAGER/SUB_MANAGER role
+  if (pathname.startsWith('/manager') && token.role !== 'MANAGER' && token.role !== 'SUB_MANAGER') {
     return NextResponse.redirect(new URL('/', request.url));
   }
 

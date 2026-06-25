@@ -26,7 +26,7 @@ export async function auditLoggerHook(request: FastifyRequest, reply: FastifyRep
         metadata: {
           params: request.params,
           query: request.query,
-        },
+        } as any,
       },
     });
   } catch (err) {
