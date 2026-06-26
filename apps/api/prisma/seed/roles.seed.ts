@@ -9,6 +9,7 @@ export const SEED_ROLES = [
   'FINANCE_MANAGER',
   'PROJECT_MANAGER',
   'MANAGER',
+  'SUB_MANAGER',
   'TEAM_LEAD',
   'EMPLOYEE',
 ] as const;

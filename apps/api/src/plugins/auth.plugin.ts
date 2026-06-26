@@ -2,14 +2,17 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import fp from 'fastify-plugin';
 import { ROLE_PERMISSIONS, Permission } from '@antrosys/types';
 
-declare module 'fastify' {
-  interface FastifyRequest {
+declare module '@fastify/jwt' {
+  interface FastifyJWT {
     user: {
       id: string;
       role: string;
       permissions: Permission[];
     };
   }
+}
+
+declare module 'fastify' {
   interface FastifyInstance {
     verifyJwt: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }

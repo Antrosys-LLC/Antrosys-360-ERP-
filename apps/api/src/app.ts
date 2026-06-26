@@ -28,6 +28,8 @@ import { adminRoutes } from './modules/admin/admin.routes';
 import { cfoRoutes } from './modules/cfo/cfo.routes';
 import { ceoRoutes } from './modules/ceo/ceo.routes';
 import { invoiceRoutes } from './modules/invoice/invoice.routes';
+import { managerRoutes } from './modules/manager/manager.routes';
+import { notificationsRoutes } from './modules/notifications/notifications.routes';
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
@@ -82,6 +84,8 @@ export async function buildApp() {
       await api.register(clientsRoutes, { prefix: '/clients' });
       await api.register(reportsRoutes, { prefix: '/reports' });
       await api.register(adminRoutes, { prefix: '/admin' });
+      await api.register(managerRoutes, { prefix: '/manager' });
+      await api.register(notificationsRoutes, { prefix: '/notifications' });
     },
     { prefix: '/api/v1' },
   );

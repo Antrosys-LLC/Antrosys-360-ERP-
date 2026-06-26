@@ -98,6 +98,17 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'attendance:write',
     'leave:write',
     'hr:read',
+    'announcements:read',
+    'announcements:write',
+  ],
+
+  [Role.SUB_MANAGER]: [
+    'attendance:read',
+    'attendance:write',
+    'leave:write',
+    'hr:read',
+    'announcements:read',
+    'announcements:write',
   ],
 
   [Role.TEAM_LEAD]: [
@@ -111,3 +122,4 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'leave:write',
   ],
 };
+
