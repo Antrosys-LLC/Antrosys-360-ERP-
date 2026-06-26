@@ -67,6 +67,28 @@ enum VendorPaymentStatus {
   FAILED
 }
 
+enum ClientPipelineStage {
+  PROSPECT
+  PROPOSAL
+  NEGOTIATION
+  ACTIVE
+  AT_RISK
+}
+
+enum OperatingCostCategory {
+  OPERATIONS
+  SOFTWARE
+  TAX_LEGAL
+  BENEFITS
+  OTHER
+}
+
+enum ServiceHealthStatus {
+  OPERATIONAL
+  DEGRADED
+  DOWN
+}
+
 model User {
   id                    String            @id @default(cuid())
   email                 String            @unique
@@ -85,6 +107,7 @@ model User {
   vendorPaymentsCreated VendorPayment[]   @relation("VendorPaymentsCreated")
   approvalTasksAssigned ApprovalTask[]    @relation("ApprovalTasksAssigned")
   financialEventsCreated FinancialEvent[] @relation("FinancialEventsCreated")
+  operatingExpensesCreated OperatingExpense[] @relation("OperatingExpensesCreated")
 
   @@map("users")
 }
@@ -130,15 +153,24 @@ model AuditLog {
 }
 
 model Client {
-  id        String    @id @default(cuid())
-  name      String
-  email     String?
-  phone     String?
-  isActive  Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  invoices  Invoice[]
+  id             String              @id @default(cuid())
+  name           String
+  email          String?
+  phone          String?
+  pipelineStage  ClientPipelineStage @default(PROSPECT)
+  monthlyRevenue Decimal?            @db.Decimal(14, 2)
+  annualRevenue  Decimal?            @db.Decimal(14, 2)
+  currencyCode   String              @default("USD") @db.VarChar(3)
+  renewalDueAt   DateTime?
+  isAtRisk       Boolean             @default(false)
+  isActive       Boolean             @default(true)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  invoices       Invoice[]
 
+  @@index([pipelineStage])
+  @@index([isAtRisk])
+  @@index([renewalDueAt])
   @@map("clients")
 }
 
@@ -302,6 +334,52 @@ model FinancialEvent {
 
   @@index([startAt])
   @@map("financial_events")
+}
+
+model OperatingExpense {
+  id              String                @id @default(cuid())
+  category        OperatingCostCategory
+  amount          Decimal               @db.Decimal(14, 2)
+  currencyCode    String                @default("USD") @db.VarChar(3)
+  expenseDate     DateTime              @db.Date
+  description     String?
+  createdByUserId String
+  createdBy       User                  @relation("OperatingExpensesCreated", fields: [createdByUserId], references: [id])
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([expenseDate])
+  @@index([category])
+  @@map("operating_expenses")
+}
+
+model CompanyMetricTarget {
+  id           String   @id @default(cuid())
+  metricKey    String
+  periodStart  DateTime @db.Date
+  periodEnd    DateTime @db.Date
+  targetValue  Decimal  @db.Decimal(14, 2)
+  currencyCode String?  @default("USD") @db.VarChar(3)
+  label        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([metricKey, periodStart])
+  @@index([metricKey, periodStart, periodEnd])
+  @@map("company_metric_targets")
+}
+
+model SystemServiceHealth {
+  id            String              @id @default(cuid())
+  serviceKey    String              @unique
+  label         String
+  status        ServiceHealthStatus @default(OPERATIONAL)
+  lastCheckedAt DateTime            @default(now())
+  notes         String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@map("system_service_health")
 }
 
 model Attendance {
