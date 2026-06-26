@@ -26,6 +26,7 @@ import { clientsRoutes } from './modules/clients/clients.routes';
 import { reportsRoutes } from './modules/reports/reports.routes';
 import { adminRoutes } from './modules/admin/admin.routes';
 import { cfoRoutes } from './modules/cfo/cfo.routes';
+import { ceoRoutes } from './modules/ceo/ceo.routes';
 import { invoiceRoutes } from './modules/invoice/invoice.routes';
 
 export async function buildApp() {
@@ -70,6 +71,7 @@ export async function buildApp() {
       await api.register(invoiceRoutes, { prefix: '/invoices' });
       await api.register(payrollRoutes, { prefix: '/finance/payroll' });
       await api.register(cfoRoutes, { prefix: '/cfo' });
+      await api.register(ceoRoutes, { prefix: '/ceo' });
       await api.register(employeesRoutes, { prefix: '/hr/employees' });
       await api.register(recruitmentRoutes, { prefix: '/hr/recruitment' });
       await api.register(onboardingRoutes, { prefix: '/hr/onboarding' });
