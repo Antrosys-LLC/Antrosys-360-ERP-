@@ -238,6 +238,9 @@ async function main() {
   const { seedCfoData } = await import('./cfo.seed');
   await seedCfoData();
 
+  const { seedCeoData } = await import('./ceo.seed');
+  await seedCeoData();
+
   console.log('\n🎉 Seed completed successfully!');
 }
 

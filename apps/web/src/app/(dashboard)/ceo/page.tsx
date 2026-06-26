@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import {
   TrendingUp,
   Users,
@@ -12,226 +14,43 @@ import {
   FileBarChart2,
   Download,
   CircleDot,
+  Calendar,
 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import {
+  exportCeoBoardReport,
+  fetchCeoClientPipeline,
+  fetchCeoCostBreakdown,
+  fetchCeoDashboard,
+  fetchCeoQuickActions,
+  fetchCeoRevenueTrend,
+  fetchCeoSystemActivity,
+  fetchCeoSystemHealth,
+  type RevenueRange,
+} from "@/lib/ceo-api";
 
-// ============================================================================
-// MOCK DATA — replace with API fetches later (React Query hooks)
-// ============================================================================
+const REVENUE_RANGES: RevenueRange[] = ["Monthly", "Quarterly", "Annual"];
 
-const kpiCards = {
-  revenue: {
-    label: "Total revenue · May 2026",
-    compareLabel: "vs Apr 2026",
-    value: "$842,000",
-    deltaLabel: "+12.4% month-on-month",
-    progressPct: 84,
-    footnote: "84% of $1M monthly target",
-    sparkline: [40, 52, 48, 60, 55, 70, 65, 78, 72, 85, 80, 92],
-  },
-  headcount: {
-    label: "Total headcount",
-    value: 247,
-    deltaLabel: "+11 this quarter",
-    ringPct: "82%",
-    ringFootnote: "300 planned FY2026",
-    deptTags: [
-      { label: "Eng 82", bg: "#EEEDFE", text: "#534AB7" },
-      { label: "Ops 57", bg: "#EAF3DE", text: "#27500A" },
-      { label: "+5 more", bg: "#F1EFE8", text: "#444441" },
-    ],
-  },
-  clients: {
-    label: "Active clients",
-    value: 34,
-    deltaLabel: "+3 this month",
-    riskTags: [
-      { label: "2 at risk", bg: "#FCEBEB", text: "#791F1F" },
-      { label: "8 renewal due", bg: "#FAEEDA", text: "#633806" },
-    ],
-    footnote: "Pipeline: 12 prospects",
-  },
-  burnRate: {
-    label: "Monthly burn rate",
-    value: "$318K",
-    deltaLabel: "+3.1% vs Apr",
-    runwayLabel: "Runway: 14 months",
-    barPct: 38,
-    footnote: "38% of monthly revenue",
-  },
-};
+const QUICK_ACTION_ICONS = {
+  audit: ShieldCheck,
+  override: ShieldOff,
+  bi: FileBarChart2,
+  clients: Briefcase,
+  export: Download,
+} as const;
 
-type RevenueRange = "Monthly" | "Quarterly" | "Annual";
-
-const revenueTrend = {
-  totalLabel: "Total $842K",
-  ranges: ["Monthly", "Quarterly", "Annual"] as RevenueRange[],
-  months: [
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-  ],
-  revenue: [610, 640, 600, 660, 700, 690, 730, 710, 760, 790, 810, 842],
-  payrollCost: [340, 350, 345, 360, 365, 358, 372, 368, 380, 390, 395, 400],
-  peakMonth: { label: "Peak month", value: "May $842K" },
-  ytd: { label: "YTD", value: "$8.6M" },
-  avgMonthly: { label: "Avg monthly", value: "$716K" },
-  yoyGrowth: { label: "vs last year", value: "+34%" },
-};
-
-const costBreakdown = {
-  totalLabel: "Total $318K",
-  totalCostLabel: "Total cost",
-  totalCostValue: "$318K",
-  items: [
-    { label: "Payroll", pct: 38, value: "$120K", dot: "#7B68EE" },
-    { label: "Operations", pct: 21, value: "$67K", dot: "#3B82F6" },
-    { label: "Software", pct: 14, value: "$44K", dot: "#14B8A6" },
-    { label: "Tax & legal", pct: 12, value: "$39K", dot: "#F59E0B" },
-    { label: "Benefits", pct: 9, value: "$29K", dot: "#A855F7" },
-    { label: "Other", pct: 6, value: "$18K", dot: "#9CA3AF" },
-  ],
-  vsLastMonth: [
-    { label: "Payroll", delta: "+3.3%", positive: false },
-    { label: "Operations", delta: "+0.8%", positive: false },
-    { label: "Software", delta: "-2.4%", positive: true },
-    { label: "Tax", delta: "+1.2%", positive: false },
-  ],
-};
-
-type QuickActionTone = "default" | "urgent";
-
-const quickActions: {
-  icon: typeof ShieldCheck;
-  title: string;
-  meta: string;
-  tone: QuickActionTone;
-}[] = [
-  {
-    icon: ShieldCheck,
-    title: "View audit log",
-    meta: "12 new entries since yesterday",
-    tone: "default",
-  },
-  {
-    icon: ShieldOff,
-    title: "Override approval",
-    meta: "1 escalated request pending",
-    tone: "urgent",
-  },
-  {
-    icon: FileBarChart2,
-    title: "Open BI report",
-    meta: "Last generated today, 08:42 AM",
-    tone: "default",
-  },
-  {
-    icon: Briefcase,
-    title: "Review client pipeline",
-    meta: "2 clients at risk · 8 renewals",
-    tone: "default",
-  },
-  {
-    icon: Download,
-    title: "Export board report",
-    meta: "Board meeting May 30, 2026",
-    tone: "default",
-  },
-];
-
-const clientPipeline = {
-  totalLabel: "34 active",
-  stages: [
-    { label: "Prospect", count: 12, max: 34 },
-    { label: "Proposal", count: 9, max: 34 },
-    { label: "Negotiation", count: 5, max: 34 },
-    { label: "Active", count: 34, max: 34 },
-    { label: "At risk", count: 2, max: 34 },
-  ],
-  footerStats: [
-    { label: "ARR", value: "$4.2M" },
-    { label: "MRR", value: "$350K" },
-  ],
-  topClientLabel: "Top client: Nexus Corp $42K/mo",
-};
-
-type ActivityTone = "success" | "info" | "warning" | "danger" | "neutral";
-
-const systemActivity: {
-  tone: ActivityTone;
-  title: string;
-  meta: string;
-  time: string;
-}[] = [
-  {
-    tone: "success",
-    title: "Payroll run initiated",
-    meta: "Nadia Qureshi · Finance",
-    time: "4m ago",
-  },
-  {
-    tone: "info",
-    title: "New hire onboarded",
-    meta: "Sara Javed · Engineering",
-    time: "32m ago",
-  },
-  {
-    tone: "warning",
-    title: "Leave approved — Omar Mirza (3 days)",
-    meta: "Zara Khan · Manager",
-    time: "1h ago",
-  },
-  {
-    tone: "danger",
-    title: "Override request escalated to CEO",
-    meta: "System · Compliance",
-    time: "2h ago",
-  },
-  {
-    tone: "info",
-    title: "Client Nexus Corp — Invoice sent $42K",
-    meta: "Nadia Qureshi · Finance",
-    time: "3h ago",
-  },
-  {
-    tone: "neutral",
-    title: "Audit log exported for board package",
-    meta: "Dawood Akhtar (you)",
-    time: "5h ago",
-  },
-];
-
-type ServiceStatus = "Operational" | "Degraded";
-
-const systemHealth: { label: string; status: ServiceStatus }[] = [
-  { label: "API gateway", status: "Operational" },
-  { label: "Stripe billing", status: "Operational" },
-  { label: "Payroll engine", status: "Operational" },
-  { label: "Auth / SSO", status: "Operational" },
-  { label: "File storage", status: "Degraded" },
-  { label: "Email service", status: "Operational" },
-  { label: "Audit logging", status: "Operational" },
-];
-
-const systemUptime = {
-  pct: "99.7% uptime",
-  period: "last 30 days",
-  lastChecked: "Last checked 2 min ago",
-};
+const BADGE_STYLES = {
+  green: "bg-[#EAF3DE] text-[#27500A]",
+  purple: "bg-[#EEEDFE] text-[#534AB7]",
+  orange: "bg-[#FAEEDA] text-[#633806]",
+} as const;
 
 // ============================================================================
 // SMALL PRESENTATIONAL HELPERS
 // ============================================================================
 
 function Sparkline({ data }: { data: number[] }) {
+  if (data.length < 2) return null;
   const max = Math.max(...data);
   const min = Math.min(...data);
   const w = 80;
@@ -271,6 +90,13 @@ function RevenueChart({
   revenue: number[];
   payrollCost: number[];
 }) {
+  if (months.length < 2 || revenue.length < 2) {
+    return (
+      <div className="w-full h-[160px] flex items-center justify-center text-[11px] text-[#AAAAAA]">
+        No trend data for this period
+      </div>
+    );
+  }
   const w = 560;
   const h = 160;
   const max = Math.max(...revenue);
@@ -332,7 +158,7 @@ function RevenueChart({
   );
 }
 
-function activityToneDot(tone: ActivityTone) {
+function activityToneDot(tone: "success" | "info" | "warning" | "danger" | "neutral") {
   switch (tone) {
     case "success":
       return "#3B6D11";
@@ -347,11 +173,11 @@ function activityToneDot(tone: ActivityTone) {
   }
 }
 
-function statusDotColor(status: ServiceStatus) {
+function statusDotColor(status: "Operational" | "Degraded") {
   return status === "Operational" ? "#3B6D11" : "#F59E0B";
 }
 
-function statusBadgeClasses(status: ServiceStatus) {
+function statusBadgeClasses(status: "Operational" | "Degraded") {
   return status === "Operational"
     ? "bg-[#EAF3DE] text-[#27500A]"
     : "bg-[#FAEEDA] text-[#633806]";
@@ -362,10 +188,162 @@ function statusBadgeClasses(status: ServiceStatus) {
 // ============================================================================
 
 export default function CeoDashboardPage() {
+  const router = useRouter();
+  const { toast } = useToast();
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [compare, setCompare] = useState(false);
   const [revenueRange, setRevenueRange] = useState<RevenueRange>("Monthly");
+
+  const periodParams = { month, year, compare };
+
+  const dashboardQuery = useQuery({
+    queryKey: ["ceo", "dashboard", month, year, compare],
+    queryFn: () => fetchCeoDashboard(periodParams),
+  });
+
+  const revenueTrendQuery = useQuery({
+    queryKey: ["ceo", "revenue-trend", month, year, compare, revenueRange],
+    queryFn: () => fetchCeoRevenueTrend({ ...periodParams, range: revenueRange }),
+  });
+
+  const costBreakdownQuery = useQuery({
+    queryKey: ["ceo", "cost-breakdown", month, year, compare],
+    queryFn: () => fetchCeoCostBreakdown(periodParams),
+  });
+
+  const pipelineQuery = useQuery({
+    queryKey: ["ceo", "client-pipeline"],
+    queryFn: fetchCeoClientPipeline,
+  });
+
+  const quickActionsQuery = useQuery({
+    queryKey: ["ceo", "quick-actions"],
+    queryFn: fetchCeoQuickActions,
+  });
+
+  const activityQuery = useQuery({
+    queryKey: ["ceo", "system-activity"],
+    queryFn: fetchCeoSystemActivity,
+  });
+
+  const healthQuery = useQuery({
+    queryKey: ["ceo", "system-health"],
+    queryFn: fetchCeoSystemHealth,
+  });
+
+  const header = dashboardQuery.data?.header;
+  const kpiCards = dashboardQuery.data?.kpiCards;
+  const revenueTrend = revenueTrendQuery.data;
+  const costBreakdown = costBreakdownQuery.data;
+  const clientPipeline = pipelineQuery.data;
+  const quickActions = quickActionsQuery.data ?? [];
+  const systemActivity = activityQuery.data ?? [];
+  const systemHealth = healthQuery.data?.services ?? [];
+  const systemUptime = healthQuery.data?.uptime ?? {
+    pct: "—",
+    period: "last 30 days",
+    lastChecked: "—",
+  };
+
+  const monthInputValue = `${year}-${String(month).padStart(2, "0")}`;
+
+  const handleExport = async () => {
+    const fromDate = `${year}-${String(month).padStart(2, "0")}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    const toDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    try {
+      const blob = await exportCeoBoardReport(fromDate, toDate);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `ceo-board-report-${fromDate}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Board report exported" });
+    } catch {
+      toast({ variant: "destructive", title: "Export failed" });
+    }
+  };
+
+  const handleQuickAction = (action: (typeof quickActions)[number]) => {
+    if (action.id === "export") {
+      handleExport();
+      return;
+    }
+    router.push(action.href);
+  };
+
+  const conicGradient = costBreakdown?.items.length
+    ? (() => {
+        let cursor = 0;
+        const stops = costBreakdown.items.map((item) => {
+          const start = cursor;
+          cursor += item.pct;
+          return `${item.dot} ${start}% ${cursor}%`;
+        });
+        return `conic-gradient(${stops.join(", ")})`;
+      })()
+    : "conic-gradient(#E0E0E0 0% 100%)";
 
   return (
     <div className="flex flex-col gap-3">
+      {/* HEADER */}
+      <header className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-1">
+        <div className="space-y-3">
+          <h1 className="text-[28px] font-bold text-[#1A1A1A] leading-tight">
+            {header?.greeting ?? "Good morning"}
+          </h1>
+          <div className="flex flex-wrap items-center gap-2 text-[12px] text-[#888888]">
+            <span>{header?.subtitle ?? "CEO · Full system access"}</span>
+            {(header?.badges ?? []).map((badge) => (
+              <span
+                key={badge.id}
+                className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full ${BADGE_STYLES[badge.tone]}`}
+              >
+                <span className="size-1.5 rounded-full bg-current opacity-70" />
+                {badge.label} {badge.value}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <label className="inline-flex items-center gap-2 text-[12px] font-medium text-[#1A1A1A] bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 cursor-pointer">
+            <Calendar size={14} className="text-[#888888]" />
+            <input
+              type="month"
+              value={monthInputValue}
+              onChange={(e) => {
+                const [y, m] = e.target.value.split("-");
+                setYear(Number(y));
+                setMonth(Number(m));
+              }}
+              className="bg-transparent outline-none cursor-pointer text-[12px]"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => setCompare((v) => !v)}
+            className={`text-[12px] font-medium px-4 py-2 rounded-lg border transition-colors ${
+              compare
+                ? "bg-[#EEEDFE] border-[#534AB7] text-[#534AB7]"
+                : "bg-white border-[#E0E0E0] text-[#534AB7] hover:bg-[#F8F9FC]"
+            }`}
+          >
+            Compare period
+          </button>
+          <button
+            type="button"
+            onClick={handleExport}
+            className="inline-flex items-center justify-center size-10 bg-white border border-[#E0E0E0] rounded-lg hover:bg-[#F8F9FC] transition-colors"
+            aria-label="Export board report"
+          >
+            <Download size={16} className="text-[#888888]" />
+          </button>
+        </div>
+      </header>
+
       {/* KPI Row */}
       <div className="grid grid-cols-4 gap-3">
         {/* Total revenue */}
@@ -378,15 +356,15 @@ export default function CeoDashboardPage() {
                 className="text-[#888888]"
               />
               <span className="text-[11px] text-[#888888]">
-                {kpiCards.revenue.label}
+                {kpiCards?.revenue.label ?? "Total revenue"}
               </span>
             </div>
             <span className="text-[10px] text-[#AAAAAA]">
-              {kpiCards.revenue.compareLabel}
+              {kpiCards?.revenue.compareLabel ?? "—"}
             </span>
           </div>
           <div className="text-[28px] font-bold text-[#1A1A1A] leading-none mb-3">
-            {kpiCards.revenue.value}
+            {kpiCards?.revenue.value ?? "—"}
           </div>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-1">
@@ -396,19 +374,19 @@ export default function CeoDashboardPage() {
                 className="text-[#27500A]"
               />
               <span className="text-[12px] text-[#27500A]">
-                {kpiCards.revenue.deltaLabel}
+                {kpiCards?.revenue.deltaLabel ?? "—"}
               </span>
             </div>
-            <Sparkline data={kpiCards.revenue.sparkline} />
+            <Sparkline data={kpiCards?.revenue.sparkline ?? []} />
           </div>
           <div className="h-1.5 w-full rounded-full bg-[#EEEDFE] overflow-hidden mb-2">
             <div
               className="h-full bg-[#7B68EE] rounded-full"
-              style={{ width: `${kpiCards.revenue.progressPct}%` }}
+              style={{ width: `${kpiCards?.revenue.progressPct ?? 0}%` }}
             />
           </div>
           <span className="text-[10px] text-[#AAAAAA] text-right">
-            {kpiCards.revenue.footnote}
+            {kpiCards?.revenue.footnote ?? ""}
           </span>
         </div>
 
@@ -417,31 +395,31 @@ export default function CeoDashboardPage() {
           <div className="flex items-center gap-1.5 mb-4">
             <Users size={14} strokeWidth={1.8} className="text-[#888888]" />
             <span className="text-[11px] text-[#888888]">
-              {kpiCards.headcount.label}
+              {kpiCards?.headcount.label ?? "Total headcount"}
             </span>
           </div>
           <div className="flex items-center justify-between mb-4">
             <div>
               <div className="text-[26px] font-bold text-[#1A1A1A] leading-none">
-                {kpiCards.headcount.value}
+                {kpiCards?.headcount.value ?? "—"}
               </div>
               <span className="text-[11px] text-[#27500A]">
-                {kpiCards.headcount.deltaLabel}
+                {kpiCards?.headcount.deltaLabel ?? "—"}
               </span>
             </div>
             <div className="flex flex-col items-center gap-1">
               <div className="size-8 rounded-full bg-white border border-[#EEEDFE] flex items-center justify-center">
                 <span className="text-[#534AB7] font-semibold text-[10px]">
-                  {kpiCards.headcount.ringPct}
+                  {kpiCards?.headcount.ringPct ?? "—"}
                 </span>
               </div>
               <span className="text-[10px] text-[#AAAAAA] whitespace-nowrap">
-                {kpiCards.headcount.ringFootnote}
+                {kpiCards?.headcount.ringFootnote ?? ""}
               </span>
             </div>
           </div>
           <div className="border-t border-[#E0E0E080] pt-2.5 flex items-center gap-1 flex-wrap">
-            {kpiCards.headcount.deptTags.map((tag) => (
+            {(kpiCards?.headcount.deptTags ?? []).map((tag) => (
               <span
                 key={tag.label}
                 className="text-[9px] font-medium px-1.5 py-0.5 rounded-md"
@@ -458,20 +436,20 @@ export default function CeoDashboardPage() {
           <div className="flex items-center gap-1.5 mb-4">
             <Briefcase size={14} strokeWidth={1.8} className="text-[#888888]" />
             <span className="text-[11px] text-[#888888]">
-              {kpiCards.clients.label}
+              {kpiCards?.clients.label ?? "Active clients"}
             </span>
           </div>
           <div className="mb-4">
             <div className="text-[26px] font-bold text-[#1A1A1A] leading-none mb-2">
-              {kpiCards.clients.value}
+              {kpiCards?.clients.value ?? "—"}
             </div>
             <span className="text-[11px] text-[#27500A]">
-              {kpiCards.clients.deltaLabel}
+              {kpiCards?.clients.deltaLabel ?? "—"}
             </span>
           </div>
           <div className="border-t border-[#E0E0E080] pt-2.5 flex flex-col gap-1.5">
             <div className="flex items-center gap-2">
-              {kpiCards.clients.riskTags.map((tag) => (
+              {(kpiCards?.clients.riskTags ?? []).map((tag) => (
                 <span
                   key={tag.label}
                   className="text-[10px] font-medium px-2 py-0.5 rounded-full"
@@ -482,7 +460,7 @@ export default function CeoDashboardPage() {
               ))}
             </div>
             <span className="text-[10px] text-[#AAAAAA]">
-              {kpiCards.clients.footnote}
+              {kpiCards?.clients.footnote ?? ""}
             </span>
           </div>
         </div>
@@ -492,29 +470,29 @@ export default function CeoDashboardPage() {
           <div className="flex items-center gap-1.5 mb-4">
             <Flame size={14} strokeWidth={1.8} className="text-[#888888]" />
             <span className="text-[11px] text-[#888888]">
-              {kpiCards.burnRate.label}
+              {kpiCards?.burnRate.label ?? "Monthly burn rate"}
             </span>
           </div>
           <div className="mb-4">
             <div className="text-[24px] font-bold text-[#A32D2D] leading-none mb-2">
-              {kpiCards.burnRate.value}
+              {kpiCards?.burnRate.value ?? "—"}
             </div>
             <span className="text-[11px] text-[#791F1F]">
-              {kpiCards.burnRate.deltaLabel}
+              {kpiCards?.burnRate.deltaLabel ?? "—"}
             </span>
           </div>
           <div className="border-t border-[#E0E0E080] pt-2.5 flex flex-col gap-2">
             <span className="text-[11px] text-[#888888]">
-              {kpiCards.burnRate.runwayLabel}
+              {kpiCards?.burnRate.runwayLabel ?? "—"}
             </span>
             <div className="h-1.5 w-full rounded-full bg-[#F0F0F0] overflow-hidden">
               <div
                 className="h-full bg-[#E24B4A] rounded-full"
-                style={{ width: `${kpiCards.burnRate.barPct}%` }}
+                style={{ width: `${kpiCards?.burnRate.barPct ?? 0}%` }}
               />
             </div>
             <span className="text-[10px] text-[#AAAAAA]">
-              {kpiCards.burnRate.footnote}
+              {kpiCards?.burnRate.footnote ?? ""}
             </span>
           </div>
         </div>
@@ -530,7 +508,7 @@ export default function CeoDashboardPage() {
             </span>
             <div className="flex items-center gap-3">
               <div className="flex items-center bg-[#F8F9FC] rounded-md p-0.5">
-                {revenueTrend.ranges.map((range) => (
+                {REVENUE_RANGES.map((range) => (
                   <button
                     key={range}
                     type="button"
@@ -546,15 +524,15 @@ export default function CeoDashboardPage() {
                 ))}
               </div>
               <span className="text-[11px] font-semibold text-[#534AB7] bg-[#EEEDFE] px-2 py-1 rounded-md">
-                {revenueTrend.totalLabel}
+                {revenueTrend?.totalLabel ?? "—"}
               </span>
             </div>
           </div>
 
           <RevenueChart
-            months={revenueTrend.months}
-            revenue={revenueTrend.revenue}
-            payrollCost={revenueTrend.payrollCost}
+            months={revenueTrend?.months ?? []}
+            revenue={revenueTrend?.revenue ?? []}
+            payrollCost={revenueTrend?.payrollCost ?? []}
           />
 
           <div className="flex items-center gap-4 mt-3 mb-4">
@@ -570,15 +548,17 @@ export default function CeoDashboardPage() {
 
           <div className="grid grid-cols-4 border-t border-[#E0E0E0] pt-3">
             {[
-              revenueTrend.peakMonth,
-              revenueTrend.ytd,
-              revenueTrend.avgMonthly,
-              revenueTrend.yoyGrowth,
-            ].map((stat) => (
-              <div key={stat.label} className="flex flex-col gap-0.5">
-                <span className="text-[10px] text-[#AAAAAA]">{stat.label}</span>
+              revenueTrend?.peakMonth,
+              revenueTrend?.ytd,
+              revenueTrend?.avgMonthly,
+              revenueTrend?.yoyGrowth,
+            ]
+              .filter(Boolean)
+              .map((stat) => (
+              <div key={stat!.label} className="flex flex-col gap-0.5">
+                <span className="text-[10px] text-[#AAAAAA]">{stat!.label}</span>
                 <span className="text-[12px] font-semibold text-[#1A1A1A]">
-                  {stat.value}
+                  {stat!.value}
                 </span>
               </div>
             ))}
@@ -589,31 +569,29 @@ export default function CeoDashboardPage() {
         <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-[17px] flex flex-col">
           <div className="flex items-center justify-between mb-4">
             <span className="text-[13px] font-semibold text-[#1A1A1A]">
-              Cost breakdown · May 2026
+              Cost breakdown · {costBreakdown?.periodLabel ?? header?.periodLabel ?? "—"}
             </span>
             <span className="text-[11px] font-semibold text-[#534AB7] bg-[#EEEDFE] px-2 py-1 rounded-md">
-              {costBreakdown.totalLabel}
+              {costBreakdown?.totalLabel ?? "—"}
             </span>
           </div>
 
           <div className="flex items-center gap-4 mb-4">
             <div
               className="size-[88px] rounded-full shrink-0 relative"
-              style={{
-                background: `conic-gradient(#7B68EE 0% 38%, #3B82F6 38% 59%, #14B8A6 59% 73%, #F59E0B 73% 85%, #A855F7 85% 94%, #9CA3AF 94% 100%)`,
-              }}
+              style={{ background: conicGradient }}
             >
               <div className="absolute inset-[12px] rounded-full bg-white flex flex-col items-center justify-center">
                 <span className="text-[14px] font-bold text-[#1A1A1A] leading-none">
-                  {costBreakdown.totalCostValue}
+                  {costBreakdown?.totalCostValue ?? "—"}
                 </span>
                 <span className="text-[9px] text-[#AAAAAA] mt-0.5">
-                  {costBreakdown.totalCostLabel}
+                  {costBreakdown?.totalCostLabel ?? ""}
                 </span>
               </div>
             </div>
             <div className="flex-1 flex flex-col gap-1.5 min-w-0">
-              {costBreakdown.items.map((item) => (
+              {(costBreakdown?.items ?? []).map((item) => (
                 <div
                   key={item.label}
                   className="flex items-center justify-between gap-2"
@@ -642,10 +620,10 @@ export default function CeoDashboardPage() {
 
           <div className="border-t border-[#E0E0E0] pt-3">
             <span className="text-[10px] text-[#AAAAAA] block mb-2">
-              vs Apr 2026
+              vs prior period
             </span>
             <div className="flex items-center gap-2 flex-wrap">
-              {costBreakdown.vsLastMonth.map((stat) => (
+              {(costBreakdown?.vsLastMonth ?? []).map((stat) => (
                 <span
                   key={stat.label}
                   className={`text-[9px] font-medium px-1.5 py-0.5 rounded-md ${
@@ -663,7 +641,7 @@ export default function CeoDashboardPage() {
       </div>
 
       {/* Quick actions + Client pipeline + System activity + System health */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-3 min-w-0">
         {/* Quick actions */}
         <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-[17px] flex flex-col">
           <span className="text-[13px] font-semibold text-[#1A1A1A] mb-3">
@@ -671,12 +649,15 @@ export default function CeoDashboardPage() {
           </span>
           <div className="flex flex-col gap-1 -mx-1">
             {quickActions.map((action) => {
-              const Icon = action.icon;
+              const Icon =
+                QUICK_ACTION_ICONS[action.id as keyof typeof QUICK_ACTION_ICONS] ??
+                Briefcase;
               return (
                 <button
-                  key={action.title}
+                  key={action.id}
                   type="button"
-                  className="flex items-center gap-2.5 px-1 py-2 rounded-md hover:bg-[#F8F9FC] text-left transition-colors"
+                  onClick={() => handleQuickAction(action)}
+                  className="flex items-center gap-2.5 px-1 py-2 rounded-md hover:bg-[#F8F9FC] text-left transition-colors w-full"
                 >
                   <div
                     className={`size-7 rounded-md flex items-center justify-center shrink-0 ${
@@ -726,11 +707,11 @@ export default function CeoDashboardPage() {
               Client pipeline
             </span>
             <span className="text-[10px] text-[#AAAAAA]">
-              {clientPipeline.totalLabel}
+              {clientPipeline?.totalLabel ?? "—"}
             </span>
           </div>
           <div className="flex flex-col gap-2.5 flex-1">
-            {clientPipeline.stages.map((stage) => (
+            {(clientPipeline?.stages ?? []).map((stage) => (
               <div key={stage.label}>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[11px] text-[#888888]">
@@ -751,7 +732,7 @@ export default function CeoDashboardPage() {
           </div>
           <div className="border-t border-[#E0E0E0] mt-3 pt-3">
             <div className="flex items-center gap-4 mb-2">
-              {clientPipeline.footerStats.map((stat) => (
+              {(clientPipeline?.footerStats ?? []).map((stat) => (
                 <div key={stat.label}>
                   <span className="text-[9px] text-[#AAAAAA] block">
                     {stat.label}
@@ -763,13 +744,13 @@ export default function CeoDashboardPage() {
               ))}
             </div>
             <span className="text-[10px] text-[#AAAAAA]">
-              {clientPipeline.topClientLabel}
+              {clientPipeline?.topClientLabel ?? ""}
             </span>
           </div>
         </div>
 
         {/* System activity */}
-        <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-[17px] flex flex-col">
+        <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-[17px] flex flex-col min-w-0 overflow-hidden">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[13px] font-semibold text-[#1A1A1A]">
               System activity
@@ -781,20 +762,23 @@ export default function CeoDashboardPage() {
           </div>
           <div className="flex flex-col gap-3 flex-1">
             {systemActivity.map((item, idx) => (
-              <div key={idx} className="flex items-start gap-2.5">
+              <div key={idx} className="flex items-start gap-2.5 min-w-0">
                 <span
                   className="size-1.5 rounded-full mt-1.5 shrink-0"
                   style={{ backgroundColor: activityToneDot(item.tone) }}
                 />
-                <div className="min-w-0 flex-1">
-                  <span className="text-[11.5px] text-[#1A1A1A] leading-snug block">
+                <div className="min-w-0 flex-1 overflow-hidden">
+                  <span
+                    className="text-[11.5px] text-[#1A1A1A] leading-snug block break-all line-clamp-2"
+                    title={item.title}
+                  >
                     {item.title}
                   </span>
-                  <div className="flex items-center justify-between mt-0.5">
-                    <span className="text-[10px] text-[#AAAAAA] truncate">
+                  <div className="flex items-center justify-between gap-2 mt-0.5 min-w-0">
+                    <span className="text-[10px] text-[#AAAAAA] truncate min-w-0">
                       {item.meta}
                     </span>
-                    <span className="text-[10px] text-[#AAAAAA] shrink-0 ml-2">
+                    <span className="text-[10px] text-[#AAAAAA] shrink-0">
                       {item.time}
                     </span>
                   </div>
@@ -804,6 +788,7 @@ export default function CeoDashboardPage() {
           </div>
           <button
             type="button"
+            onClick={() => router.push("/admin/audit-logs")}
             className="text-[11px] font-medium text-[#534AB7] mt-3 pt-3 border-t border-[#E0E0E0] text-left hover:underline"
           >
             View full audit log →

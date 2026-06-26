@@ -24,6 +24,7 @@ import {
   fetchCfoEvents,
   fetchCfoInvoiceStatus,
   fetchCfoTasks,
+  type CfoMetric,
 } from '@/lib/cfo-api';
 
 type InvoicePeriod = 'month' | 'quarter' | 'year';
@@ -186,7 +187,10 @@ export default function CFODashboard() {
 
       {/* TOP METRICS GRIDS */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {(dashboardQuery.isLoading ? Array.from({ length: 4 }) : metrics).map((metric: any, idx) => (
+        {(dashboardQuery.isLoading
+          ? ([null, null, null, null] as (CfoMetric | null)[])
+          : metrics
+        ).map((metric, idx) => (
           <div key={metric?.id ?? idx} className="bg-white p-5 rounded-xl border border-[#EBEAEF] shadow-sm flex flex-col justify-between">
             {metric ? (
               <>
