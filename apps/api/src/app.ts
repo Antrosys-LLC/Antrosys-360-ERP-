@@ -32,6 +32,7 @@ import { ceoRoutes } from './modules/ceo/ceo.routes';
 import { invoiceRoutes } from './modules/invoice/invoice.routes';
 import { managerRoutes } from './modules/manager/manager.routes';
 import { notificationsRoutes } from './modules/notifications/notifications.routes';
+import { recruitRoutes } from './modules/recruit/recruit.routes';
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
@@ -90,6 +91,7 @@ export async function buildApp() {
       await api.register(bizIntelRoutes, { prefix: '/biz-intel' });
       await api.register(managerRoutes, { prefix: '/manager' });
       await api.register(notificationsRoutes, { prefix: '/notifications' });
+      await api.register(recruitRoutes, { prefix: '/recruit' });
     },
     { prefix: '/api/v1' },
   );

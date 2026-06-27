@@ -323,6 +323,8 @@ async function main() {
   const { seedCeoData } = await import('./ceo.seed');
   await seedCeoData();
 
+  const { seedRecruitData } = await import('./recruit.seed');
+  await seedRecruitData();
   // 8. Seed BI specific data
   const { seedBizIntelData } = await import('./biz_intel.seed');
   await seedBizIntelData(prisma);
