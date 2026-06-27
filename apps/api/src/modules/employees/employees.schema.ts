@@ -1,0 +1,84 @@
+import { z } from 'zod';
+
+// ============================================================================
+// PARAMS
+// ============================================================================
+
+export const employeeParamsSchema = z.object({
+  id: z.string().min(1, 'Employee ID is required'),
+});
+
+export type EmployeeParams = z.infer<typeof employeeParamsSchema>;
+
+// ============================================================================
+// QUERY – list employees (supports optional department filter)
+// ============================================================================
+
+export const listEmployeesQuerySchema = z.object({
+  department: z.string().optional(),
+  isActive: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === 'true')),
+  page: z
+    .string()
+    .optional()
+    .transform((v) => (v ? parseInt(v, 10) : 1)),
+  limit: z
+    .string()
+    .optional()
+    .transform((v) => (v ? parseInt(v, 10) : 50)),
+});
+
+export type ListEmployeesQuery = z.infer<typeof listEmployeesQuerySchema>;
+
+// ============================================================================
+// BODY – update personal information
+// ============================================================================
+
+export const updatePersonalBodySchema = z.object({
+  firstName: z.string().min(1).optional(),
+  lastName: z.string().min(1).optional(),
+  preferredName: z.string().nullable().optional(),
+  dateOfBirth: z.string().datetime().nullable().optional(),
+  gender: z.string().nullable().optional(),
+  nationality: z.string().nullable().optional(),
+  cnic: z.string().nullable().optional(),
+  personalEmail: z.string().email().nullable().optional(),
+  personalPhone: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  emergencyContactName: z.string().nullable().optional(),
+  emergencyContactRelation: z.string().nullable().optional(),
+  emergencyContactPhone: z.string().nullable().optional(),
+  homeAddress: z.string().nullable().optional(),
+  socialHandle: z.string().nullable().optional(),
+  // Employment fields (HR-writable)
+  department: z.string().nullable().optional(),
+  designation: z.string().nullable().optional(),
+  grade: z.string().nullable().optional(),
+  location: z.string().nullable().optional(),
+  employeeType: z.string().nullable().optional(),
+  employmentStatus: z.string().nullable().optional(),
+  contractType: z.string().nullable().optional(),
+  performanceScore: z.number().int().min(0).max(100).nullable().optional(),
+  kpiScore: z.number().int().min(0).max(100).nullable().optional(),
+});
+
+export type UpdatePersonalBody = z.infer<typeof updatePersonalBodySchema>;
+
+// ============================================================================
+// BODY – manage skills (add / update / remove)
+// ============================================================================
+
+export const upsertSkillBodySchema = z.object({
+  skillName: z.string().min(1),
+  percentage: z.number().int().min(0).max(100).nullable().optional(),
+});
+
+export const deleteSkillParamsSchema = z.object({
+  id: z.string().min(1),
+  skillId: z.string().min(1),
+});
+
+export type UpsertSkillBody = z.infer<typeof upsertSkillBodySchema>;
+export type DeleteSkillParams = z.infer<typeof deleteSkillParamsSchema>;
