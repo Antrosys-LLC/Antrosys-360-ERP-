@@ -6,7 +6,10 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/src/server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "db:migrate": "prisma migrate dev --name schema_update",
+    "db:seed": "prisma db seed",
+    "db:reset": "prisma migrate reset"
   },
   "dependencies": {
     "@antrosys/types": "workspace:*",
@@ -25,6 +28,7 @@
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^6.9.0",
     "otplib": "^12.0.1",
+    "pdfkit": "^0.19.1",
     "qrcode": "^1.5.4",
     "zod": "^3.24.0"
   },
@@ -33,6 +37,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.0.0",
     "@types/nodemailer": "^6.4.0",
+    "@types/pdfkit": "^0.17.6",
     "@types/qrcode": "^1.5.5",
     "prisma": "^6.1.0",
     "tsx": "^4.19.0",

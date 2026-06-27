@@ -16,6 +16,7 @@ import { usersRoutes } from './modules/users/users.routes';
 import { invoicesRoutes } from './modules/finance/invoices/invoices.routes';
 import { payrollRoutes } from './modules/finance/payroll/payroll.routes';
 import { employeesRoutes } from './modules/hr/employees/employees.routes';
+import { hrRoutes } from './modules/hr/hr.routes';
 import { recruitmentRoutes } from './modules/hr/recruitment/recruitment.routes';
 import { onboardingRoutes } from './modules/hr/onboarding/onboarding.routes';
 import { performanceRoutes } from './modules/hr/performance/performance.routes';
@@ -74,6 +75,7 @@ export async function buildApp() {
       await api.register(payrollRoutes, { prefix: '/finance/payroll' });
       await api.register(cfoRoutes, { prefix: '/cfo' });
       await api.register(ceoRoutes, { prefix: '/ceo' });
+      await api.register(hrRoutes, { prefix: '/hr' });
       await api.register(employeesRoutes, { prefix: '/hr/employees' });
       await api.register(recruitmentRoutes, { prefix: '/hr/recruitment' });
       await api.register(onboardingRoutes, { prefix: '/hr/onboarding' });

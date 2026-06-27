@@ -6,8 +6,9 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint",
-    "db:migrate": "dotenv -e .env -- pnpm --filter api exec prisma migrate dev --name schema_update",
-    "db:seed": "dotenv -e .env -- pnpm --filter api exec prisma db seed"
+    "db:migrate": "dotenv -e .env -- pnpm --filter api db:migrate",
+    "db:seed": "dotenv -e .env -- pnpm --filter api db:seed",
+    "db:reset": "dotenv -e .env -- pnpm --filter api db:reset"
   },
   "devDependencies": {
     "dotenv-cli": "^11.0.0",

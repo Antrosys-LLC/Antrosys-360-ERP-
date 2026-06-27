@@ -1,4 +1,4 @@
-import { PrismaClient, Role } from '@prisma/client';
+import { PrismaClient, Role, Department, Gender } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import process from 'process';
 
@@ -11,29 +11,30 @@ interface SeedUser {
   role: Role;
   firstName: string;
   lastName: string;
-  department: string;
+  department: Department;
   designation?: string;
+  gender: Gender;
 }
 
 const seedUsers: SeedUser[] = [
-  { email: 'ceo@antrosys.com', role: 'CEO', firstName: 'Chief', lastName: 'Executive', department: 'Executive', designation: 'CEO' },
-  { email: 'cfo@antrosys.com', role: 'CFO', firstName: 'Chief', lastName: 'Financial', department: 'Finance', designation: 'CFO' },
-  { email: 'operations_head@antrosys.com', role: 'OPERATIONS_HEAD', firstName: 'Operations', lastName: 'Head', department: 'Operations', designation: 'Head of Operations' },
-  { email: 'hr_head@antrosys.com', role: 'HR_HEAD', firstName: 'HR', lastName: 'Head', department: 'Human Resources', designation: 'Head of HR' },
-  { email: 'finance_manager@antrosys.com', role: 'FINANCE_MANAGER', firstName: 'Finance', lastName: 'Manager', department: 'Finance', designation: 'Finance Manager' },
-  { email: 'project_manager@antrosys.com', role: 'PROJECT_MANAGER', firstName: 'Project', lastName: 'Manager', department: 'Projects', designation: 'Project Manager' },
-  { email: 'manager@antrosys.com', role: 'MANAGER', firstName: 'General', lastName: 'Manager', department: 'Operations', designation: 'General Manager' },
-  { email: 'sub_manager@antrosys.com', role: 'SUB_MANAGER', firstName: 'Sub', lastName: 'Manager', department: 'Operations', designation: 'Sub Manager' },
-  { email: 'team_lead@antrosys.com', role: 'TEAM_LEAD', firstName: 'Team', lastName: 'Lead', department: 'Engineering', designation: 'Team Lead' },
+  { email: 'ceo@antrosys.com', role: 'CEO', firstName: 'Chief', lastName: 'Executive', department: 'OTHER', designation: 'CEO', gender: 'MALE' },
+  { email: 'cfo@antrosys.com', role: 'CFO', firstName: 'Chief', lastName: 'Financial', department: 'FINANCE', designation: 'CFO', gender: 'MALE' },
+  { email: 'operations_head@antrosys.com', role: 'OPERATIONS_HEAD', firstName: 'Operations', lastName: 'Head', department: 'OPERATIONS', designation: 'Head of Operations', gender: 'MALE' },
+  { email: 'hr_head@antrosys.com', role: 'HR_HEAD', firstName: 'HR', lastName: 'Head', department: 'HR', designation: 'Head of HR', gender: 'FEMALE' },
+  { email: 'finance_manager@antrosys.com', role: 'FINANCE_MANAGER', firstName: 'Finance', lastName: 'Manager', department: 'FINANCE', designation: 'Finance Manager', gender: 'FEMALE' },
+  { email: 'project_manager@antrosys.com', role: 'PROJECT_MANAGER', firstName: 'Project', lastName: 'Manager', department: 'OTHER', designation: 'Project Manager', gender: 'MALE' },
+  { email: 'manager@antrosys.com', role: 'MANAGER', firstName: 'General', lastName: 'Manager', department: 'OPERATIONS', designation: 'General Manager', gender: 'MALE' },
+  { email: 'sub_manager@antrosys.com', role: 'SUB_MANAGER', firstName: 'Sub', lastName: 'Manager', department: 'OPERATIONS', designation: 'Sub Manager', gender: 'MALE' },
+  { email: 'team_lead@antrosys.com', role: 'TEAM_LEAD', firstName: 'Team', lastName: 'Lead', department: 'ENGINEERING', designation: 'Team Lead', gender: 'FEMALE' },
   
   // Reports for sub-manager & manager
-  { email: 'sara.javed@antrosys.com', role: 'EMPLOYEE', firstName: 'Sara', lastName: 'Javed', department: 'Operations', designation: 'Senior Dev' },
-  { email: 'fawad.khan@antrosys.com', role: 'EMPLOYEE', firstName: 'Fawad', lastName: 'Khan', department: 'Operations', designation: 'Backend' },
-  { email: 'bilal.hassan@antrosys.com', role: 'EMPLOYEE', firstName: 'Bilal', lastName: 'Hassan', department: 'Operations', designation: 'DevOps' },
-  { email: 'hina.baig@antrosys.com', role: 'EMPLOYEE', firstName: 'Hina', lastName: 'Baig', department: 'Operations', designation: 'Frontend' },
-  { email: 'omar.mirza@antrosys.com', role: 'EMPLOYEE', firstName: 'Omar', lastName: 'Mirza', department: 'Operations', designation: 'QA Eng' },
-  { email: 'maria.raza@antrosys.com', role: 'EMPLOYEE', firstName: 'Maria', lastName: 'Raza', department: 'Operations', designation: 'UX Design' },
-  { email: 'nadia.qureshi@antrosys.com', role: 'EMPLOYEE', firstName: 'Nadia', lastName: 'Qureshi', department: 'Operations', designation: 'Product' },
+  { email: 'sara.javed@antrosys.com', role: 'EMPLOYEE', firstName: 'Sara', lastName: 'Javed', department: 'ENGINEERING', designation: 'Senior Product Designer', gender: 'FEMALE' },
+  { email: 'fawad.khan@antrosys.com', role: 'EMPLOYEE', firstName: 'Fawad', lastName: 'Khan', department: 'ENGINEERING', designation: 'Backend Engineer', gender: 'MALE' },
+  { email: 'bilal.hassan@antrosys.com', role: 'EMPLOYEE', firstName: 'Bilal', lastName: 'Hassan', department: 'OPERATIONS', designation: 'DevOps', gender: 'MALE' },
+  { email: 'hina.baig@antrosys.com', role: 'EMPLOYEE', firstName: 'Hina', lastName: 'Baig', department: 'SALES', designation: 'Marketing Manager', gender: 'FEMALE' },
+  { email: 'omar.mirza@antrosys.com', role: 'EMPLOYEE', firstName: 'Omar', lastName: 'Mirza', department: 'SALES', designation: 'Sales Executive', gender: 'MALE' },
+  { email: 'maria.raza@antrosys.com', role: 'EMPLOYEE', firstName: 'Maria', lastName: 'Raza', department: 'OPERATIONS', designation: 'UX Design', gender: 'FEMALE' },
+  { email: 'nadia.qureshi@antrosys.com', role: 'EMPLOYEE', firstName: 'Nadia', lastName: 'Qureshi', department: 'OPERATIONS', designation: 'Product', gender: 'FEMALE' },
 ];
 
 async function main() {
@@ -60,15 +61,21 @@ async function main() {
     // Create Employee record for all users
     await prisma.employee.upsert({
       where: { userId: user.id },
-      update: {},
+      update: {
+        department: seedUser.department,
+        gender: seedUser.gender,
+        designation: seedUser.designation || 'Staff',
+      },
       create: {
         userId: user.id,
         firstName: seedUser.firstName,
         lastName: seedUser.lastName,
         department: seedUser.department,
+        gender: seedUser.gender,
         designation: seedUser.designation || 'Staff',
         joiningDate: new Date('2024-01-01'),
         isActive: true,
+        employmentStatus: 'ACTIVE',
       },
     });
     console.log(`  📋 Created employee record for ${seedUser.email}`);
@@ -240,6 +247,9 @@ async function main() {
 
   const { seedCeoData } = await import('./ceo.seed');
   await seedCeoData();
+
+  const { seedHrData } = await import('./hr.seed');
+  await seedHrData();
 
   console.log('\n🎉 Seed completed successfully!');
 }
