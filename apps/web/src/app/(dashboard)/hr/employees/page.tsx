@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, UserPlus, Users } from 'lucide-react';
+import React, { useState, Suspense } from 'react';
+import { ChevronDown, ChevronUp, UserPlus, Users, Loader2 } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 
 // --- Interfaces for Mock Data ---
 interface Employee {
@@ -102,10 +103,19 @@ const mockData: Department[] = [
   },
 ];
 
-// --- Main Page Component ---
-export default function Page() {
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    dept1: true,
+// --- Inner Content Component (reads search params) ---
+function EmployeesContent() {
+  const searchParams = useSearchParams();
+  const departmentParam = searchParams.get('department');
+
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => {
+    if (departmentParam) {
+      const matchingDept = mockData.find(
+        (d) => d.name.toLowerCase() === departmentParam.toLowerCase()
+      );
+      if (matchingDept) return { [matchingDept.id]: true };
+    }
+    return { dept1: true };
   });
 
   const toggleSection = (id: string) => {
@@ -215,5 +225,18 @@ export default function Page() {
         )}
       </main>
     </div>
+  );
+}
+
+// --- Main Page Component (Suspense boundary for useSearchParams) ---
+export default function Page() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    }>
+      <EmployeesContent />
+    </Suspense>
   );
 }
