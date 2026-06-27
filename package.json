@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
+    "build:clean": "pnpm --filter web clean && turbo build",
     "lint": "turbo lint",
     "db:migrate": "dotenv -e .env -- pnpm --filter api db:migrate",
     "db:seed": "dotenv -e .env -- pnpm --filter api db:seed",
