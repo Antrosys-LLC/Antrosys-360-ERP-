@@ -1,116 +1,50 @@
-import React from 'react';
+"use client";
 
-// ==========================================
-// MOCK DATA CONFIGURATIONS (No hardcoded rows)
-// ==========================================
-
-const mockTabs = [
-  { id: 'library', name: 'Report Library', active: true },
-  { id: 'builder', name: 'Custom Builder', active: false },
-  { id: 'scheduled', name: 'Scheduled Reports', active: false },
-  { id: 'shared', name: 'Shared with me', active: false },
-  { id: 'favourites', name: 'Favourites', active: false },
-];
-
-const mockFilterChips = [
-  { label: 'All reports (24)', active: true },
-  { label: 'Finance (8)', active: false },
-  { label: 'HR & people (6)', active: false },
-  { label: 'Operations (5)', active: false },
-  { label: 'Sales (5)', active: false },
-];
-
-const mockMiniMetrics = [
-  { 
-    title: 'Revenue overview', 
-    lastRun: 'Last run: 2h ago', 
-    borderClass: 'border-l-[#7B6AE6]', 
-    sparklinePoints: '0,25 20,20 40,30 60,10 80,22 100,5' 
-  },
-  { 
-    title: 'Headcount & attrition', 
-    lastRun: 'Last run: 1d ago', 
-    borderClass: 'border-l-emerald-500', 
-    sparklinePoints: '0,15 20,18 40,10 60,25 80,20 100,28' 
-  },
-  { 
-    title: 'Payroll cost analysis', 
-    lastRun: 'Last run: 3d ago', 
-    borderClass: 'border-l-amber-600', 
-    sparklinePoints: '0,28 20,25 40,22 60,15 80,18 100,10' 
-  },
-];
-
-const mockReportCards = [
-  {
-    title: 'Monthly P&L',
-    description: 'Standard profit and loss statement with MoM variance.',
-    updated: 'Updated: Today',
-    iconType: 'trend'
-  },
-  {
-    title: 'Sales Pipeline',
-    description: 'Active deals by stage, probability, and expected close date.',
-    updated: 'Updated: 2d ago',
-    iconType: 'pipeline'
-  },
-  {
-    title: 'Budget vs Actual',
-    description: 'Departmental spending analysis against allocated budgets.',
-    updated: 'Updated: 1w ago',
-    iconType: 'target'
-  },
-  {
-    title: 'Employee Turnover',
-    description: 'Attrition rates by department and tenure brackets.',
-    updated: 'Updated: 1m ago',
-    iconType: 'turnover'
-  },
-];
-
-const mockDataSources = [
-  {
-    category: 'Finance',
-    isOpen: true,
-    items: ['Revenue', 'Expenses', 'Margin %'],
-  },
-  {
-    category: 'HR',
-    isOpen: true,
-    items: ['Headcount', 'Payroll cost'],
-  },
-  {
-    category: 'Time Dimensions',
-    isOpen: true,
-    items: ['Month'],
-  },
-];
-
-const mockChartBars = [
-  { month: 'Dec', revenueHeight: '42%', payrollHeight: '18%' },
-  { month: 'Jan', revenueHeight: '48%', payrollHeight: '22%' },
-  { month: 'Feb', revenueHeight: '38%', payrollHeight: '20%' },
-  { month: 'Mar', revenueHeight: '62%', payrollHeight: '26%' },
-  { month: 'Apr', revenueHeight: '56%', payrollHeight: '28%' },
-  { month: 'May', revenueHeight: '78%', payrollHeight: '32%' },
-];
-
-const mockSchedules = [
-  { title: 'Weekly Sales', info: 'Every Mon, 8:00 AM', icon: 'mail' },
-  { title: 'Monthly P&L', info: '1st of Month, 9:00 AM', icon: 'pdf' },
-];
-
-const mockRecentActivity = [
-  { name: 'Revenue overview', duration: '1.2s', status: 'Completed', failed: false },
-  { name: 'Headcount & attrition', duration: '3.4s', status: 'Completed', failed: false },
-  { name: 'Payroll cost analysis', duration: '-', status: 'Failed', failed: true },
-];
-
-// ==========================================
-// COMPONENT IMPLEMENTATION
-// ==========================================
+import React, { useState, useEffect } from 'react';
+import apiClient from '@/lib/api-client';
 
 export default function BusinessIntelligenceDashboard() {
+  const [data, setData] = useState<{ module?: string; status?: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiClient.get('/reports')
+      .then(res => setData(res.data))
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#F7F8FC] flex items-center justify-center">
+        <div className="flex items-center gap-2">
+          <svg className="animate-spin h-5 w-5 text-[#7B6AE6]" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="text-sm text-gray-500 font-medium">Loading reports...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-[#F7F8FC] flex items-center justify-center">
+        <div className="bg-white rounded-lg p-6 shadow-sm text-center max-w-md">
+          <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center mx-auto mb-3">
+            <svg className="w-6 h-6 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h3 className="text-sm font-bold text-gray-900 mb-1">Failed to load reports</h3>
+          <p className="text-xs text-gray-500">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F7F8FC] text-[#1A1A1A] font-sans antialiased">
       
@@ -125,21 +59,13 @@ export default function BusinessIntelligenceDashboard() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Date Picker Button */}
           <button className="flex items-center gap-2 px-3 py-1.5 border border-[#7B6AE6] text-[#7B6AE6] rounded text-sm font-semibold bg-white hover:bg-gray-50 transition-colors">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
             <span>May 1 – May 31, 2026</span>
           </button>
-
-          {/* Quick Actions */}
           <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-          </button>
-          <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-full relative transition-colors">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
             </svg>
@@ -149,13 +75,9 @@ export default function BusinessIntelligenceDashboard() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
             </svg>
           </button>
-
-          {/* New Report Button */}
           <button className="bg-[#7B6AE6] hover:bg-opacity-90 text-white font-medium text-sm px-4 py-1.5 rounded flex items-center gap-1.5 shadow-sm transition-all">
             <span>+</span> New report
           </button>
-
-          {/* Avatar */}
           <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-200 ml-1">
             <div className="w-full h-full bg-slate-700 flex items-center justify-center text-xs text-white font-bold">BI</div>
           </div>
@@ -164,16 +86,16 @@ export default function BusinessIntelligenceDashboard() {
 
       {/* Sub-Header Navigation Tabs */}
       <nav className="px-6 bg-white border-b border-gray-200 flex gap-6 text-sm font-medium text-gray-500">
-        {mockTabs.map((tab) => (
+        {['Report Library', 'Custom Builder', 'Scheduled Reports', 'Shared with me', 'Favourites'].map((tab, i) => (
           <button
-            key={tab.id}
+            key={tab}
             className={`py-3 px-1 border-b-2 transition-colors ${
-              tab.active 
-                ? 'border-[#7B6AE6] text-[#7B6AE6] font-semibold' 
+              i === 0
+                ? 'border-[#7B6AE6] text-[#7B6AE6] font-semibold'
                 : 'border-transparent hover:text-gray-900'
             }`}
           >
-            {tab.name}
+            {tab}
           </button>
         ))}
       </nav>
@@ -181,9 +103,38 @@ export default function BusinessIntelligenceDashboard() {
       {/* Main Canvas Workspace Container */}
       <main className="p-6 max-w-[1600px] mx-auto space-y-6">
         
+        {/* API Response Banner */}
+        <div className="bg-white rounded-md border border-gray-200 p-4 flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-[#f0effd] flex items-center justify-center text-[#7B6AE6]">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <div>
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Module Status</span>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-sm font-bold text-gray-900">{data?.module || 'N/A'}</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  data?.status === 'wip' ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                }`}>
+                  {data?.status || 'unknown'}
+                </span>
+              </div>
+            </div>
+          </div>
+          <span className="text-xs text-gray-400 font-medium">Connected to /api/v1/reports</span>
+        </div>
+
         {/* Row 1: Segment Filter Chips */}
         <div className="flex flex-wrap items-center gap-2">
-          {mockFilterChips.map((chip, index) => (
+          {[ 
+            { label: 'All reports (24)', active: true },
+            { label: 'Finance (8)', active: false },
+            { label: 'HR & people (6)', active: false },
+            { label: 'Operations (5)', active: false },
+            { label: 'Sales (5)', active: false },
+          ].map((chip, index) => (
             <button
               key={index}
               className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${
@@ -199,7 +150,11 @@ export default function BusinessIntelligenceDashboard() {
 
         {/* Row 2: Sparkline Executions Widgets */}
         <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {mockMiniMetrics.map((card, index) => (
+          {[
+            { title: 'Revenue overview', lastRun: 'Last run: 2h ago', borderClass: 'border-l-[#7B6AE6]' },
+            { title: 'Headcount & attrition', lastRun: 'Last run: 1d ago', borderClass: 'border-l-emerald-500' },
+            { title: 'Payroll cost analysis', lastRun: 'Last run: 3d ago', borderClass: 'border-l-amber-600' },
+          ].map((card, index) => (
             <div 
               key={index} 
               className={`bg-white rounded-md p-4 border border-gray-200 border-l-4 ${card.borderClass} flex items-center justify-between shadow-sm`}
@@ -214,7 +169,7 @@ export default function BusinessIntelligenceDashboard() {
                     fill="none"
                     stroke={index === 0 ? '#7B6AE6' : index === 1 ? '#10b981' : '#b45309'}
                     strokeWidth="2"
-                    points={card.sparklinePoints}
+                    points="0,25 20,20 40,30 60,10 80,22 100,5"
                   />
                 </svg>
               </div>
@@ -224,37 +179,24 @@ export default function BusinessIntelligenceDashboard() {
 
         {/* Row 3: Report Cards Grid */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {mockReportCards.map((report, index) => (
+          {[
+            { title: 'Monthly P&L', description: 'Standard profit and loss statement with MoM variance.', iconType: 'trend' },
+            { title: 'Sales Pipeline', description: 'Active deals by stage, probability, and expected close date.', iconType: 'pipeline' },
+            { title: 'Budget vs Actual', description: 'Departmental spending analysis against allocated budgets.', iconType: 'target' },
+            { title: 'Employee Turnover', description: 'Attrition rates by department and tenure brackets.', iconType: 'turnover' },
+          ].map((report, index) => (
             <div key={index} className="bg-white rounded-md border border-gray-200 p-5 flex flex-col justify-between hover:border-gray-300 transition-all shadow-sm">
               <div>
-                {/* Visual Icon Blocks */}
                 <div className="w-10 h-10 rounded bg-[#f0effd] flex items-center justify-center text-[#7B6AE6] mb-4">
-                  {report.iconType === 'trend' && (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                    </svg>
-                  )}
-                  {report.iconType === 'pipeline' && (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2z" />
-                    </svg>
-                  )}
-                  {report.iconType === 'target' && (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 22a10 10 0 100-20 10 10 0 000 20zm0 0v-3m0-14V3m9 9h-3m-14 0H3" />
-                    </svg>
-                  )}
-                  {report.iconType === 'turnover' && (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 12l3-3 3 3 4-4M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                    </svg>
-                  )}
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                  </svg>
                 </div>
                 <h4 className="text-base font-bold text-gray-900 mb-1">{report.title}</h4>
                 <p className="text-xs text-gray-500 leading-relaxed mb-6">{report.description}</p>
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-gray-100 text-[11px] font-semibold text-gray-400">
-                <span>{report.updated}</span>
+                <span>Ready to run</span>
                 <button className="text-[#7B6AE6] hover:text-opacity-80 font-bold tracking-wider uppercase text-[11px] transition-colors">Run</button>
               </div>
             </div>
@@ -274,11 +216,13 @@ export default function BusinessIntelligenceDashboard() {
 
           <div className="bg-white rounded-xl border border-gray-200 text-gray-900 grid grid-cols-1 lg:grid-cols-12 overflow-hidden shadow-sm">
             
-            {/* Column A: Data Sources */}
             <div className="lg:col-span-3 border-r border-gray-200 p-4 bg-white space-y-4">
               <h5 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Data Sources</h5>
-              
-              {mockDataSources.map((source, sIdx) => (
+              {[
+                { category: 'Finance', items: ['Revenue', 'Expenses', 'Margin %'] },
+                { category: 'HR', items: ['Headcount', 'Payroll cost'] },
+                { category: 'Time Dimensions', items: ['Month'] },
+              ].map((source, sIdx) => (
                 <div key={sIdx} className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs font-bold text-gray-700 py-1">
                     <span>{source.category}</span>
@@ -289,14 +233,6 @@ export default function BusinessIntelligenceDashboard() {
                   <div className="space-y-1 pl-1">
                     {source.items.map((item, iIdx) => (
                       <div key={iIdx} className="flex items-center gap-2 bg-white border border-gray-200 rounded px-2 py-1.5 text-xs text-gray-800 shadow-sm cursor-grab hover:bg-gray-50 transition-colors">
-                        <div className="grid grid-cols-2 gap-0.5 opacity-30">
-                          <span className="w-1 h-1 bg-gray-600 rounded-full"></span>
-                          <span className="w-1 h-1 bg-gray-600 rounded-full"></span>
-                          <span className="w-1 h-1 bg-gray-600 rounded-full"></span>
-                          <span className="w-1 h-1 bg-gray-600 rounded-full"></span>
-                          <span className="w-1 h-1 bg-gray-600 rounded-full"></span>
-                          <span className="w-1 h-1 bg-gray-600 rounded-full"></span>
-                        </div>
                         <span>{item}</span>
                       </div>
                     ))}
@@ -305,16 +241,10 @@ export default function BusinessIntelligenceDashboard() {
               ))}
             </div>
 
-            {/* Column B: Canvas Layout Container */}
             <div className="lg:col-span-6 p-4 flex flex-col justify-between min-h-[420px] bg-white">
               <div className="space-y-3">
                 <div className="flex items-center justify-between mb-1">
                   <h5 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Canvas Preview</h5>
-                  <button className="text-gray-400 hover:text-gray-600 transition-colors">
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H17" />
-                    </svg>
-                  </button>
                 </div>
 
                 <div className="grid grid-cols-12 items-center gap-2 bg-white border border-dashed border-gray-300 rounded-lg p-2 min-h-[42px]">
@@ -339,7 +269,6 @@ export default function BusinessIntelligenceDashboard() {
                 </div>
               </div>
 
-              {/* Central Chart Visual Overlay */}
               <div className="mt-6 flex-1 flex flex-col justify-end bg-white border border-gray-200 rounded-lg p-4 min-h-[220px]">
                 <div className="w-full h-full flex items-stretch relative">
                   <div className="absolute left-0 top-0 bottom-6 flex flex-col justify-between text-[10px] text-gray-400 font-bold z-10 select-none pointer-events-none">
@@ -347,27 +276,19 @@ export default function BusinessIntelligenceDashboard() {
                     <span>500K</span>
                     <span>0</span>
                   </div>
-
                   <div className="absolute left-8 right-0 top-0 bottom-6 flex flex-col justify-between pointer-events-none opacity-60">
                     <div className="w-full border-t border-gray-100"></div>
                     <div className="w-full border-t border-gray-100"></div>
                     <div className="w-full border-t border-gray-100"></div>
                   </div>
-
                   <div className="flex-1 ml-8 flex items-end justify-around h-full pb-6 z-20">
-                    {mockChartBars.map((item, idx) => (
+                    {['Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May'].map((month, idx) => (
                       <div key={idx} className="h-full flex flex-col justify-end items-center w-12 group">
                         <div className="flex items-end gap-1 w-full h-full justify-center">
-                          <div 
-                            className="w-3 bg-[#7B6AE6] rounded-t-sm transition-all" 
-                            style={{ height: item.revenueHeight }}
-                          />
-                          <div 
-                            className="w-3 bg-[#8c6227] rounded-t-sm transition-all" 
-                            style={{ height: item.payrollHeight }}
-                          />
+                          <div className="w-3 bg-[#7B6AE6] rounded-t-sm transition-all" style={{ height: `${[42, 48, 38, 62, 56, 78][idx]}%` }} />
+                          <div className="w-3 bg-[#8c6227] rounded-t-sm transition-all" style={{ height: `${[18, 22, 20, 26, 28, 32][idx]}%` }} />
                         </div>
-                        <span className="text-[10px] text-gray-400 font-bold mt-2 absolute bottom-0">{item.month}</span>
+                        <span className="text-[10px] text-gray-400 font-bold mt-2 absolute bottom-0">{month}</span>
                       </div>
                     ))}
                   </div>
@@ -375,52 +296,20 @@ export default function BusinessIntelligenceDashboard() {
               </div>
             </div>
 
-            {/* Column C: Custom Configuration Controls */}
             <div className="lg:col-span-3 border-l border-gray-200 p-4 bg-white flex flex-col justify-between">
               <div className="space-y-4">
                 <h5 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Settings</h5>
-                
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-gray-700">Show data labels</label>
-                    <div className="w-8 h-4 bg-[#7B6AE6] rounded-full relative p-0.5 cursor-pointer flex items-center justify-end">
-                      <div className="w-3 h-3 bg-white rounded-full"></div>
+                  {['Show data labels', 'Show legend', 'Trendline'].map((label, i) => (
+                    <div key={i} className="flex items-center justify-between">
+                      <label className={`text-xs font-medium ${i < 2 ? 'text-gray-700' : 'text-gray-300'}`}>{label}</label>
+                      <div className={`w-8 h-4 rounded-full relative p-0.5 cursor-pointer flex items-center ${i < 2 ? 'bg-[#7B6AE6] justify-end' : 'bg-gray-200 justify-start'}`}>
+                        <div className="w-3 h-3 bg-white rounded-full"></div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-gray-700">Show legend</label>
-                    <div className="w-8 h-4 bg-[#7B6AE6] rounded-full relative p-0.5 cursor-pointer flex items-center justify-end">
-                      <div className="w-3 h-3 bg-white rounded-full"></div>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-gray-300">Trendline</label>
-                    <div className="w-8 h-4 bg-gray-200 rounded-full relative p-0.5 cursor-pointer flex items-center justify-start">
-                      <div className="w-3 h-3 bg-white rounded-full shadow-sm"></div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-500 block">Active Filters</label>
-                  <div className="border border-gray-200 rounded px-2.5 py-1.5 flex items-center justify-between bg-white text-xs shadow-sm">
-                    <span className="text-gray-800 font-medium">Date: Last 6 Months</span>
-                    <button className="text-gray-400 text-sm font-semibold hover:text-gray-600">×</button>
-                  </div>
-                  <button className="text-[11px] text-[#7B6AE6] font-bold hover:underline block pt-1">+ Add filter</button>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-500 block">Export Format</label>
-                  <div className="border border-gray-200 rounded px-2.5 py-1.5 flex items-center justify-between bg-white text-xs shadow-sm cursor-pointer hover:bg-gray-50 transition-colors">
-                    <span className="text-gray-800 font-medium">PDF Document (.pdf)</span>
-                    <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
+                  ))}
                 </div>
               </div>
-
               <button className="w-full bg-[#7B6AE6] hover:bg-opacity-95 text-white font-bold text-xs tracking-wide py-2.5 rounded shadow-sm mt-6 uppercase transition-all">
                 Save & Run
               </button>
@@ -438,71 +327,12 @@ export default function BusinessIntelligenceDashboard() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            
-            {/* Active Schedules Cards block */}
-            <div className="lg:col-span-5 space-y-2">
-              <h5 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Active Schedules</h5>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {mockSchedules.map((sched, index) => (
-                  <div key={index} className="bg-white border border-gray-200 rounded-md p-4 flex items-start justify-between hover:border-gray-300 transition-all shadow-sm">
-                    <div className="space-y-1">
-                      <h6 className="text-xs font-bold text-gray-900">{sched.title}</h6>
-                      <p className="text-[11px] text-gray-500 font-medium">{sched.info}</p>
-                    </div>
-                    
-                    <div className="text-[#7B6AE6] opacity-90 pl-2">
-                      {sched.icon === 'mail' ? (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                      ) : (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                        </svg>
-                      )}
-                    </div>
-                  </div>
-                ))}
+            <div className="lg:col-span-12 space-y-2">
+              <h5 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Backend Response</h5>
+              <div className="bg-white border border-gray-200 rounded-md p-4 shadow-sm">
+                <pre className="text-xs text-gray-600 font-mono">{JSON.stringify(data, null, 2)}</pre>
               </div>
             </div>
-
-            {/* Dynamic Activity Logs Table */}
-            <div className="lg:col-span-7 space-y-2">
-              <h5 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Recent Activity</h5>
-              
-              <div className="bg-white border border-gray-200 rounded-md overflow-hidden shadow-sm">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-gray-200 bg-gray-50/70 text-[10px] text-gray-400 font-bold uppercase tracking-wider">
-                      <th className="py-2.5 px-4">Report Name</th>
-                      <th className="py-2.5 px-4">Duration</th>
-                      <th className="py-2.5 px-4 text-right">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 text-xs font-semibold">
-                    {mockRecentActivity.map((row, index) => (
-                      <tr key={index} className="hover:bg-gray-50/50 transition-colors">
-                        <td className={`py-3 px-4 ${row.failed ? 'text-rose-600 font-bold' : 'text-gray-800'}`}>
-                          {row.name}
-                        </td>
-                        <td className="py-3 px-4 text-gray-400 font-medium">{row.duration}</td>
-                        <td className="py-3 px-4 text-right">
-                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
-                            row.failed 
-                              ? 'bg-rose-50 text-rose-600 border border-rose-200' 
-                              : 'bg-emerald-50 text-emerald-600 border border-emerald-200'
-                          }`}>
-                            {row.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
           </div>
         </section>
 

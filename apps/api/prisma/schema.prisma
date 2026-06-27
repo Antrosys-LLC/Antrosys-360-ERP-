@@ -115,9 +115,9 @@ model User {
 }
 
 model Employee {
-  id                     String         @id @default(cuid())
-  userId                 String         @unique
-  user                   User           @relation(fields: [userId], references: [id])
+  id                     String            @id @default(cuid())
+  userId                 String            @unique
+  user                   User              @relation(fields: [userId], references: [id])
   firstName              String
   lastName               String
   dateOfBirth            DateTime?
@@ -128,16 +128,18 @@ model Employee {
   contractType           String?
   probationEnd           DateTime?
   managerId              String?
-  manager                Employee?      @relation("ManagerReports", fields: [managerId], references: [id])
-  reports                Employee[]     @relation("ManagerReports")
-  isActive               Boolean        @default(true)
-  createdAt              DateTime       @default(now())
-  updatedAt              DateTime       @updatedAt
+  manager                Employee?         @relation("ManagerReports", fields: [managerId], references: [id])
+  reports                Employee[]        @relation("ManagerReports")
+  isActive               Boolean           @default(true)
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
   approvalTasksRequested ApprovalTask[]
   attendances            Attendance[]
-  leaveRequests          LeaveRequest[]   @relation("EmployeeLeaves")
-  approvedLeaves         LeaveRequest[]   @relation("ApprovedLeaves")
+  leaveRequests          LeaveRequest[]    @relation("EmployeeLeaves")
+  approvedLeaves         LeaveRequest[]    @relation("ApprovedLeaves")
   announcements          Announcement[]
+  onboardings            Onboarding[]      @relation("EmployeeOnboardings")
+  buddyOnboardings       Onboarding[]      @relation("OnboardingBuddy")
 
   @@map("employees")
 }
@@ -173,11 +175,69 @@ model Client {
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
   invoices       Invoice[]
+  profile        ClientProfile?
+  timelineEvents ClientTimelineEvent[]
+  tasks          ClientTask[]
+  pipelineDeals  SalesPipelineDeal[]
 
   @@index([pipelineStage])
   @@index([isAtRisk])
   @@index([renewalDueAt])
   @@map("clients")
+}
+
+model ClientProfile {
+  id          String   @id @default(cuid())
+  clientId    String   @unique
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  sector      String?
+  tier        String   @default("Mid-Market")
+  healthScore Int      @default(100)
+  ltv         Decimal? @db.Decimal(14, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("client_profiles")
+}
+
+model ClientTimelineEvent {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  text      String
+  eventType String   @default("info")
+  createdAt DateTime @default(now())
+
+  @@index([clientId])
+  @@map("client_timeline_events")
+}
+
+model ClientTask {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  text      String
+  date      String?
+  urgent    Boolean  @default(false)
+  done      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  @@map("client_tasks")
+}
+
+model SalesPipelineDeal {
+  id        String              @id @default(cuid())
+  clientId  String
+  client    Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  stage     ClientPipelineStage
+  dealSize  Decimal             @db.Decimal(14, 2)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@index([stage])
+  @@map("sales_pipeline_deals")
 }
 
 model Invoice {
@@ -485,6 +545,115 @@ model DepartmentKpi {
   updatedAt       DateTime @updatedAt
 
   @@map("department_kpis")
+}
+
+model KpiCard {
+  id          String   @id @default(cuid())
+  title       String
+  status      String   @default("on-track")
+  value       String
+  target      String
+  progress    Int      @default(0)
+  trendType   String   @default("bar")
+  trendData   Json     @default("[0]")
+  category    String?
+  period      String
+  quarter     String?
+  department  String?
+  assigneeUrl String?
+  badgeText   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("kpi_cards")
+}
+
+model DocumentFolder {
+  id        String           @id @default(cuid())
+  name      String
+  parentId  String?
+  parent    DocumentFolder?  @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children  DocumentFolder[] @relation("FolderHierarchy")
+  path      String
+  isLocked  Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  documents Document[]
+
+  @@map("document_folders")
+}
+
+model Document {
+  id              String          @id @default(cuid())
+  name            String
+  type            String
+  sizeBytes       Int
+  isConfidential  Boolean         @default(false)
+  fileUrl         String?
+  folderId        String
+  folder          DocumentFolder  @relation(fields: [folderId], references: [id])
+  previewText     String?
+  createdByUserId String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([folderId])
+  @@map("documents")
+}
+
+model Onboarding {
+  id           String   @id @default(cuid())
+  employeeId   String
+  employee     Employee @relation("EmployeeOnboardings", fields: [employeeId], references: [id])
+  buddyId      String?
+  buddy        Employee? @relation("OnboardingBuddy", fields: [buddyId], references: [id])
+  startDate    DateTime
+  phase        Int      @default(1)
+  completion   Int      @default(0)
+  templateType String?
+  email        String?
+  dept         String?
+  avatarText   String?
+  color        String?
+  hasWarning   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  tasks        OnboardingTask[]
+  documents    OnboardingDocument[]
+
+  @@index([employeeId])
+  @@map("onboardings")
+}
+
+model OnboardingTask {
+  id           String    @id @default(cuid())
+  onboardingId String
+  onboarding   Onboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  text         String
+  subtext      String?
+  hasAction    Boolean   @default(false)
+  phase        Int
+  done         Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([onboardingId])
+  @@map("onboarding_tasks")
+}
+
+model OnboardingDocument {
+  id           String    @id @default(cuid())
+  onboardingId String
+  onboarding   Onboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  name         String
+  type         String
+  status       String    @default("pending")
+  fileUrl      String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([onboardingId])
+  @@map("onboarding_documents")
 }
 
 model Notification {

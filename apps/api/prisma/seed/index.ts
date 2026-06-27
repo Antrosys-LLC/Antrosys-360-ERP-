@@ -241,6 +241,9 @@ async function main() {
   const { seedCeoData } = await import('./ceo.seed');
   await seedCeoData();
 
+  const { seedKpiData } = await import('./kpi.seed');
+  await seedKpiData();
+
   console.log('\n🎉 Seed completed successfully!');
 }
 

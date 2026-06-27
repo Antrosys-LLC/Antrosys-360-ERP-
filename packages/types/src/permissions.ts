@@ -22,7 +22,11 @@ export type Permission =
   | 'announcements:write'
   | 'admin:read'
   | 'admin:write'
-  | 'audit:read';
+  | 'audit:read'
+  | 'kpi:read'
+  | 'kpi:write'
+  | 'documents:read'
+  | 'documents:write';
 
 const ALL_PERMISSIONS: Permission[] = [
   'finance:read',
@@ -47,6 +51,10 @@ const ALL_PERMISSIONS: Permission[] = [
   'admin:read',
   'admin:write',
   'audit:read',
+  'kpi:read',
+  'kpi:write',
+  'documents:read',
+  'documents:write',
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
@@ -59,6 +67,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'payroll:write',
     'reports:read',
     'clients:read',
+    'kpi:read',
   ],
 
   [Role.OPERATIONS_HEAD]: [
@@ -79,6 +88,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'recruitment:write',
     'attendance:read',
     'leave:read',
+    'documents:read',
   ],
 
   [Role.FINANCE_MANAGER]: [
@@ -91,6 +101,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   [Role.PROJECT_MANAGER]: [
     'clients:read',
     'reports:read',
+    'kpi:read',
+    'documents:read',
   ],
 
   [Role.MANAGER]: [
@@ -100,6 +112,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'hr:read',
     'announcements:read',
     'announcements:write',
+    'kpi:read',
+    'documents:read',
   ],
 
   [Role.SUB_MANAGER]: [
@@ -109,11 +123,14 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'hr:read',
     'announcements:read',
     'announcements:write',
+    'kpi:read',
+    'documents:read',
   ],
 
   [Role.TEAM_LEAD]: [
     'attendance:read',
     'hr:read',
+    'kpi:read',
   ],
 
   [Role.EMPLOYEE]: [

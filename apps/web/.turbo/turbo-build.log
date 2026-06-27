@@ -1,5 +1,5 @@
 
-> web@0.1.0 build C:\ANTROSYS_ERP\Antrosys-360-ERP-\apps\web
+> web@0.1.0 build C:\Users\hyder\Desktop\Full Stack\Antrosys-360-ERP-\apps\web
 > next build
 
   ▲ Next.js 14.2.35
@@ -7,53 +7,17 @@
    Creating an optimized production build ...
  ✓ Compiled successfully
    Linting and checking validity of types ...
-   Collecting page data ...
-   Generating static pages (0/30) ...
-   Generating static pages (7/30) 
-   Generating static pages (14/30) 
-   Generating static pages (22/30) 
- ✓ Generating static pages (30/30)
-   Finalizing page optimization ...
-   Collecting build traces ...
+Failed to compile.
 
-Route (app)                              Size     First Load JS
-┌ ○ /                                    186 B          87.9 kB
-├ ○ /_not-found                          189 B          87.9 kB
-├ ○ /admin/users                         189 B          87.9 kB
-├ ƒ /api/auth/[...nextauth]              0 B                0 B
-├ ○ /biz_intel                           186 B          87.9 kB
-├ ○ /ceo                                 5.71 kB        93.5 kB
-├ ○ /cfo                                 6.28 kB         128 kB
-├ ○ /clients                             6.95 kB        94.7 kB
-├ ○ /documents                           8.02 kB        95.8 kB
-├ ○ /employee                            4.25 kB          92 kB
-├ ○ /employee/employee_profile_personal  6.87 kB        94.6 kB
-├ ○ /finance/invoices                    186 B          87.9 kB
-├ ○ /finance/payroll                     186 B          87.9 kB
-├ ○ /hr                                  4.3 kB           92 kB
-├ ○ /hr/employees                        186 B          87.9 kB
-├ ○ /hr/recruitment                      186 B          87.9 kB
-├ ○ /invoice                             10.8 kB        98.6 kB
-├ ○ /kpi                                 5.21 kB          93 kB
-├ ○ /leave                               186 B          87.9 kB
-├ ○ /ledger                              186 B          87.9 kB
-├ ○ /login                               25.4 kB         131 kB
-├ ○ /manager                             8.39 kB         148 kB
-├ ○ /onboard                             7.79 kB        95.5 kB
-├ ○ /operations                          3.76 kB        91.5 kB
-├ ○ /operations/attendance               186 B          87.9 kB
-├ ○ /operations/leave                    185 B          87.9 kB
-├ ○ /payroll                             5.69 kB        93.4 kB
-├ ○ /recruit                             5.89 kB        93.6 kB
-└ ○ /reports                             186 B          87.9 kB
-+ First Load JS shared by all            87.7 kB
-  ├ chunks/2749-f7e71af2f495c506.js      31.9 kB
-  ├ chunks/5b8f0dd8-9ab9185c124fb412.js  53.6 kB
-  └ other shared chunks (total)          2.18 kB
+./src/app/(dashboard)/documents/page.tsx:130:55
+Type error: 'selectedFile' is possibly 'null'.
 
-
-ƒ Middleware                             47.7 kB
-
-○  (Static)   prerendered as static content
-ƒ  (Dynamic)  server-rendered on demand
-
+[0m [90m 128 |[39m     [36masync[39m [36mfunction[39m fetchDocumentDetails() {[0m
+[0m [90m 129 |[39m       [36mtry[39m {[0m
+[0m[31m[1m>[22m[39m[90m 130 |[39m         [36mconst[39m res [33m=[39m [36mawait[39m apiClient[33m.[39m[36mget[39m([32m`/documents/${selectedFile.id}`[39m)[33m;[39m[0m
+[0m [90m     |[39m                                                       [31m[1m^[22m[39m[0m
+[0m [90m 131 |[39m         setSelectedFile(res[33m.[39mdata[33m.[39mdata)[33m;[39m[0m
+[0m [90m 132 |[39m       } [36mcatch[39m (err) {[0m
+[0m [90m 133 |[39m         console[33m.[39merror([32m'Failed to fetch document details'[39m[33m,[39m err)[33m;[39m[0m
+Next.js build worker exited with code: 1 and signal: null
+ ELIFECYCLE  Command failed with exit code 1.

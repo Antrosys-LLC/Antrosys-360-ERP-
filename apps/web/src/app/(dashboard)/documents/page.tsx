@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { 
   Folder, 
   ChevronRight, 
@@ -11,227 +11,212 @@ import {
   Grid, 
   List, 
   Upload, 
-  Bell, 
   Download, 
   Share2, 
   MoreHorizontal, 
   X, 
   CheckCircle2, 
-  MessageSquare, 
-  User, 
   Lock,
   Plus,
   Info
 } from "lucide-react";
+import apiClient from "@/lib/api-client";
 
-/* ==========================================================================
-   REALISTIC MOCK DATA STRUCTURES
-   ========================================================================== */
-const INITIAL_DIRECTORIES = [
-  { id: "finance", name: "Finance", hasChildren: true, path: "Finance" },
-  { 
-    id: "hr-people", 
-    name: "HR & People", 
-    hasChildren: true, 
-    path: "HR & People",
-    children: [
-      { id: "all-hr", name: "Overview Documents", path: "HR & People / Overview" },
-      { 
-        id: "contracts", 
-        name: "Contracts", 
-        path: "HR & People / Contracts",
-        children: [
-          { id: "employment-conts", name: "Employment conts", path: "HR & People / Contracts / Employment conts" },
-          { id: "vendor-agreements", name: "Vendor agreements", path: "HR & People / Contracts / Vendor agreements" },
-        ]
-      },
-      { id: "confidential-hr", name: "Confidential HR", path: "HR & People / Confidential HR", isLocked: true },
-    ]
-  },
-  { id: "operations", name: "Operations", hasChildren: true, path: "Operations" },
-];
-
-const MOCK_FILES = [
-  {
-    id: "HR-23-0891",
-    name: "Sara Javed contract",
-    type: "PDF",
-    size: "2.4 MB",
-    isConfidential: true,
-    updatedAt: "2 hrs ago",
-    createdAt: "Oct 12, 2023",
-    createdBy: "HR System",
-    modifiedAt: "Today, 08:41 AM",
-    modifiedBy: "John Doe",
-    location: "HR & People / Contracts",
-    folderId: "contracts",
-    previewText: "EMPLOYMENT AGREEMENT entry code 4091. This document certifies the contractual standing of internal software engineering systems operations personnel..."
-  },
-  {
-    id: "VN-23-0112",
-    name: "Q3 Vendor Agreement",
-    type: "PDF",
-    size: "1.1 MB",
-    isConfidential: false,
-    updatedAt: "Updated yesterday",
-    createdAt: "Oct 11, 2023",
-    createdBy: "Finance System",
-    modifiedAt: "Yesterday, 04:15 PM",
-    modifiedBy: "Sarah Jenkins",
-    location: "HR & People / Contracts",
-    folderId: "contracts",
-    previewText: "VENDOR SERVICE LEVEL AGREEMENT (SLA). Clauses defined underneath section 4(b) outline explicit runtime expectations and server multi-tenant parameters..."
-  },
-  {
-    id: "TMP-45-804",
-    name: "Contract Template v4",
-    type: "DOCX",
-    size: "45 KB",
-    isConfidential: false,
-    updatedAt: "Updated Oct 12",
-    createdAt: "Oct 10, 2023",
-    createdBy: "Legal Admin",
-    modifiedAt: "Oct 10, 2023",
-    modifiedBy: "Legal Admin",
-    location: "HR & People / Contracts",
-    folderId: "contracts",
-    previewText: "STANDARD SYSTEM BLANK TEMPLATE. Authorized reuse only. Please populate variable fields marked with double braces before passing downstream to client..."
-  },
-  {
-    id: "FIN-26-001",
-    name: "Q2 Financial Statements",
-    type: "PDF",
-    size: "4.8 MB",
-    isConfidential: true,
-    updatedAt: "Updated 3 days ago",
-    createdAt: "May 15, 2026",
-    createdBy: "Finance automated ledger",
-    modifiedAt: "May 18, 2026",
-    modifiedBy: "Haider Ali",
-    location: "Finance",
-    folderId: "finance",
-    previewText: "BALANCE SHEETS & FISCAL REVENUES. Consolidated layout map across corporate structure accounts, balancing localized asset distribution matrix."
-  }
-];
-
-const INITIAL_UPLOADS = [
-  { id: 1, name: "ND_Agreement_Signed.pdf", size: "1.2 MB", progress: 100, isDone: true },
-  { id: 2, name: "Bonus_Structure_2024.docx", size: "840 KB", progress: 68, isDone: false },
-];
-
-const MOCK_EMPLOYEES: Record<string, any> = {
-  "Sara Javed contract": {
-    name: "Zara Khan",
-    role: "Director of Engineering",
-    avatarUrl: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop",
-    department: "Engineering",
-    location: "Dubai, UAE",
-    manager: "Dawood Akhtar",
-    tenure: "3 yrs, 2 mos",
-    directReports: [
-      { name: "Omar Mirza", role: "Frontend Lead", initials: "OM" },
-      { name: "Sara Javed", role: "Backend Lead", initials: "SJ", isActiveContext: true },
-      { name: "Fawad Khan", role: "DevOps Manager", initials: "FK" },
-    ]
-  },
-  "Q3 Vendor Agreement": {
-    name: "Sarah Jenkins",
-    role: "Procurement Lead",
-    avatarUrl: "https://images.unsplash.com/photo-1580489944761-15a19d654956?q=80&w=200&auto=format&fit=crop",
-    department: "Finance Ops",
-    location: "London, UK",
-    manager: "CEO Office",
-    tenure: "1 yr, 8 mos",
-    directReports: [
-      { name: "Alex Mercer", role: "Sourcing Associate", initials: "AM" }
-    ]
-  }
+type Directory = {
+  id: string;
+  name: string;
+  hasChildren?: boolean;
+  path: string;
+  children?: Directory[];
+  isLocked?: boolean;
 };
 
-export default function DocumentVaultPage() {
-  // State variables for core interactions
-  const [selectedFile, setSelectedFile] = useState(MOCK_FILES[0]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedFolderId, setSelectedFolderId] = useState<string>("contracts");
-  const [selectedFolderPath, setSelectedFolderPath] = useState<string>("HR & People / Contracts");
-  
-  // Interface filters & layout states
-  const [fileTypeFilter, setFileTypeFilter] = useState<string | null>("PDF");
-  const [isUploadPanelOpen, setIsUploadPanelOpen] = useState(true);
-  const [isUploadPanelCollapsed, setIsUploadPanelCollapsed] = useState(false);
-  const [uploads, setUploads] = useState(INITIAL_UPLOADS);
-  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({ "hr-people": true, "contracts": true });
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+type DocumentFile = {
+  id: string;
+  name: string;
+  type: string;
+  size: string;
+  isConfidential: boolean;
+  updatedAt: string;
+  createdAt: string;
+  createdBy: string;
+  modifiedAt: string;
+  modifiedBy: string;
+  location: string;
+  folderId: string;
+  previewText: string;
+};
 
-  // Toggle folder expansion tree
+type UploadItem = {
+  id: number;
+  name: string;
+  size: string;
+  progress: number;
+  isDone: boolean;
+};
+
+
+
+function mapDirectories(raw: any[]): Directory[] {
+  return raw.map((d: any) => ({
+    id: d.id,
+    name: d.name,
+    hasChildren: (d.children && d.children.length > 0) || d._count?.documents > 0,
+    path: d.path,
+    isLocked: d.isLocked,
+    children: d.children ? mapDirectories(d.children) : undefined,
+  }));
+}
+
+export default function DocumentVaultPage() {
+  const [selectedFile, setSelectedFile] = useState<DocumentFile | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedFolderId, setSelectedFolderId] = useState<string>("");
+  const [selectedFolderPath, setSelectedFolderPath] = useState<string>("");
+  const [fileTypeFilter, setFileTypeFilter] = useState<string | null>("PDF");
+  const [isUploadPanelOpen, setIsUploadPanelOpen] = useState(false);
+  const [isUploadPanelCollapsed, setIsUploadPanelCollapsed] = useState(false);
+  const [uploads, setUploads] = useState<UploadItem[]>([]);
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [directories, setDirectories] = useState<Directory[]>([]);
+  const [files, setFiles] = useState<DocumentFile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    async function fetchFolders() {
+      try {
+        const res = await apiClient.get('/documents/folders');
+        const mapped = mapDirectories(res.data.data);
+        setDirectories(mapped);
+        if (mapped.length > 0) {
+          setSelectedFolderId(mapped[0].id);
+          setSelectedFolderPath(mapped[0].path);
+        }
+      } catch (err) {
+        console.error('Failed to fetch folders', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchFolders();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedFolderId) return;
+    async function fetchFiles() {
+      try {
+        const params: Record<string, string> = { folderId: selectedFolderId };
+        if (fileTypeFilter) params.type = fileTypeFilter;
+        if (searchQuery) params.search = searchQuery;
+        const res = await apiClient.get('/documents', { params });
+        const items: DocumentFile[] = res.data.data.items || [];
+        setFiles(items);
+        if (items.length > 0 && (!selectedFile || !items.find((f) => f.id === selectedFile.id))) {
+          setSelectedFile(items[0]);
+        }
+      } catch (err) {
+        console.error('Failed to fetch documents', err);
+      }
+    }
+    fetchFiles();
+  }, [selectedFolderId, fileTypeFilter]);
+
+  useEffect(() => {
+    if (!selectedFile) return;
+    const fileId = selectedFile.id;
+    async function fetchDocumentDetails() {
+      try {
+        const res = await apiClient.get(`/documents/${fileId}`);
+        setSelectedFile(res.data.data);
+      } catch (err) {
+        console.error('Failed to fetch document details', err);
+      }
+    }
+    fetchDocumentDetails();
+  }, [selectedFile?.id]);
+
   const toggleFolderExpand = (folderId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setExpandedFolders(prev => ({ ...prev, [folderId]: !prev[folderId] }));
   };
 
-  // Switch active directory filtering
   const handleFolderSelect = (folderId: string, path: string) => {
     setSelectedFolderId(folderId);
     setSelectedFolderPath(path);
-    
-    // Auto select first file of that folder if available
-    const folderFiles = MOCK_FILES.filter(f => f.folderId === folderId);
-    if (folderFiles.length > 0) {
-      setSelectedFile(folderFiles[0]);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedFolderId) return;
+
+    const uploadItem: UploadItem = {
+      id: Date.now(),
+      name: file.name,
+      size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
+      progress: 0,
+      isDone: false,
+    };
+    setUploads(prev => [...prev, uploadItem]);
+    setIsUploadPanelOpen(true);
+    setIsUploadPanelCollapsed(false);
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folderId', selectedFolderId);
+
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1'}/documents/upload`);
+      
+      const token = document.cookie.split('; ').find(row => row.startsWith('access-token='))?.split('=')[1];
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const pct = Math.round((event.loaded / event.total) * 100);
+          setUploads(prev => prev.map(u => u.id === uploadItem.id ? { ...u, progress: pct } : u));
+        }
+      };
+
+      xhr.onload = () => {
+        setUploads(prev => prev.map(u => u.id === uploadItem.id ? { ...u, progress: 100, isDone: true } : u));
+        const res = apiClient.get('/documents', { params: { folderId: selectedFolderId } });
+        res.then(r => setFiles(r.data.data.items || []));
+      };
+
+      xhr.send(formData);
+    } catch (err) {
+      console.error('Upload failed', err);
+      setUploads(prev => prev.map(u => u.id === uploadItem.id ? { ...u, isDone: true } : u));
     }
   };
 
-  // Simulating localized ad-hoc uploads for demo functionality
-  const handleSimulateUpload = () => {
-    setIsUploadPanelOpen(true);
-    setIsUploadPanelCollapsed(false);
-    const newId = uploads.length + 1;
-    const newUpload = {
-      id: newId,
-      name: `Signed_Document_Ref_${Math.floor(Math.random() * 900 + 100)}.pdf`,
-      size: "1.4 MB",
-      progress: 0,
-      isDone: false
-    };
-    setUploads(prev => [...prev, newUpload]);
-
-    // Interval animation tick simulation
-    const interval = setInterval(() => {
-      setUploads(currentUploads => 
-        currentUploads.map(up => {
-          if (up.id === newId) {
-            const nextProgress = up.progress + 20;
-            return {
-              ...up,
-              progress: nextProgress >= 100 ? 100 : nextProgress,
-              isDone: nextProgress >= 100
-            };
-          }
-          return up;
-        })
-      );
-    }, 400);
-
-    setTimeout(() => clearInterval(interval), 3000);
-  };
-
-  // Computes active dynamic file layout listing
   const filteredFiles = useMemo(() => {
-    return MOCK_FILES.filter(file => {
-      const matchesFolder = selectedFolderId ? file.folderId === selectedFolderId : true;
-      const matchesSearch = file.name.toLowerCase().includes(searchQuery.toLowerCase()) || file.id.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesType = fileTypeFilter ? file.type === fileTypeFilter : true;
-      return matchesFolder && matchesSearch && matchesType;
-    });
-  }, [selectedFolderId, searchQuery, fileTypeFilter]);
+    if (!searchQuery) return files;
+    return files.filter(file =>
+      file.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      file.id.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [files, searchQuery]);
 
-  // Derived contextual employee side-panel mapping
-  const currentEmployeeDetail = useMemo(() => {
-    return MOCK_EMPLOYEES[selectedFile?.name] || MOCK_EMPLOYEES["Sara Javed contract"];
-  }, [selectedFile]);
+  if (loading) {
+    return (
+      <div className="flex bg-background text-foreground">
+        <div className="animate-pulse flex-1 p-4 space-y-4">
+          <div className="h-12 bg-muted rounded-lg w-64" />
+          <div className="h-8 bg-muted rounded-lg" />
+          <div className="grid grid-cols-3 gap-4">
+            {[...Array(6)].map((_, i) => <div key={i} className="h-40 bg-muted rounded-xl" />)}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground selection:bg-primary/20">
+    <div className="flex bg-background text-foreground selection:bg-primary/20">
       
       {/* 1. DIRECTORIES DYNAMIC SIDEBAR */}
       <aside className="w-64 border-r border-border bg-card flex flex-col hidden md:flex shrink-0">
@@ -243,7 +228,7 @@ export default function DocumentVaultPage() {
         </div>
         
         <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto text-sm">
-          {INITIAL_DIRECTORIES.map((dir) => {
+          {directories.map((dir) => {
             const isDirExpanded = expandedFolders[dir.id];
             return (
               <div key={dir.id} className="space-y-0.5">
@@ -322,18 +307,21 @@ export default function DocumentVaultPage() {
               <span className="text-foreground/80">{selectedFolderPath}</span>
             </div>
             <h1 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
-              {INITIAL_DIRECTORIES.find(d => d.id === selectedFolderId)?.name || 
-               INITIAL_DIRECTORIES.flatMap(d => d.children || []).find(s => s.id === selectedFolderId)?.name || "Vault"}
+              {directories.find(d => d.id === selectedFolderId)?.name || 
+               directories.flatMap(d => d.children || []).find(s => s.id === selectedFolderId)?.name || "Vault"}
             </h1>
           </div>
           
           <div className="flex items-center gap-2 self-end sm:self-center">
-            <button className="p-2 rounded-md hover:bg-muted text-muted-foreground border border-border relative transition">
-              <Bell className="h-4 w-4" />
-              <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-primary rounded-full" />
-            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              onChange={handleFileUpload}
+              className="hidden"
+              accept=".pdf,.docx,.doc,.xlsx,.png,.jpg"
+            />
             <button 
-              onClick={handleSimulateUpload}
+              onClick={() => fileInputRef.current?.click()}
               className="flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 active:scale-[0.98] transition shadow-sm"
             >
               <Upload className="h-4 w-4" />
@@ -441,7 +429,6 @@ export default function DocumentVaultPage() {
               })}
             </div>
           ) : (
-            // Alternate List Row UI View Mode
             <div className="border border-border rounded-xl overflow-hidden bg-card divide-y divide-border">
               {filteredFiles.map((file) => {
                 const isSelected = selectedFile?.id === file.id;
@@ -569,96 +556,7 @@ export default function DocumentVaultPage() {
         </aside>
       )}
 
-      {/* 5. SLIDE-OVER CONTEXT DESIGN ASSIGNMENTS (Dynamic Employee Profile Tracking) */}
-      <aside className="w-80 border-l border-border bg-card hidden 2xl:flex flex-col shrink-0 animate-in slide-in-from-right duration-300">
-        <div className="p-4 border-b border-border bg-muted/30">
-          <span className="text-[10px] text-primary uppercase tracking-wider block font-bold">Metadata Association</span>
-          <h2 className="text-sm font-bold text-foreground mt-0.5">Responsible Account</h2>
-        </div>
 
-        <div className="p-6 flex flex-col items-center text-center border-b border-border bg-gradient-to-b from-secondary/20 to-transparent">
-          <img 
-            src={currentEmployeeDetail.avatarUrl} 
-            alt={currentEmployeeDetail.name} 
-            className="w-14 h-14 rounded-full object-cover ring-4 ring-card mb-3 shadow-sm"
-          />
-          <h3 className="font-bold text-base text-foreground leading-tight">{currentEmployeeDetail.name}</h3>
-          <span className="text-xs text-muted-foreground font-medium mt-0.5">{currentEmployeeDetail.role}</span>
-
-          <div className="flex items-center gap-2 mt-4 w-full justify-center">
-            <button 
-              onClick={() => alert(`Opening workspace instant messaging thread with ${currentEmployeeDetail.name}`)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground text-xs font-semibold rounded-md hover:opacity-90 active:scale-[0.96] transition shadow-xs"
-            >
-              <MessageSquare className="h-3.5 w-3.5" />
-              <span>Message</span>
-            </button>
-            <button 
-              onClick={() => alert(`Redirecting to profile configuration overview ledger.`)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-card border border-border text-foreground text-xs font-semibold rounded-md hover:bg-muted active:scale-[0.96] transition"
-            >
-              <User className="h-3.5 w-3.5 text-muted-foreground" />
-              <span>Profile</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="p-4 text-xs border-b border-border bg-card">
-          <div className="grid grid-cols-2 gap-y-3.5 gap-x-2">
-            <div>
-              <span className="text-[10px] text-muted-foreground uppercase font-medium block">Department</span>
-              <span className="font-semibold text-foreground flex items-center gap-1.5 mt-0.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                {currentEmployeeDetail.department}
-              </span>
-            </div>
-            <div>
-              <span className="text-[10px] text-muted-foreground uppercase font-medium block">Location</span>
-              <span className="font-semibold text-foreground block mt-0.5">{currentEmployeeDetail.location}</span>
-            </div>
-            <div>
-              <span className="text-[10px] text-muted-foreground uppercase font-medium block">Supervisor</span>
-              <span className="font-semibold text-primary block mt-0.5 hover:underline cursor-pointer">{currentEmployeeDetail.manager}</span>
-            </div>
-            <div>
-              <span className="text-[10px] text-muted-foreground uppercase font-medium block">Tenure Vector</span>
-              <span className="font-semibold text-foreground block mt-0.5">{currentEmployeeDetail.tenure}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Multi-layered direct reports structural tree link */}
-        <div className="flex-1 p-4 flex flex-col min-h-0 bg-card/50">
-          <div className="flex items-center justify-between mb-2.5">
-            <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Team Footprint</span>
-            <span className="bg-muted px-1.5 py-0.5 rounded text-[10px] font-bold border border-border text-foreground">{currentEmployeeDetail.directReports.length} members</span>
-          </div>
-          
-          <div className="space-y-1.5 flex-1 overflow-y-auto pr-0.5">
-            {currentEmployeeDetail.directReports.map((report: any, idx: number) => (
-              <div 
-                key={idx} 
-                className={`p-2 rounded-lg border flex items-center justify-between transition ${report.name === selectedFile?.name.split(" ")[0] + " " + selectedFile?.name.split(" ")[1] || report.isActiveContext ? "bg-primary/5 border-primary/30 font-medium" : "bg-card border-border hover:bg-muted/80"}`}
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-7 h-7 bg-muted border border-border rounded-full flex items-center justify-center text-[10px] font-bold tracking-wider text-muted-foreground uppercase shrink-0">
-                    {report.initials}
-                  </div>
-                  <div className="min-w-0">
-                    <h4 className="text-xs font-semibold text-foreground truncate flex items-center gap-1">
-                      {report.name}
-                    </h4>
-                    <span className="text-[10px] text-muted-foreground block truncate">{report.role}</span>
-                  </div>
-                </div>
-                {(report.name === selectedFile?.name.split(" ")[0] + " " + selectedFile?.name.split(" ")[1] || report.isActiveContext) && (
-                  <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold uppercase shrink-0">Active</span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </aside>
 
     </div>
   );

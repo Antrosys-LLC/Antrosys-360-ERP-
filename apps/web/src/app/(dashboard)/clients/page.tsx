@@ -1,13 +1,10 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Search,
   Download,
   Upload,
-  Bell,
-  Settings,
-  HelpCircle,
   Plus,
   SlidersHorizontal,
   AlertTriangle,
@@ -16,195 +13,149 @@ import {
   Square,
   Clock,
   ArrowUpRight,
-  FileText,
-  Briefcase,
-  Users,
   Activity
 } from "lucide-react";
+import apiClient from "@/lib/api-client";
 
-/* ==========================================================================
-   MOCK DATA (Structured for easy replacement with API fetches)
-   ========================================================================== */
-const MOCK_SUMMARY_METRICS = {
-  totalArr: "PKR 504M",
-  mrr: "PKR 42M",
-  activeClients: 34,
-  atRisk: 2,
-  renewalPipeline: 8,
-  prospectPipeline: 12,
-  summaryAsOf: "34 active clients - PKR 504M ARR - May 2026"
+type ClientMetrics = { name: string; value: number };
+
+type Client = {
+  id: string;
+  name: string;
+  sector: string;
+  arr: string;
+  mrr: string;
+  ltv: string;
+  health: number;
+  renewalDate: string;
+  daysRemaining: string;
+  status: string;
+  tier: string;
+  initials: string;
+  color: string;
+  hasWarning?: boolean;
+  metrics: ClientMetrics[];
 };
 
-const MOCK_CLIENTS = [
-  {
-    id: "CLT-001",
-    name: "Nexus Corp",
-    sector: "Technology & SaaS",
-    arr: "PKR 42M",
-    mrr: "PKR 3.5M",
-    ltv: "PKR 147M",
-    health: 92,
-    renewalDate: "Jun 30",
-    daysRemaining: "35 days",
-    status: "Active",
-    tier: "Enterprise",
-    initials: "NC",
-    color: "bg-primary text-primary-foreground",
-    metrics: [
-      { name: "Product Usage", value: 95 },
-      { name: "Support Tickets", value: 88 },
-      { name: "Payment History", value: 98 },
-      { name: "Engagement", value: 90 },
-      { name: "NPS", value: 92 }
-    ]
-  },
-  {
-    id: "CLT-002",
-    name: "Apex Holdings",
-    sector: "Finance",
-    arr: "PKR 28M",
-    mrr: "PKR 2.3M",
-    ltv: "PKR 98M",
-    health: 88,
-    renewalDate: "Aug 15",
-    daysRemaining: "81 days",
-    status: "Active",
-    tier: "Enterprise",
-    initials: "AC",
-    color: "bg-blue-500 text-white",
-    metrics: [
-      { name: "Product Usage", value: 84 },
-      { name: "Support Tickets", value: 92 },
-      { name: "Payment History", value: 100 },
-      { name: "Engagement", value: 78 },
-      { name: "NPS", value: 85 }
-    ]
-  },
-  {
-    id: "CLT-003",
-    name: "Vanta AI",
-    sector: "Software",
-    arr: "PKR 15M",
-    mrr: "PKR 1.2M",
-    ltv: "PKR 45M",
-    health: 45,
-    renewalDate: "May 30",
-    daysRemaining: "Urgent",
-    status: "At Risk",
-    tier: "Mid-Market",
-    initials: "VA",
-    color: "bg-rose-500 text-white",
-    hasWarning: true,
-    metrics: [
-      { name: "Product Usage", value: 40 },
-      { name: "Support Tickets", value: 35 },
-      { name: "Payment History", value: 70 },
-      { name: "Engagement", value: 42 },
-      { name: "NPS", value: 38 }
-    ]
-  },
-  {
-    id: "CLT-004",
-    name: "BrightX Corp",
-    sector: "Media",
-    arr: "PKR 21M",
-    mrr: "PKR 1.7M",
-    ltv: "PKR 63M",
-    health: 38,
-    renewalDate: "Jun 12",
-    daysRemaining: "Critical",
-    status: "At Risk",
-    tier: "Enterprise",
-    initials: "BC",
-    color: "bg-orange-500 text-white",
-    hasWarning: true,
-    metrics: [
-      { name: "Product Usage", value: 32 },
-      { name: "Support Tickets", value: 28 },
-      { name: "Payment History", value: 65 },
-      { name: "Engagement", value: 35 },
-      { name: "NPS", value: 30 }
-    ]
-  }
-];
+type SummaryMetrics = {
+  totalArr: string;
+  mrr: string;
+  activeClients: number;
+  atRisk: number;
+  renewalPipeline: number;
+  prospectPipeline: number;
+  summaryAsOf: string;
+};
 
-const MOCK_PIPELINE = [
-  {
-    stage: "INITIAL CONTACT",
-    deals: [
-      { name: "OrbitTech", size: "PKR 12M" },
-      { name: "Zenith Corp", size: "PKR 8M" }
-    ]
-  },
-  {
-    stage: "PROPOSAL",
-    deals: [
-      { name: "CloudSync", size: "PKR 45M" }
-    ]
-  },
-  {
-    stage: "NEGOTIATION",
-    deals: [
-      { name: "ByteForge", size: "PKR 38M" }
-    ]
-  },
-  {
-    stage: "CONTRACT REVIEW",
-    deals: [
-      { name: "GlobalNet", size: "PKR 18M" }
-    ]
-  },
-  {
-    stage: "CLOSED/WON",
-    deals: [],
-    emptyStateText: "No wins yet this week"
-  }
-];
+type PipelineStage = {
+  stage: string;
+  deals: { name: string; size: string }[];
+  emptyStateText?: string;
+};
 
-const MOCK_TIMELINE = [
-  { id: 1, text: "Email sent to Sarah at Nexus Corp regarding Q3 planning.", time: "2 hours ago" },
-  { id: 2, text: "Usage alert triggered for Vanta AI (dropped below 50%).", time: "5 hours ago" },
-  { id: 3, text: "Payment received from Apex Holdings.", time: "Yesterday" },
-  { id: 4, text: "Risk status updated for BrightX Corp.", time: "Yesterday" },
-  { id: 5, text: "Proposal viewed by CloudSync team.", time: "2 days ago" }
-];
+type TimelineEvent = {
+  id: number;
+  text: string;
+  time: string;
+};
 
-const INITIAL_TASKS = [
-  { id: "t1", text: "Urgent check-in call with BrightX Corp", date: "Today, 2:00 PM", urgent: true, done: false },
-  { id: "t2", text: "Send Q3 invoice to Nexus", date: "Tomorrow", urgent: false, done: false },
-  { id: "t3", text: "Review support tickets for Vanta", date: "Tomorrow", urgent: true, done: false },
-  { id: "t4", text: "Follow up on ByteForge negotiation", date: "Wed, May 22", urgent: false, done: false },
-  { id: "t5", text: "Initial sync with Orbital", date: "Thu, May 23", urgent: false, done: false }
-];
+type Task = {
+  id: string;
+  text: string;
+  date: string;
+  urgent: boolean;
+  done: boolean;
+};
 
 export default function ClientManagementDashboard() {
-  // State definitions for handling user interaction
-  const [selectedClientId, setSelectedClientId] = useState<string>("CLT-001");
+  const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [activeTab, setActiveTab] = useState<string>("Overview");
-  const [tasks, setTasks] = useState(INITIAL_TASKS);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [summary, setSummary] = useState<SummaryMetrics | null>(null);
+  const [pipeline, setPipeline] = useState<PipelineStage[]>([]);
+  const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Retrieve active selected client metadata profile dynamically
-  const activeClient = useMemo(() => {
-    return MOCK_CLIENTS.find(c => c.id === selectedClientId) || MOCK_CLIENTS[0];
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [clientsRes, summaryRes, pipelineRes] = await Promise.all([
+          apiClient.get('/clients', { params: { limit: 50 } }),
+          apiClient.get('/clients/summary'),
+          apiClient.get('/clients/pipeline'),
+        ]);
+        const clientList = clientsRes.data.data.items;
+        setClients(clientList);
+        setSummary(clientsRes.data.data.summary || summaryRes.data.data);
+        setPipeline(pipelineRes.data.data);
+        if (clientList.length > 0 && !selectedClientId) {
+          setSelectedClientId(clientList[0].id);
+        }
+      } catch (err) {
+        console.error('Failed to fetch client data', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedClientId) return;
+    async function fetchDetails() {
+      try {
+        const [timelineRes, tasksRes] = await Promise.all([
+          apiClient.get(`/clients/${selectedClientId}/timeline`),
+          apiClient.get(`/clients/${selectedClientId}/tasks`),
+        ]);
+        setTimeline(timelineRes.data.data);
+        setTasks(tasksRes.data.data);
+      } catch (err) {
+        console.error('Failed to fetch client details', err);
+      }
+    }
+    fetchDetails();
   }, [selectedClientId]);
 
-  // Compute filtering matches against client dataset matrix
+  const activeClient = useMemo(() => {
+    return clients.find(c => c.id === selectedClientId) || clients[0];
+  }, [selectedClientId, clients]);
+
   const filteredClients = useMemo(() => {
-    return MOCK_CLIENTS.filter(client => 
+    return clients.filter(client =>
       client.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       client.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       client.sector.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }, [searchQuery]);
+  }, [clients, searchQuery]);
 
-  // Handle local simulation of ticking a task assignment complete
-  const toggleTask = (taskId: string) => {
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, done: !t.done } : t));
+  const toggleTask = async (taskId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    try {
+      await apiClient.patch(`/clients/tasks/${taskId}`, { done: !task.done });
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, done: !t.done } : t));
+    } catch (err) {
+      console.error('Failed to toggle task', err);
+    }
   };
 
+  if (loading) {
+    return (
+      <div className="bg-background text-foreground p-4 lg:p-8 space-y-6">
+        <div className="animate-pulse space-y-6">
+          <div className="h-16 bg-muted rounded-xl" />
+          <div className="h-32 bg-muted rounded-xl" />
+          <div className="h-[520px] bg-muted rounded-xl" />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-background text-foreground selection:bg-primary/20 p-4 lg:p-8 space-y-6">
+    <div className="bg-background text-foreground selection:bg-primary/20 p-4 lg:p-8 space-y-6">
       
       {/* HEADER SECTION PANEL */}
       <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-card border border-border rounded-xl p-4 shadow-xs">
@@ -241,14 +192,20 @@ export default function ClientManagementDashboard() {
             <span>Export</span>
           </button>
           
-          <div className="flex items-center border border-border rounded-lg p-1 bg-background gap-1">
-            <button className="p-1.5 rounded-md hover:bg-muted text-muted-foreground"><Bell className="h-4 w-4" /></button>
-            <button className="p-1.5 rounded-md hover:bg-muted text-muted-foreground"><Settings className="h-4 w-4" /></button>
-            <button className="p-1.5 rounded-md hover:bg-muted text-muted-foreground"><HelpCircle className="h-4 w-4" /></button>
-          </div>
 
           <button 
-            onClick={() => alert("Initializing ERP account onboarding registration wizard.")}
+            onClick={async () => {
+              const name = prompt('Enter client name:');
+              if (name) {
+                try {
+                  await apiClient.post('/clients', { name });
+                  const res = await apiClient.get('/clients', { params: { limit: 50 } });
+                  setClients(res.data.data.items);
+                } catch (err) {
+                  console.error('Failed to create client', err);
+                }
+              }
+            }}
             className="flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:opacity-90 active:scale-[0.98] transition shadow-sm"
           >
             <Plus className="h-4 w-4" />
@@ -262,27 +219,27 @@ export default function ClientManagementDashboard() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 divide-y md:divide-y-0 lg:divide-x divide-border">
           <div className="pt-2 md:pt-0">
             <span className="text-xs font-semibold text-muted-foreground uppercase">Total ARR</span>
-            <div className="text-xl font-bold text-emerald-600 dark:text-emerald-500 mt-1">{MOCK_SUMMARY_METRICS.totalArr}</div>
+            <div className="text-xl font-bold text-emerald-600 dark:text-emerald-500 mt-1">{summary?.totalArr || 'N/A'}</div>
           </div>
           <div className="pt-2 md:pt-0 lg:pl-4">
             <span className="text-xs font-semibold text-muted-foreground uppercase">MRR</span>
-            <div className="text-xl font-bold text-foreground mt-1">{MOCK_SUMMARY_METRICS.mrr}</div>
+            <div className="text-xl font-bold text-foreground mt-1">{summary?.mrr || 'N/A'}</div>
           </div>
           <div className="pt-2 md:pt-0 lg:pl-4">
             <span className="text-xs font-semibold text-muted-foreground uppercase">Active Clients</span>
-            <div className="text-xl font-bold text-foreground mt-1">{MOCK_SUMMARY_METRICS.activeClients}</div>
+            <div className="text-xl font-bold text-foreground mt-1">{summary?.activeClients ?? 0}</div>
           </div>
           <div className="pt-2 md:pt-0 lg:pl-4">
             <span className="text-xs font-semibold text-muted-foreground uppercase">At-risk</span>
-            <div className="text-xl font-bold text-destructive mt-1">{MOCK_SUMMARY_METRICS.atRisk}</div>
+            <div className="text-xl font-bold text-destructive mt-1">{summary?.atRisk ?? 0}</div>
           </div>
           <div className="pt-2 md:pt-0 lg:pl-4">
             <span className="text-xs font-semibold text-muted-foreground uppercase">Renewal Pipeline</span>
-            <div className="text-xl font-bold text-foreground mt-1">{MOCK_SUMMARY_METRICS.renewalPipeline}</div>
+            <div className="text-xl font-bold text-foreground mt-1">{summary?.renewalPipeline ?? 0}</div>
           </div>
           <div className="pt-2 md:pt-0 lg:pl-4">
             <span className="text-xs font-semibold text-muted-foreground uppercase">Prospect Pipeline</span>
-            <div className="text-xl font-bold text-foreground mt-1">{MOCK_SUMMARY_METRICS.prospectPipeline}</div>
+            <div className="text-xl font-bold text-foreground mt-1">{summary?.prospectPipeline ?? 0}</div>
           </div>
         </div>
 
@@ -290,7 +247,7 @@ export default function ClientManagementDashboard() {
         <div className="space-y-1.5 pt-2">
           <div className="flex justify-between items-center text-xs text-muted-foreground font-medium">
             <span>Client lifecycle distribution</span>
-            <span className="text-[11px] font-semibold text-foreground/80">{MOCK_SUMMARY_METRICS.summaryAsOf}</span>
+            <span className="text-[11px] font-semibold text-foreground/80">{summary?.summaryAsOf || ''}</span>
           </div>
           <div className="w-full bg-muted h-2.5 rounded-full overflow-hidden flex">
             <div className="bg-primary h-full" style={{ width: "70%" }} title="Stable Enterprise Portfolio" />
@@ -309,7 +266,7 @@ export default function ClientManagementDashboard() {
             <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
               <span>All clients</span>
               <span className="bg-muted text-muted-foreground text-xs px-2 py-0.5 rounded-md font-semibold border border-border">
-                {MOCK_CLIENTS.length} accounts
+                {clients.length} accounts
               </span>
             </h3>
             <div className="flex items-center gap-1">
@@ -393,17 +350,17 @@ export default function ClientManagementDashboard() {
         <div className="bg-card border border-border rounded-xl shadow-xs p-5 lg:col-span-6 h-[520px] flex flex-col">
           <div className="flex items-start justify-between border-b border-border pb-4">
             <div className="flex items-center gap-3">
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-base font-bold ${activeClient.color} shadow-xs shrink-0`}>
-                {activeClient.initials}
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-base font-bold ${activeClient?.color || 'bg-primary text-primary-foreground'} shadow-xs shrink-0`}>
+                {activeClient?.initials || '--'}
               </div>
               <div>
-                <h2 className="text-lg font-bold text-foreground tracking-tight">{activeClient.name}</h2>
+                <h2 className="text-lg font-bold text-foreground tracking-tight">{activeClient?.name || 'Select a client'}</h2>
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5 font-medium">
-                  <span>{activeClient.sector}</span>
-                  <span>•</span>
+                  <span>{activeClient?.sector || ''}</span>
+                  {activeClient && <><span>•</span>
                   <span className="bg-muted px-2 py-0.5 rounded text-[10px] font-bold text-foreground">{activeClient.status}</span>
                   <span className="bg-secondary px-2 py-0.5 rounded text-[10px] font-bold text-secondary-foreground">{activeClient.tier}</span>
-                  <span className="font-mono text-[10px]">{activeClient.id}</span>
+                  <span className="font-mono text-[10px]">{activeClient.id}</span></>}
                 </div>
               </div>
             </div>
@@ -413,15 +370,15 @@ export default function ClientManagementDashboard() {
           <div className="grid grid-cols-3 gap-3 my-4">
             <div className="bg-muted/40 border border-border p-3 rounded-lg text-center">
               <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">ARR</span>
-              <span className="text-sm font-bold text-foreground block mt-1 font-mono">{activeClient.arr}</span>
+              <span className="text-sm font-bold text-foreground block mt-1 font-mono">{activeClient?.arr || 'N/A'}</span>
             </div>
             <div className="bg-muted/40 border border-border p-3 rounded-lg text-center">
               <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">MRR</span>
-              <span className="text-sm font-bold text-foreground block mt-1 font-mono">{activeClient.mrr}</span>
+              <span className="text-sm font-bold text-foreground block mt-1 font-mono">{activeClient?.mrr || 'N/A'}</span>
             </div>
             <div className="bg-muted/40 border border-border p-3 rounded-lg text-center">
               <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">LTV</span>
-              <span className="text-sm font-bold text-foreground block mt-1 font-mono">{activeClient.ltv}</span>
+              <span className="text-sm font-bold text-foreground block mt-1 font-mono">{activeClient?.ltv || 'N/A'}</span>
             </div>
           </div>
 
@@ -442,7 +399,7 @@ export default function ClientManagementDashboard() {
 
           {/* Tab Display Router Area Container */}
           <div className="flex-1 overflow-y-auto space-y-3.5 pr-1">
-            {activeTab === "Overview" ? (
+            {activeTab === "Overview" && activeClient ? (
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <span className="text-xs uppercase font-bold tracking-wider text-muted-foreground">Account Health Score</span>
@@ -481,7 +438,7 @@ export default function ClientManagementDashboard() {
 
           <div className="pt-3 border-t border-border mt-auto flex justify-end">
             <button 
-              onClick={() => alert(`Generating new contract draft context ledger for ${activeClient.name}`)}
+              onClick={() => alert(`Generating new contract draft context ledger for ${activeClient?.name || 'client'}`)}
               className="px-4 py-2 bg-primary text-primary-foreground text-xs font-bold rounded-lg hover:opacity-95 transition shadow-xs"
             >
               Create invoice
@@ -491,12 +448,14 @@ export default function ClientManagementDashboard() {
       </section>
 
       {/* CRITICAL ATTENTION BROADCAST STRIP ALERT */}
-      <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 p-3.5 rounded-xl flex items-start gap-3 text-amber-800 dark:text-amber-400">
-        <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
-        <div className="text-xs leading-relaxed">
-          <strong className="font-bold">Urgent Action Required:</strong> Vanta AI and BrightX Corp have renewals coming up with low health scores. Immediate outreach and account review management strategies are highly recommended.
+      {(summary?.atRisk ?? 0) > 0 && (
+        <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 p-3.5 rounded-xl flex items-start gap-3 text-amber-800 dark:text-amber-400">
+          <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+          <div className="text-xs leading-relaxed">
+            <strong className="font-bold">Urgent Action Required:</strong> {summary?.atRisk} client{(summary?.atRisk ?? 0) > 1 ? 's have' : ' has'} renewals coming up with low health scores. Immediate outreach and account review management strategies are highly recommended.
+          </div>
         </div>
-      </div>
+      )}
 
       {/* KANBAN SYSTEM PIPELINE ANALYSIS */}
       <section className="bg-card border border-border rounded-xl p-5 shadow-xs space-y-4">
@@ -505,7 +464,7 @@ export default function ClientManagementDashboard() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          {MOCK_PIPELINE.map((column, idx) => (
+          {pipeline.map((column, idx) => (
             <div key={idx} className="bg-muted/30 border border-border/80 rounded-xl p-3 flex flex-col gap-2 min-h-[160px]">
               <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block border-b border-border pb-1.5">
                 {column.stage}
@@ -529,7 +488,7 @@ export default function ClientManagementDashboard() {
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center text-center p-3 text-muted-foreground">
                     <Trophy className="h-5 w-5 text-muted-foreground/40 mb-1.5" />
-                    <span className="text-[11px] font-medium leading-tight">{column.emptyStateText}</span>
+                    <span className="text-[11px] font-medium leading-tight">{column.emptyStateText || 'No deals'}</span>
                   </div>
                 )}
               </div>
@@ -551,7 +510,7 @@ export default function ClientManagementDashboard() {
           </div>
           
           <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-            {MOCK_TIMELINE.map((item) => (
+            {timeline.map((item: any) => (
               <div key={item.id} className="text-xs flex items-start gap-3 border-b border-border/40 pb-2 last:border-0">
                 <span className="h-2 w-2 rounded-full bg-primary shrink-0 mt-1.5" />
                 <div className="space-y-0.5">
@@ -560,6 +519,11 @@ export default function ClientManagementDashboard() {
                 </div>
               </div>
             ))}
+            {timeline.length === 0 && (
+              <div className="flex items-center justify-center h-full text-xs text-muted-foreground">
+                No timeline events yet
+              </div>
+            )}
           </div>
         </div>
 
@@ -602,6 +566,11 @@ export default function ClientManagementDashboard() {
                 </div>
               </div>
             ))}
+            {tasks.length === 0 && (
+              <div className="flex items-center justify-center h-full text-xs text-muted-foreground">
+                No tasks yet
+              </div>
+            )}
           </div>
         </div>
       </section>

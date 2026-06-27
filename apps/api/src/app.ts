@@ -29,6 +29,8 @@ import { cfoRoutes } from './modules/cfo/cfo.routes';
 import { ceoRoutes } from './modules/ceo/ceo.routes';
 import { invoiceRoutes } from './modules/invoice/invoice.routes';
 import { managerRoutes } from './modules/manager/manager.routes';
+import { kpiRoutes } from './modules/kpi/kpi.routes';
+import { documentsRoutes } from './modules/documents/documents.routes';
 import { notificationsRoutes } from './modules/notifications/notifications.routes';
 
 export async function buildApp() {
@@ -84,6 +86,8 @@ export async function buildApp() {
       await api.register(clientsRoutes, { prefix: '/clients' });
       await api.register(reportsRoutes, { prefix: '/reports' });
       await api.register(adminRoutes, { prefix: '/admin' });
+      await api.register(kpiRoutes, { prefix: '/kpi' });
+      await api.register(documentsRoutes, { prefix: '/documents' });
       await api.register(managerRoutes, { prefix: '/manager' });
       await api.register(notificationsRoutes, { prefix: '/notifications' });
     },

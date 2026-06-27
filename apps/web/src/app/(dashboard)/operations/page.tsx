@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Users,
   CalendarDays,
@@ -11,163 +11,69 @@ import {
   Flag,
   MoreHorizontal,
 } from "lucide-react";
+import apiClient from '@/lib/api-client';
 
-// ============================================================================
-// MOCK DATA — replace with API fetches later (React Query hooks)
-// ============================================================================
+function dotColor(status: string): string {
+  switch (status) {
+    case "present": return "#7B68EE";
+    case "late": return "#F2B90C";
+    case "absent": return "#C0382B";
+    default: return "#E0E0E0";
+  }
+}
 
-const pageHeader = {
-  title: "Operations Overview",
-  subtitle: "Mon, 16 May 2026",
-  liveLabel: "Live data",
-};
-
-const attendanceRate = {
-  label: "Attendance rate",
-  value: "87%",
-  progressPct: 87,
-  breakdown: [
-    { label: "Present", count: 420, color: "#7B68EE" },
-    { label: "Absent", count: 34, color: "#E24B4A" },
-    { label: "Late", count: 29, color: "#F2B90C" },
-  ],
-};
-
-const pendingLeave = {
-  label: "Pending leave",
-  value: 11,
-  valueColor: "#C2840A",
-  types: [
-    { label: "Annual", count: 7 },
-    { label: "Sick", count: 3 },
-    { label: "Casual", count: 1 },
-  ],
-  ctaLabel: "Review all →",
-};
-
-const manpowerGapsSummary = {
-  label: "Manpower gaps",
-  value: 3,
-  valueColor: "#A32D2D",
-  items: [
-    { label: "2 Critical roles", tone: "danger" as const },
-    { label: "1 Standard role", tone: "neutral" as const },
-  ],
-};
-
-const rosterCoverage = {
-  label: "Roster coverage",
-  value: "94%",
-  days: ["Mo", "Tu", "We", "Th", "Fr"],
-};
+function statusBadgeClasses(status: string): string {
+  switch (status) {
+    case "Present": return "bg-[#EEEDFE] text-[#534AB7]";
+    case "Late": return "bg-[#FAEEDA] text-[#633806]";
+    case "Absent": return "bg-[#FCEBEB] text-[#791F1F]";
+    default: return "bg-[#F0F0F0] text-[#888888]";
+  }
+}
 
 type DeptFilter = "All" | "Eng" | "Ops" | "Fin" | "HR";
-
 const deptFilters: DeptFilter[] = ["All", "Eng", "Ops", "Fin", "HR"];
 
-type AttendanceDotStatus = "present" | "late" | "absent";
-
-// 20 dots representing a snapshot of today's check-in distribution
-const attendanceDots: AttendanceDotStatus[] = [
-  "absent",
-  "absent",
-  "absent",
-  "late",
-  "late",
-  "late",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-];
-
-type AttendanceStatus = "Present" | "Late" | "Absent";
-
-const todayAttendanceRows: {
-  name: string;
-  dept: string;
-  checkIn: string;
-  status: AttendanceStatus;
-}[] = [
-  {
-    name: "Bilal Hassan",
-    dept: "Engineering",
-    checkIn: "--:--",
-    status: "Absent",
-  },
-  {
-    name: "Aisha Malik",
-    dept: "Operations",
-    checkIn: "09:15 AM",
-    status: "Late",
-  },
-  {
-    name: "Raza Farouk",
-    dept: "Finance",
-    checkIn: "08:55 AM",
-    status: "Present",
-  },
-  { name: "Ali Raza", dept: "Designer", checkIn: "09:40 AM", status: "Late" },
-];
-
-const leaveApprovals = [
-  { initials: "S", name: "Sara Javed", type: "Annual", days: 3 },
-  { initials: "A", name: "Amna Baig", type: "Annual", days: 5 },
-  { initials: "O", name: "Omer Mirza", type: "Sick", days: 1 },
-];
-
-const manpowerGapsDetail: {
-  dept: string;
-  level: "Critical" | "Standard";
-  count: number;
-}[] = [
-  { dept: "Engineering", level: "Critical", count: 2 },
-  { dept: "Operations", level: "Standard", count: 1 },
-  { dept: "HR", level: "Standard", count: 1 },
-];
-
-// ============================================================================
-// HELPERS
-// ============================================================================
-
-function dotColor(status: AttendanceDotStatus): string {
-  switch (status) {
-    case "present":
-      return "#7B68EE";
-    case "late":
-      return "#F2B90C";
-    case "absent":
-      return "#C0382B";
-  }
-}
-
-function statusBadgeClasses(status: AttendanceStatus): string {
-  switch (status) {
-    case "Present":
-      return "bg-[#EEEDFE] text-[#534AB7]";
-    case "Late":
-      return "bg-[#FAEEDA] text-[#633806]";
-    case "Absent":
-      return "bg-[#FCEBEB] text-[#791F1F]";
-  }
-}
-
-// ============================================================================
-// PAGE
-// ============================================================================
-
 export default function OperationsHeadDashboardPage() {
+  const [data, setData] = useState<{ module?: string; status?: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<DeptFilter>("All");
+
+  useEffect(() => {
+    apiClient.get('/operations/attendance')
+      .then(res => setData(res.data))
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-4 min-h-screen bg-[#F8F9FC] items-center justify-center">
+        <div className="flex items-center gap-2">
+          <svg className="animate-spin h-5 w-5 text-[#7B68EE]" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="text-sm text-[#888888] font-medium">Loading operations...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col gap-4 min-h-screen bg-[#F8F9FC] items-center justify-center">
+        <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-6 shadow-sm text-center max-w-md">
+          <div className="w-12 h-12 rounded-full bg-[#FCEBEB] flex items-center justify-center mx-auto mb-3">
+            <AlertTriangle className="w-6 h-6 text-[#A32D2D]" />
+          </div>
+          <h3 className="text-sm font-semibold text-[#1A1A1A] mb-1">Failed to load</h3>
+          <p className="text-xs text-[#888888]">{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -175,186 +81,98 @@ export default function OperationsHeadDashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[20px] font-semibold text-[#1A1A1A] leading-tight">
-            {pageHeader.title}
+            Operations Overview
           </h1>
           <div className="flex items-center gap-1.5 mt-0.5">
-            <span className="text-[12px] text-[#888888]">
-              {pageHeader.subtitle}
-            </span>
+            <span className="text-[12px] text-[#888888]">Mon, 16 May 2026</span>
             <span className="text-[#CCCCCC]">·</span>
             <span className="flex items-center gap-1">
               <span className="size-1.5 rounded-full bg-[#3B6D11]" />
-              <span className="text-[12px] text-[#27500A]">
-                {pageHeader.liveLabel}
-              </span>
+              <span className="text-[12px] text-[#27500A]">Live data</span>
             </span>
           </div>
+        </div>
+      </div>
+
+      {/* API Status Banner */}
+      <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-3 flex items-center gap-3">
+        <div className="size-8 rounded-full bg-[#EEEDFE] flex items-center justify-center shrink-0">
+          <Info size={14} strokeWidth={1.8} className="text-[#534AB7]" />
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] font-semibold text-[#888888] uppercase tracking-wide">Module:</span>
+          <span className="text-[12px] font-semibold text-[#1A1A1A]">{data?.module || 'N/A'}</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            data?.status === 'wip' ? 'bg-[#FAEEDA] text-[#633806]' : 'bg-[#EEEDFE] text-[#534AB7]'
+          }`}>
+            {data?.status || 'unknown'}
+          </span>
         </div>
       </div>
 
       {/* KPI Row */}
       <div className="grid grid-cols-4 gap-3">
-        {/* Attendance rate */}
         <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-[17px] flex flex-col">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-[10px] font-semibold text-[#888888] uppercase tracking-wide">
-              {attendanceRate.label}
-            </span>
+            <span className="text-[10px] font-semibold text-[#888888] uppercase tracking-wide">Attendance rate</span>
             <Users size={15} strokeWidth={1.8} className="text-[#AAAAAA]" />
           </div>
-          <div className="text-[24px] font-bold text-[#1A1A1A] leading-none mb-3">
-            {attendanceRate.value}
-          </div>
+          <div className="text-[24px] font-bold text-[#1A1A1A] leading-none mb-3">—</div>
           <div className="h-1.5 w-full rounded-full bg-[#F0F0F0] overflow-hidden mb-3">
-            <div
-              className="h-full bg-[#7B68EE] rounded-full"
-              style={{ width: `${attendanceRate.progressPct}%` }}
-            />
+            <div className="h-full bg-[#7B68EE] rounded-full" style={{ width: '0%' }} />
           </div>
           <div className="flex items-center gap-2.5 flex-wrap">
-            {attendanceRate.breakdown.map((item) => (
-              <div key={item.label} className="flex items-center gap-1">
-                <span
-                  className="size-1.5 rounded-full"
-                  style={{ backgroundColor: item.color }}
-                />
-                <span className="text-[10px] text-[#888888]">
-                  {item.count} {item.label}
-                </span>
-              </div>
-            ))}
+            <span className="text-[10px] text-[#888888]">Awaiting data</span>
           </div>
         </div>
 
-        {/* Pending leave */}
         <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-[17px] flex flex-col">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-[10px] font-semibold text-[#888888] uppercase tracking-wide">
-              {pendingLeave.label}
-            </span>
-            <CalendarDays
-              size={15}
-              strokeWidth={1.8}
-              className="text-[#AAAAAA]"
-            />
+            <span className="text-[10px] font-semibold text-[#888888] uppercase tracking-wide">Pending leave</span>
+            <CalendarDays size={15} strokeWidth={1.8} className="text-[#AAAAAA]" />
           </div>
-          <div
-            className="text-[24px] font-bold leading-none mb-3"
-            style={{ color: pendingLeave.valueColor }}
-          >
-            {pendingLeave.value}
-          </div>
-          <div className="grid grid-cols-3 gap-1.5 mb-2">
-            {pendingLeave.types.map((type) => (
-              <div
-                key={type.label}
-                className="border border-[#E0E0E0] rounded-md py-1.5 text-center"
-              >
-                <div className="text-[13px] font-semibold text-[#1A1A1A] leading-none">
-                  {type.count}
-                </div>
-                <div className="text-[9px] text-[#AAAAAA] mt-1">
-                  {type.label}
-                </div>
-              </div>
-            ))}
-          </div>
-          <button
-            type="button"
-            className="text-[11px] font-medium text-[#534AB7] text-right hover:underline mt-auto"
-          >
-            {pendingLeave.ctaLabel}
-          </button>
+          <div className="text-[24px] font-bold text-[#C2840A] leading-none mb-3">—</div>
+          <button type="button" className="text-[11px] font-medium text-[#534AB7] text-right hover:underline mt-auto">Review all →</button>
         </div>
 
-        {/* Manpower gaps */}
         <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-[17px] flex flex-col">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-[10px] font-semibold text-[#888888] uppercase tracking-wide">
-              {manpowerGapsSummary.label}
-            </span>
+            <span className="text-[10px] font-semibold text-[#888888] uppercase tracking-wide">Manpower gaps</span>
             <UserX size={15} strokeWidth={1.8} className="text-[#AAAAAA]" />
           </div>
-          <div
-            className="text-[24px] font-bold leading-none mb-3"
-            style={{ color: manpowerGapsSummary.valueColor }}
-          >
-            {manpowerGapsSummary.value}
-          </div>
+          <div className="text-[24px] font-bold text-[#A32D2D] leading-none mb-3">—</div>
           <div className="flex flex-col gap-1.5">
-            {manpowerGapsSummary.items.map((item) => (
-              <div
-                key={item.label}
-                className={`flex items-center justify-between px-2.5 py-2 rounded-md ${
-                  item.tone === "danger" ? "bg-[#FCEBEB]" : "bg-[#F1EFE8]"
-                }`}
-              >
-                <span
-                  className="text-[11px] font-medium"
-                  style={{
-                    color: item.tone === "danger" ? "#A32D2D" : "#444441",
-                  }}
-                >
-                  {item.label}
-                </span>
-                {item.tone === "danger" ? (
-                  <AlertTriangle
-                    size={13}
-                    strokeWidth={2}
-                    className="text-[#A32D2D]"
-                  />
-                ) : (
-                  <Info size={13} strokeWidth={2} className="text-[#888888]" />
-                )}
-              </div>
-            ))}
+            <div className="flex items-center justify-between px-2.5 py-2 rounded-md bg-[#F1EFE8]">
+              <span className="text-[11px] font-medium text-[#444441]">Pending data</span>
+            </div>
           </div>
         </div>
 
-        {/* Roster coverage */}
         <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-[17px] flex flex-col">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-[10px] font-semibold text-[#888888] uppercase tracking-wide">
-              {rosterCoverage.label}
-            </span>
-            <CalendarCheck
-              size={15}
-              strokeWidth={1.8}
-              className="text-[#AAAAAA]"
-            />
+            <span className="text-[10px] font-semibold text-[#888888] uppercase tracking-wide">Roster coverage</span>
+            <CalendarCheck size={15} strokeWidth={1.8} className="text-[#AAAAAA]" />
           </div>
-          <div className="text-[24px] font-bold text-[#1A1A1A] leading-none mb-4">
-            {rosterCoverage.value}
-          </div>
+          <div className="text-[24px] font-bold text-[#1A1A1A] leading-none mb-4">—</div>
           <div className="flex items-center gap-1.5 mt-auto">
-            {rosterCoverage.days.map((day) => (
-              <span
-                key={day}
-                className="flex-1 text-center text-[9px] font-medium text-[#534AB7] bg-[#EEEDFE] rounded py-1.5"
-              >
-                {day}
-              </span>
+            {["Mo", "Tu", "We", "Th", "Fr"].map(day => (
+              <span key={day} className="flex-1 text-center text-[9px] font-medium text-[#534AB7] bg-[#EEEDFE] rounded py-1.5">{day}</span>
             ))}
           </div>
         </div>
       </div>
 
-      {/* Main grid: Today's attendance + Leave approvals + Manpower gaps detail */}
+      {/* Main grid: Today's attendance + Leave approvals + Manpower gaps */}
       <div className="grid grid-cols-[1.7fr_1fr_1fr] gap-3 items-start">
         {/* Today's attendance */}
         <div className="bg-white border border-[#E0E0E0] rounded-[10px] overflow-hidden">
           <div className="flex items-center justify-between px-[17px] py-3.5 border-b border-[#E0E0E0]">
-            <span className="text-[13px] font-semibold text-[#1A1A1A]">
-              Today&apos;s attendance
-            </span>
+            <span className="text-[13px] font-semibold text-[#1A1A1A]">Today&apos;s attendance</span>
             <span className="flex items-center gap-1.5">
               <span className="size-1.5 rounded-full bg-[#3B6D11]" />
-              <span className="text-[11px] text-[#27500A] font-medium">
-                Live
-              </span>
+              <span className="text-[11px] text-[#27500A] font-medium">Stub</span>
             </span>
           </div>
-
           <div className="px-[17px] pt-3.5 flex items-center gap-2">
             {deptFilters.map((filter) => (
               <button
@@ -371,177 +189,31 @@ export default function OperationsHeadDashboardPage() {
               </button>
             ))}
           </div>
-
-          <div className="px-[17px] pt-4 flex flex-wrap gap-2">
-            {attendanceDots.map((status, idx) => (
-              <span
-                key={idx}
-                className="size-3.5 rounded-full"
-                style={{ backgroundColor: dotColor(status) }}
-              />
-            ))}
+          <div className="p-[17px] flex flex-col items-center justify-center min-h-[120px]">
+            <Info size={20} strokeWidth={1.8} className="text-[#AAAAAA] mb-2" />
+            <span className="text-[11px] text-[#888888]">Attendance data loading from API</span>
           </div>
-
-          <table className="w-full mt-4">
-            <thead>
-              <tr className="border-t border-[#E0E0E0] bg-[#F8F9FC]">
-                <th className="text-left text-[10px] font-semibold text-[#888888] uppercase tracking-wide px-[17px] py-2.5">
-                  Employee
-                </th>
-                <th className="text-left text-[10px] font-semibold text-[#888888] uppercase tracking-wide px-2 py-2.5">
-                  Dept
-                </th>
-                <th className="text-left text-[10px] font-semibold text-[#888888] uppercase tracking-wide px-2 py-2.5">
-                  Check-in
-                </th>
-                <th className="text-left text-[10px] font-semibold text-[#888888] uppercase tracking-wide px-2 py-2.5">
-                  Status
-                </th>
-                <th className="text-right text-[10px] font-semibold text-[#888888] uppercase tracking-wide px-[17px] py-2.5">
-                  Action
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {todayAttendanceRows.map((row, idx) => (
-                <tr
-                  key={row.name}
-                  className={
-                    idx !== todayAttendanceRows.length - 1
-                      ? "border-b border-[#E0E0E0]"
-                      : ""
-                  }
-                >
-                  <td className="px-[17px] py-3 text-[12px] font-medium text-[#1A1A1A]">
-                    {row.name}
-                  </td>
-                  <td className="px-2 py-3 text-[12px] text-[#888888]">
-                    {row.dept}
-                  </td>
-                  <td className="px-2 py-3 text-[12px] text-[#888888]">
-                    {row.checkIn}
-                  </td>
-                  <td className="px-2 py-3">
-                    <span
-                      className={`text-[10px] font-medium px-2 py-1 rounded-full ${statusBadgeClasses(row.status)}`}
-                    >
-                      {row.status}
-                    </span>
-                  </td>
-                  <td className="px-[17px] py-3">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        type="button"
-                        aria-label="Flag"
-                        className="text-[#888888] hover:text-[#1A1A1A]"
-                      >
-                        <Flag size={13} strokeWidth={1.8} />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label="More options"
-                        className="text-[#888888] hover:text-[#1A1A1A]"
-                      >
-                        <MoreHorizontal size={13} strokeWidth={1.8} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
 
         {/* Leave approvals */}
         <div className="bg-white border border-[#E0E0E0] rounded-[10px] overflow-hidden">
           <div className="px-[17px] py-3.5 border-b border-[#E0E0E0]">
-            <span className="text-[13px] font-semibold text-[#1A1A1A]">
-              Leave approvals
-            </span>
+            <span className="text-[13px] font-semibold text-[#1A1A1A]">Leave approvals</span>
           </div>
-          <div className="p-[17px] flex flex-col gap-2.5">
-            {leaveApprovals.map((req) => (
-              <div
-                key={req.name}
-                className="bg-[#F8F9FC] border border-[#E0E0E0] rounded-lg p-3"
-              >
-                <div className="flex items-center gap-2.5 mb-3">
-                  <div className="size-7 rounded-full bg-[#7B68EE] flex items-center justify-center shrink-0">
-                    <span className="text-white text-[11px] font-semibold">
-                      {req.initials}
-                    </span>
-                  </div>
-                  <div className="min-w-0">
-                    <span className="text-[12px] font-medium text-[#1A1A1A] block truncate">
-                      {req.name}
-                    </span>
-                    <span className="text-[10px] text-[#888888]">
-                      {req.type} · {req.days} days
-                    </span>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    className="text-[11px] font-medium text-[#1A1A1A] bg-white border border-[#D8D8D8] rounded-md py-1.5 hover:bg-[#F8F9FC]"
-                  >
-                    Reject
-                  </button>
-                  <button
-                    type="button"
-                    className="text-[11px] font-medium text-white bg-[#7B68EE] rounded-md py-1.5 hover:bg-[#6A5ACD]"
-                  >
-                    Approve
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div className="p-[17px] flex flex-col items-center justify-center min-h-[200px]">
+            <CalendarDays size={20} strokeWidth={1.8} className="text-[#AAAAAA] mb-2" />
+            <span className="text-[11px] text-[#888888]">No approvals yet</span>
           </div>
         </div>
 
-        {/* Manpower gaps detail */}
+        {/* Manpower gaps */}
         <div className="bg-white border border-[#E0E0E0] rounded-[10px] overflow-hidden flex flex-col">
           <div className="px-[17px] py-3.5 border-b border-[#E0E0E0]">
-            <span className="text-[13px] font-semibold text-[#1A1A1A]">
-              Manpower gaps
-            </span>
+            <span className="text-[13px] font-semibold text-[#1A1A1A]">Manpower gaps</span>
           </div>
-          <div className="px-[17px] py-2 flex flex-col">
-            {manpowerGapsDetail.map((gap, idx) => (
-              <div
-                key={gap.dept}
-                className={`flex items-center justify-between py-3 ${
-                  idx !== manpowerGapsDetail.length - 1
-                    ? "border-b border-dashed border-[#E0E0E0]"
-                    : ""
-                }`}
-              >
-                <div>
-                  <span className="text-[12px] font-medium text-[#1A1A1A] block">
-                    {gap.dept}
-                  </span>
-                  <span
-                    className="text-[11px]"
-                    style={{
-                      color: gap.level === "Critical" ? "#A32D2D" : "#888888",
-                    }}
-                  >
-                    {gap.level}
-                  </span>
-                </div>
-                <span className="size-7 rounded-md bg-[#F0F0F0] flex items-center justify-center text-[12px] font-semibold text-[#1A1A1A]">
-                  {gap.count}
-                </span>
-              </div>
-            ))}
-          </div>
-          <div className="px-[17px] pb-[17px] pt-2 mt-auto">
-            <button
-              type="button"
-              className="w-full text-[12px] font-medium text-[#534AB7] border border-[#7B68EE] rounded-md py-2 hover:bg-[#F8F9FC]"
-            >
-              Raise new request
-            </button>
+          <div className="p-[17px] flex flex-col items-center justify-center min-h-[200px]">
+            <UserX size={20} strokeWidth={1.8} className="text-[#AAAAAA] mb-2" />
+            <span className="text-[11px] text-[#888888]">No gap data</span>
           </div>
         </div>
       </div>
