@@ -90,6 +90,15 @@ enum ServiceHealthStatus {
   DOWN
 }
 
+enum PipelineStage {
+  APPLIED
+  SCREENING
+  INTERVIEW
+  OFFER
+  HIRED
+  REJECTED
+}
+
 model User {
   id                    String            @id @default(cuid())
   email                 String            @unique
@@ -110,6 +119,7 @@ model User {
   financialEventsCreated FinancialEvent[] @relation("FinancialEventsCreated")
   notifications         Notification[]
   operatingExpensesCreated OperatingExpense[] @relation("OperatingExpensesCreated")
+  jobRequisitionsCreated JobRequisition[] @relation("RequisitionCreatedBy")
 
   @@map("users")
 }
@@ -427,12 +437,55 @@ model LeaveRequest {
   @@map("leave_requests")
 }
 
-model Recruitment {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model JobRequisition {
+  id             String      @id @default(cuid())
+  title          String
+  department     String
+  status         String      @default("ACTIVE") // ACTIVE, CLOSED, DRAFT
+  
+  createdByUserId String
+  createdBy       User       @relation("RequisitionCreatedBy", fields: [createdByUserId], references: [id])
+  
+  candidates     Candidate[]
+  
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
-  @@map("recruitments")
+  @@map("job_requisitions")
+}
+
+model Candidate {
+  id                 String         @id @default(cuid())
+  jobRequisitionId   String
+  jobRequisition     JobRequisition @relation(fields: [jobRequisitionId], references: [id], onDelete: Cascade)
+  
+  name               String
+  email              String?
+  phone              String?
+  role               String?
+  experience         String?
+  rating             Decimal?       @db.Decimal(3, 2)
+  ratingType         String         @default("default")
+  filesCount         Int            @default(0)
+  
+  tag                String?
+  tagColor           String?
+  
+  pipelineStage      PipelineStage  @default(APPLIED)
+  pipelineProgress   Int            @default(1)
+  
+  skills             String[]       @default([])
+  
+  interviewTitle     String?
+  interviewLocation  String?
+  interviewAt        DateTime?
+  
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([pipelineStage])
+  @@index([jobRequisitionId])
+  @@map("candidates")
 }
 
 model Announcement {
