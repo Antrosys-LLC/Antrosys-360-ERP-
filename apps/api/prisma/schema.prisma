@@ -110,6 +110,7 @@ model User {
   financialEventsCreated FinancialEvent[] @relation("FinancialEventsCreated")
   notifications         Notification[]
   operatingExpensesCreated OperatingExpense[] @relation("OperatingExpensesCreated")
+  biReports             BIReport[]        @relation("UserBIReports")
 
   @@map("users")
 }
@@ -500,5 +501,58 @@ model Notification {
   @@index([userId])
   @@index([isRead])
   @@map("notifications")
+}
+
+// =========================================================================
+// BI & Reports Models
+// =========================================================================
+
+model BIReport {
+  id           String        @id @default(cuid())
+  title        String
+  description  String?
+  category     String        // e.g. "Finance", "HR", "Operations", "Sales"
+  iconType     String        // e.g. "trend", "pipeline", "target", "turnover"
+  isFavourite  Boolean       @default(false)
+  isShared     Boolean       @default(false)
+  config       Json?         // Custom builder config: { xAxis, yAxis, settings: { showDataLabels, showLegend, trendline }, filters, exportFormat }
+  createdById  String
+  createdBy    User          @relation("UserBIReports", fields: [createdById], references: [id])
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  schedules    BISchedule[]
+  executions   BIExecution[]
+
+  @@map("bi_reports")
+}
+
+model BISchedule {
+  id             String      @id @default(cuid())
+  reportId       String
+  report         BIReport    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  title          String
+  cronExpression String      // e.g. "0 8 * * 1"
+  info           String      // Human readable schedule description, e.g. "Every Mon, 8:00 AM"
+  deliveryMethod String      // e.g. "email" | "pdf"
+  isActive       Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@map("bi_schedules")
+}
+
+model BIExecution {
+  id         String    @id @default(cuid())
+  reportId   String?
+  report     BIReport? @relation(fields: [reportId], references: [id], onDelete: SetNull)
+  name       String    // Report Name
+  duration   String    // e.g. "1.2s" or "-"
+  status     String    // "COMPLETED" or "FAILED"
+  failed     Boolean   @default(false)
+  runAt      DateTime  @default(now())
+  userId     String?
+  createdAt  DateTime  @default(now())
+
+  @@map("bi_executions")
 }
 

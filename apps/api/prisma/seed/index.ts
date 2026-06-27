@@ -241,6 +241,10 @@ async function main() {
   const { seedCeoData } = await import('./ceo.seed');
   await seedCeoData();
 
+  // 8. Seed BI specific data
+  const { seedBizIntelData } = await import('./biz_intel.seed');
+  await seedBizIntelData(prisma);
+
   console.log('\n🎉 Seed completed successfully!');
 }
 
