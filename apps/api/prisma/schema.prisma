@@ -582,6 +582,7 @@ model Candidate {
   @@index([pipelineStage])
   @@index([jobRequisitionId])
   @@map("candidates")
+}
 model JobPosting {
   id              String           @id @default(cuid())
   title           String
