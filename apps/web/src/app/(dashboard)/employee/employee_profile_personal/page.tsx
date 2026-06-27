@@ -9,65 +9,7 @@ import Link from 'next/link';
 // CENTRALIZED DATA STORES
 // ============================================================================
 
-
-const employeeHeaderData = {
-  name: "Sara Javed",
-  initials: "SJ",
-  role: "Senior Engineer",
-  department: "Engineering dept",
-  sinceDate: "Jan 2022",
-  status: "Active",
-  type: "Full-time",
-  location: "Islamabad · HQ",
-  tenure: "3 yrs tenure",
-  empId: "ID: EMP-00142",
-  email: "sara.javed@antrosys.com",
-  phone: "+92 300 1234567",
-  handle: "@sara.eng",
-  reportsTo: "Zara Khan",
-  contractType: "Permanent",
-  metrics: [
-    { label: "Attendance", value: "94%", strokeColor: "#7B6AE6", percentage: 94 },
-    { label: "Performance", value: "88%", strokeColor: "#10B981", percentage: 88 },
-    { label: "KPI avg", value: "72%", strokeColor: "#F59E0B", percentage: 72 }
-  ]
-};
-
-const personalInformation = {
-  fields: [
-    { label: "Full name", value: "Sara Javed Khan" },
-    { label: "Preferred name", value: "Sara" },
-    { label: "Date of birth", value: "14 Aug 1995" },
-    { label: "Gender", value: "Female" },
-    { label: "Nationality", value: "Pakistani" },
-    { label: "CNIC", value: "61101-1234567-8" },
-    { label: "Personal email", value: "sara.j.95@gmail.com" },
-    { label: "Personal phone", value: "+92 321 7654321" }
-  ],
-  emergencyContact: "Javed Khan (Father) — +92 333 1112233",
-  homeAddress: "House 42, Street 10, Sector F-8/4, Islamabad, Pakistan 44000"
-};
-
-const employmentSnapshot = [
-  { label: "Employee ID", value: "EMP-00142", isLink: false },
-  { label: "Department", value: "Engineering", isLink: false },
-  { label: "Designation", value: "Senior Engineer", isLink: false },
-  { label: "Grade", value: "L4", isLink: false },
-  { label: "Line Manager", value: "Zara Khan", isLink: true },
-  { label: "Join Date", value: "15 Jan 2022", isLink: false },
-  { label: "Probation End", value: "15 Apr 2022", isLink: false, verified: true },
-  { label: "Emp Type", value: "Permanent", isLink: false }
-];
-
-const skillsData = {
-  tags: ["React", "TypeScript", "Node.js", "System Design", "AWS"],
-  progress: [
-    { skill: "React", percentage: 90 },
-    { skill: "TypeScript", percentage: 80 },
-    { skill: "System Design", percentage: 70 }
-  ]
-};
-
+// The mock data for the Personal tab has been replaced with dynamic backend state.
 const officeAccessData = {
   details: [
     { label: "Location", value: "Islamabad HQ" },
@@ -116,13 +58,81 @@ const payslipsData = [
 function EmployeeDashboardContent() {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
+  const idParam = searchParams.get('id');
+
   const [activeTab, setActiveTab] = useState("Personal");
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Dynamic backend data state
+  const [employeeHeaderData, setEmployeeHeaderData] = useState<{
+    name: string; initials: string; role: string; department: string;
+    sinceDate: string; status: string; type: string; location: string;
+    tenure: string; empId: string; email: string; phone: string;
+    handle: string; reportsTo: string; contractType: string;
+    metrics: { label: string; value: string; strokeColor: string; percentage: number }[];
+  } | null>(null);
+
+  const [personalInformation, setPersonalInformation] = useState<{
+    fields: { label: string; value: string }[];
+    emergencyContact: string; homeAddress: string;
+  } | null>(null);
+
+  const [employmentSnapshot, setEmploymentSnapshot] = useState<{
+    label: string; value: string; isLink: boolean; verified?: boolean;
+  }[] | null>(null);
+
+  const [skillsData, setSkillsData] = useState<{
+    tags: string[]; progress: { skill: string; percentage: number }[];
+  } | null>(null);
 
   useEffect(() => {
     if (tabParam) {
       setActiveTab(tabParam);
     }
   }, [tabParam]);
+
+  useEffect(() => {
+    async function fetchEmployeeData() {
+      if (!idParam) {
+        setIsLoading(false);
+        return;
+      }
+      try {
+        setIsLoading(true);
+        const { default: apiClient } = await import('@/lib/api-client');
+        const response = await apiClient.get(`/employees/${idParam}`);
+        const data = response.data.data;
+        
+        setEmployeeHeaderData(data.headerData);
+        setPersonalInformation(data.personalInformation);
+        setEmploymentSnapshot(data.employmentSnapshot);
+        setSkillsData(data.skillsData);
+      } catch (error) {
+        console.error("Failed to load employee profile:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchEmployeeData();
+  }, [idParam]);
+
+  if (isLoading) {
+    return (
+      <div className="bg-[#f8f9fa] min-h-screen flex items-center justify-center">
+        <Loader2 className="w-10 h-10 text-primary animate-spin" />
+      </div>
+    );
+  }
+
+  if (!employeeHeaderData) {
+    return (
+      <div className="bg-[#f8f9fa] min-h-screen flex flex-col items-center justify-center p-6 text-center">
+        <h2 className="text-2xl font-bold mb-2">Employee not found</h2>
+        <p className="text-muted-foreground mb-6">The employee record you are looking for does not exist or has been removed.</p>
+        <Link href="/hr/employees" className="text-primary hover:underline font-medium">Return to Directory</Link>
+      </div>
+    );
+  }
 
   const navigationTabs = [
     { name: "Personal" },
@@ -146,9 +156,9 @@ function EmployeeDashboardContent() {
           <div className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
             <Link href="/hr/employees" className="text-muted-foreground hover:text-foreground cursor-pointer">Employees</Link>
             <ChevronRight className="w-4 h-4 text-muted-foreground/60" />
-            <Link href="/hr/employees?department=Engineering" className="text-muted-foreground hover:text-foreground cursor-pointer">Engineering</Link>
+            <Link href={`/hr/employees?department=${employeeHeaderData.department?.replace(' dept', '') || 'Unassigned'}`} className="text-muted-foreground hover:text-foreground cursor-pointer">{employeeHeaderData.department?.replace(' dept', '') || 'Unassigned'}</Link>
             <ChevronRight className="w-4 h-4 text-muted-foreground/60" />
-            <span className="text-foreground font-bold">Sara Javed</span>
+            <span className="text-foreground font-bold">{employeeHeaderData.name}</span>
           </div>
 
           <div className="flex items-center gap-2.5">
@@ -561,7 +571,7 @@ fill="none"
                 <h2 className="text-lg font-bold text-foreground tracking-tight">Personal information</h2>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-12 gap-y-4">
-                  {personalInformation.fields.map((field, idx) => (
+                  {personalInformation?.fields.map((field, idx) => (
                     <div key={idx} className="space-y-1">
                       <span className="block text-xs font-medium text-muted-foreground tracking-tight">{field.label}</span>
                       <span className="block text-sm text-foreground font-semibold">{field.value}</span>
@@ -572,12 +582,12 @@ fill="none"
                 <div className="border-t border-border pt-4 space-y-4">
                   <div className="space-y-1">
                     <span className="block text-xs font-medium text-muted-foreground tracking-tight">Emergency contact</span>
-                    <span className="block text-sm text-foreground font-semibold">{personalInformation.emergencyContact}</span>
+                    <span className="block text-sm text-foreground font-semibold">{personalInformation?.emergencyContact}</span>
                   </div>
                   
                   <div className="border-t border-border pt-4 space-y-1">
                     <span className="block text-xs font-medium text-muted-foreground tracking-tight">Home address</span>
-                    <span className="block text-sm text-foreground font-semibold leading-relaxed">{personalInformation.homeAddress}</span>
+                    <span className="block text-sm text-foreground font-semibold leading-relaxed">{personalInformation?.homeAddress}</span>
                   </div>
                 </div>
               </section>
@@ -591,7 +601,7 @@ fill="none"
                 </div>
 
                 <div className="flex flex-wrap gap-1.5">
-                  {skillsData.tags.map((tag, idx) => (
+                  {skillsData?.tags.map((tag, idx) => (
                     <span key={idx} className="px-3 py-1 bg-muted/40 border border-border rounded-[var(--radius)] text-xs font-semibold text-foreground">
                       {tag}
                     </span>
@@ -599,7 +609,7 @@ fill="none"
                 </div>
 
                 <div className="space-y-4 pt-2">
-                  {skillsData.progress.map((item, idx) => (
+                  {skillsData?.progress.map((item, idx) => (
                     <div key={idx} className="space-y-1.5">
                       <div className="flex justify-between text-xs font-bold tracking-tight">
                         <span className="text-foreground">{item.skill}</span>
@@ -628,7 +638,7 @@ fill="none"
                     </tr>
                   </thead>
                   <tbody>
-                    {employmentSnapshot.map((row, idx) => (
+                    {employmentSnapshot?.map((row, idx) => (
                       <tr key={idx} className="border-b last:border-0 border-border bg-transparent hover:bg-muted/10 transition-colors">
                         <td className="px-6 py-3.5 font-medium text-muted-foreground w-[40%] tracking-tight">{row.label}</td>
                         <td className="px-6 py-3.5 font-bold text-foreground">

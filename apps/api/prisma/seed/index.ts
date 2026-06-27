@@ -13,6 +13,26 @@ interface SeedUser {
   lastName: string;
   department: string;
   designation?: string;
+  // Personal Info & Profile Fields
+  employeeCode?: string;
+  preferredName?: string;
+  gender?: string;
+  nationality?: string;
+  cnic?: string;
+  personalEmail?: string;
+  personalPhone?: string;
+  emergencyContactName?: string;
+  emergencyContactRelation?: string;
+  emergencyContactPhone?: string;
+  homeAddress?: string;
+  grade?: string;
+  employeeType?: string;
+  location?: string;
+  employmentStatus?: string;
+  socialHandle?: string;
+  performanceScore?: number;
+  kpiScore?: number;
+  skills?: { name: string; percentage: number | null }[];
 }
 
 const seedUsers: SeedUser[] = [
@@ -27,7 +47,39 @@ const seedUsers: SeedUser[] = [
   { email: 'team_lead@antrosys.com', role: 'TEAM_LEAD', firstName: 'Team', lastName: 'Lead', department: 'Engineering', designation: 'Team Lead' },
   
   // Reports for sub-manager & manager
-  { email: 'sara.javed@antrosys.com', role: 'EMPLOYEE', firstName: 'Sara', lastName: 'Javed', department: 'Operations', designation: 'Senior Dev' },
+  { 
+    email: 'sara.javed@antrosys.com', 
+    role: 'EMPLOYEE', 
+    firstName: 'Sara', 
+    lastName: 'Javed', 
+    department: 'Engineering', 
+    designation: 'Senior Engineer',
+    employeeCode: 'EMP-00142',
+    preferredName: 'Sara',
+    gender: 'Female',
+    nationality: 'Pakistani',
+    cnic: '61101-1234567-8',
+    personalEmail: 'sara.j.95@gmail.com',
+    personalPhone: '+92 321 7654321',
+    emergencyContactName: 'Javed Khan',
+    emergencyContactRelation: 'Father',
+    emergencyContactPhone: '+92 333 1112233',
+    homeAddress: 'House 42, Street 10, Sector F-8/4, Islamabad, Pakistan 44000',
+    grade: 'L4',
+    employeeType: 'Permanent',
+    location: 'Islamabad HQ',
+    employmentStatus: 'Active',
+    socialHandle: '@sara.eng',
+    performanceScore: 88,
+    kpiScore: 72,
+    skills: [
+      { name: 'React', percentage: 90 },
+      { name: 'TypeScript', percentage: 80 },
+      { name: 'System Design', percentage: 70 },
+      { name: 'Node.js', percentage: null },
+      { name: 'AWS', percentage: null }
+    ]
+  },
   { email: 'fawad.khan@antrosys.com', role: 'EMPLOYEE', firstName: 'Fawad', lastName: 'Khan', department: 'Operations', designation: 'Backend' },
   { email: 'bilal.hassan@antrosys.com', role: 'EMPLOYEE', firstName: 'Bilal', lastName: 'Hassan', department: 'Operations', designation: 'DevOps' },
   { email: 'hina.baig@antrosys.com', role: 'EMPLOYEE', firstName: 'Hina', lastName: 'Baig', department: 'Operations', designation: 'Frontend' },
@@ -58,9 +110,32 @@ async function main() {
     console.log(`✅ Created user: ${user.email} (${user.role})`);
 
     // Create Employee record for all users
-    await prisma.employee.upsert({
+    const empRecord = await prisma.employee.upsert({
       where: { userId: user.id },
-      update: {},
+      update: {
+        firstName: seedUser.firstName,
+        lastName: seedUser.lastName,
+        department: seedUser.department,
+        designation: seedUser.designation || 'Staff',
+        employeeCode: seedUser.employeeCode,
+        preferredName: seedUser.preferredName,
+        gender: seedUser.gender,
+        nationality: seedUser.nationality,
+        cnic: seedUser.cnic,
+        personalEmail: seedUser.personalEmail,
+        personalPhone: seedUser.personalPhone,
+        emergencyContactName: seedUser.emergencyContactName,
+        emergencyContactRelation: seedUser.emergencyContactRelation,
+        emergencyContactPhone: seedUser.emergencyContactPhone,
+        homeAddress: seedUser.homeAddress,
+        grade: seedUser.grade,
+        employeeType: seedUser.employeeType,
+        location: seedUser.location,
+        employmentStatus: seedUser.employmentStatus,
+        socialHandle: seedUser.socialHandle,
+        performanceScore: seedUser.performanceScore,
+        kpiScore: seedUser.kpiScore,
+      },
       create: {
         userId: user.id,
         firstName: seedUser.firstName,
@@ -69,9 +144,44 @@ async function main() {
         designation: seedUser.designation || 'Staff',
         joiningDate: new Date('2024-01-01'),
         isActive: true,
+        // Profile mapping
+        employeeCode: seedUser.employeeCode,
+        preferredName: seedUser.preferredName,
+        gender: seedUser.gender,
+        nationality: seedUser.nationality,
+        cnic: seedUser.cnic,
+        personalEmail: seedUser.personalEmail,
+        personalPhone: seedUser.personalPhone,
+        emergencyContactName: seedUser.emergencyContactName,
+        emergencyContactRelation: seedUser.emergencyContactRelation,
+        emergencyContactPhone: seedUser.emergencyContactPhone,
+        homeAddress: seedUser.homeAddress,
+        grade: seedUser.grade,
+        employeeType: seedUser.employeeType,
+        location: seedUser.location,
+        employmentStatus: seedUser.employmentStatus,
+        socialHandle: seedUser.socialHandle,
+        performanceScore: seedUser.performanceScore,
+        kpiScore: seedUser.kpiScore,
       },
     });
     console.log(`  📋 Created employee record for ${seedUser.email}`);
+
+    // Seed skills if any
+    if (seedUser.skills && seedUser.skills.length > 0) {
+      for (const skill of seedUser.skills) {
+        // Prevent duplicate seed entries
+        await prisma.employeeSkill.findFirst({ where: { employeeId: empRecord.id, skillName: skill.name } }) ||
+        await prisma.employeeSkill.create({
+          data: {
+            employeeId: empRecord.id,
+            skillName: skill.name,
+            percentage: skill.percentage
+          }
+        });
+      }
+      console.log(`  🛠️ Seeded ${seedUser.skills.length} skills for ${seedUser.email}`);
+    }
   }
 
   // 2. Resolve Relationships
