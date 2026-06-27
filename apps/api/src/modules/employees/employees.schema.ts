@@ -40,11 +40,17 @@ export const updatePersonalBodySchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
   preferredName: z.string().nullable().optional(),
-  dateOfBirth: z.string().datetime().nullable().optional(),
+  dateOfBirth: z
+    .union([
+      z.string().datetime(),
+      z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    ])
+    .nullable()
+    .optional(),
   gender: z.string().nullable().optional(),
   nationality: z.string().nullable().optional(),
   cnic: z.string().nullable().optional(),
-  personalEmail: z.string().email().nullable().optional(),
+  personalEmail: z.union([z.string().email(), z.literal('')]).nullable().optional(),
   personalPhone: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
   emergencyContactName: z.string().nullable().optional(),
