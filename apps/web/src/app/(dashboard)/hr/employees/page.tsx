@@ -1,10 +1,19 @@
 "use client";
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { ChevronDown, ChevronUp, UserPlus, Users, Loader2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 
-// --- Interfaces for Mock Data ---
+// --- Interfaces for Data ---
+interface BackendEmployee {
+  id: string;
+  firstName: string;
+  lastName: string;
+  designation: string;
+  department: string | null;
+  user: { email: string };
+}
+
 interface Employee {
   id: string;
   name: string;
@@ -21,102 +30,94 @@ interface Department {
   employees: Employee[];
 }
 
-// --- Mock Data ---
-// Tip: Set this to `[]` to test the empty state fallback!
-const mockData: Department[] = [
-  {
-    id: 'dept1',
-    name: 'Engineering',
-    employeeCount: 3,
-    employees: [
-      {
-        id: 'emp1',
-        name: 'Ali Hassan',
-        role: 'Frontend Dev',
-        email: 'ali.hassan@company.com',
-        initials: 'AH',
-        avatarBgColor: 'bg-blue-100 text-blue-700',
-      },
-      {
-        id: 'emp2',
-        name: 'Sara Khan',
-        role: 'Backend Dev',
-        email: 'sara.khan@company.com',
-        initials: 'SK',
-        avatarBgColor: 'bg-pink-100 text-pink-700',
-      },
-      {
-        id: 'emp3',
-        name: 'Usman Tariq',
-        role: 'DevOps',
-        email: 'usman.tariq@company.com',
-        initials: 'UT',
-        avatarBgColor: 'bg-indigo-100 text-indigo-700',
-      },
-    ],
-  },
-  {
-    id: 'dept2',
-    name: 'Design',
-    employeeCount: 2,
-    employees: [
-      {
-        id: 'emp4',
-        name: 'Jane Doe',
-        role: 'UI/UX Designer',
-        email: 'jane.doe@company.com',
-        initials: 'JD',
-        avatarBgColor: 'bg-teal-100 text-teal-700',
-      },
-      {
-        id: 'emp5',
-        name: 'John Smith',
-        role: 'Visual Designer',
-        email: 'john.smith@company.com',
-        initials: 'JS',
-        avatarBgColor: 'bg-orange-100 text-orange-700',
-      },
-    ],
-  },
-  {
-    id: 'dept3',
-    name: 'HR',
-    employeeCount: 2,
-    employees: [
-      {
-        id: 'emp6',
-        name: 'Alice Johnson',
-        role: 'HR Manager',
-        email: 'alice.johnson@company.com',
-        initials: 'AJ',
-        avatarBgColor: 'bg-green-100 text-green-700',
-      },
-      {
-        id: 'emp7',
-        name: 'Bob Brown',
-        role: 'Recruiter',
-        email: 'bob.brown@company.com',
-        initials: 'BB',
-        avatarBgColor: 'bg-red-100 text-red-700',
-      },
-    ],
-  },
+// Generate random bg colors for avatars to match the mock behavior
+const bgColors = [
+  'bg-blue-100 text-blue-700',
+  'bg-pink-100 text-pink-700',
+  'bg-indigo-100 text-indigo-700',
+  'bg-teal-100 text-teal-700',
+  'bg-orange-100 text-orange-700',
+  'bg-green-100 text-green-700',
+  'bg-red-100 text-red-700',
 ];
+
+function getAvatarColor(id: string) {
+  // Use a simple hash of the ID to consistently pick a color
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = id.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return bgColors[Math.abs(hash) % bgColors.length];
+}
 
 // --- Inner Content Component (reads search params) ---
 function EmployeesContent() {
   const searchParams = useSearchParams();
   const departmentParam = searchParams.get('department');
 
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => {
-    if (departmentParam) {
-      const matchingDept = mockData.find(
-        (d) => d.name.toLowerCase() === departmentParam.toLowerCase()
-      );
-      if (matchingDept) return { [matchingDept.id]: true };
+  const [departmentsData, setDepartmentsData] = useState<Department[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    async function fetchEmployees() {
+      try {
+        const { default: apiClient } = await import('@/lib/api-client');
+        const res = await apiClient.get('/employees');
+        const employeesList: BackendEmployee[] = res.data.data.employees;
+
+        // Group by department
+        const grouped = employeesList.reduce((acc, emp) => {
+          const deptName = emp.department || 'Unassigned';
+          if (!acc[deptName]) {
+            acc[deptName] = [];
+          }
+          acc[deptName].push({
+            id: emp.id,
+            name: `${emp.firstName} ${emp.lastName}`,
+            role: emp.designation || 'Employee',
+            email: emp.user?.email || '',
+            initials: (emp.firstName?.[0] || '') + (emp.lastName?.[0] || ''),
+            avatarBgColor: getAvatarColor(emp.id),
+          });
+          return acc;
+        }, {} as Record<string, Employee[]>);
+
+        // Convert to array format matching old mock
+        const mappedData: Department[] = Object.keys(grouped)
+          .sort()
+          .map((deptName) => ({
+            id: `dept-${deptName.toLowerCase().replace(/\s+/g, '-')}`,
+            name: deptName,
+            employeeCount: grouped[deptName].length,
+            employees: grouped[deptName],
+          }));
+
+        setDepartmentsData(mappedData);
+
+        // Set initial expanded section based on search param or fallback to first
+        let initialExpanded: Record<string, boolean> = {};
+        if (departmentParam) {
+          const matchingDept = mappedData.find(
+            (d) => d.name.toLowerCase() === departmentParam.toLowerCase()
+          );
+          if (matchingDept) {
+            initialExpanded = { [matchingDept.id]: true };
+          }
+        } else if (mappedData.length > 0) {
+          initialExpanded = { [mappedData[0].id]: true };
+        }
+        setExpandedSections(initialExpanded);
+
+      } catch (error) {
+        console.error('Failed to fetch employees', error);
+      } finally {
+        setIsLoading(false);
+      }
     }
-    return { dept1: true };
-  });
+
+    fetchEmployees();
+  }, [departmentParam]);
 
   const toggleSection = (id: string) => {
     setExpandedSections((prev) => ({
@@ -145,7 +146,11 @@ function EmployeesContent() {
 
       {/* Main Content Area */}
       <main className="w-full">
-        {mockData.length === 0 ? (
+        {isLoading ? (
+          <div className="flex items-center justify-center min-h-[400px]">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : departmentsData.length === 0 ? (
           /* --- Empty State Fallback --- */
           <div className="flex min-h-[400px] flex-col items-center justify-center rounded-xl border-2 border-dashed border-border/80 bg-background/50 px-6 py-16 text-center">
             <Users className="mb-4 h-12 w-12 text-muted-foreground/60" />
@@ -157,7 +162,7 @@ function EmployeesContent() {
         ) : (
           /* --- Populated State --- */
           <div className="space-y-5">
-            {mockData.map((department) => {
+            {departmentsData.map((department) => {
               const isExpanded = expandedSections[department.id];
               return (
                 <div
@@ -189,9 +194,10 @@ function EmployeesContent() {
                   {isExpanded && (
                     <div className="border-t border-border/60 custom-scrollbar">
                       {department.employees.map((employee, index) => (
-                        <div
+                        <a
                           key={employee.id}
-                          className={`flex items-center justify-between gap-4 px-6 py-4 hover:bg-muted/10 transition-colors ${
+                          href={`/employee/employee_profile_personal?id=${employee.id}`}
+                          className={`flex items-center justify-between gap-4 px-6 py-4 hover:bg-muted/10 transition-colors cursor-pointer ${
                             index < department.employees.length - 1 ? 'border-b border-border/40' : ''
                           }`}
                         >
@@ -201,7 +207,7 @@ function EmployeesContent() {
                               {employee.initials}
                             </div>
                             <div className="flex flex-col">
-                              <span className="text-[15px] font-semibold text-foreground">
+                              <span className="text-[15px] font-semibold text-[#7B6AE6] hover:underline">
                                 {employee.name}
                               </span>
                               <span className="text-[13.5px] text-muted-foreground mt-0.5">
@@ -214,7 +220,7 @@ function EmployeesContent() {
                           <div className="text-[13.5px] text-muted-foreground hidden sm:block font-medium">
                             {employee.email}
                           </div>
-                        </div>
+                        </a>
                       ))}
                     </div>
                   )}
