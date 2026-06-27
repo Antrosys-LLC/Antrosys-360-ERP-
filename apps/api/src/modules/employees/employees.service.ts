@@ -1,5 +1,50 @@
+import { Department, EmploymentStatus, Gender } from '@prisma/client';
 import { prisma } from '../../config/database';
 import type { ListEmployeesQuery, UpdatePersonalBody, UpsertSkillBody } from './employees.schema';
+
+const DEPARTMENT_ALIASES: Record<string, Department> = {
+  engineering: 'ENGINEERING',
+  operations: 'OPERATIONS',
+  sales: 'SALES',
+  finance: 'FINANCE',
+  hr: 'HR',
+  other: 'OTHER',
+  unassigned: 'OTHER',
+};
+
+function normalizeDepartment(value: string): Department | undefined {
+  const key = value.trim().toLowerCase().replace(/\s+dept$/i, '');
+  if (DEPARTMENT_ALIASES[key]) return DEPARTMENT_ALIASES[key];
+  const upper = value.trim().toUpperCase().replace(/\s+/g, '_');
+  if (upper in DEPARTMENT_ALIASES) return DEPARTMENT_ALIASES[upper.toLowerCase()];
+  return Object.values(Department).find((d) => d === upper) as Department | undefined;
+}
+
+function normalizeGender(value: string): Gender | undefined {
+  const map: Record<string, Gender> = {
+    male: 'MALE',
+    female: 'FEMALE',
+    other: 'OTHER',
+    'prefer not to say': 'PREFER_NOT_TO_SAY',
+  };
+  const key = value.trim().toLowerCase();
+  if (map[key]) return map[key];
+  return Object.values(Gender).find((g) => g === value.toUpperCase()) as Gender | undefined;
+}
+
+function normalizeEmploymentStatus(value: string): EmploymentStatus | undefined {
+  const map: Record<string, EmploymentStatus> = {
+    active: 'ACTIVE',
+    onboarding: 'ONBOARDING',
+    'offer signed': 'OFFER_SIGNED',
+    offer_signed: 'OFFER_SIGNED',
+    offboarding: 'OFFBOARDING',
+    terminated: 'TERMINATED',
+  };
+  const key = value.trim().toLowerCase();
+  if (map[key]) return map[key];
+  return Object.values(EmploymentStatus).find((s) => s === value.toUpperCase()) as EmploymentStatus | undefined;
+}
 
 // ============================================================================
 // LIST – all employees (grouped by department on the frontend)
@@ -7,7 +52,10 @@ import type { ListEmployeesQuery, UpdatePersonalBody, UpsertSkillBody } from './
 
 export async function listEmployees(query: ListEmployeesQuery) {
   const where: Record<string, unknown> = {};
-  if (query.department) where.department = query.department;
+  if (query.department) {
+    const department = normalizeDepartment(query.department);
+    if (department) where.department = department;
+  }
   if (query.isActive !== undefined) where.isActive = query.isActive;
 
   const [employees, total] = await Promise.all([
@@ -65,10 +113,24 @@ export async function getEmployeeById(id: string) {
 // ============================================================================
 
 export async function updateEmployee(id: string, data: UpdatePersonalBody) {
-  // Convert ISO string to Date if dateOfBirth was provided
   const updateData: Record<string, unknown> = { ...data };
   if (data.dateOfBirth) {
     updateData.dateOfBirth = new Date(data.dateOfBirth);
+  }
+  if (data.department) {
+    const department = normalizeDepartment(data.department);
+    if (department) updateData.department = department;
+    else delete updateData.department;
+  }
+  if (data.gender) {
+    const gender = normalizeGender(data.gender);
+    if (gender) updateData.gender = gender;
+    else delete updateData.gender;
+  }
+  if (data.employmentStatus) {
+    const employmentStatus = normalizeEmploymentStatus(data.employmentStatus);
+    if (employmentStatus) updateData.employmentStatus = employmentStatus;
+    else delete updateData.employmentStatus;
   }
 
   const updated = await prisma.employee.update({
