@@ -1,72 +1,27 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
-import { Mail, Phone, Hash, Pencil, CheckCircle2, ChevronRight, ChevronDown, Download, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { Mail, Phone, Hash, Pencil, CheckCircle2, ChevronRight, ChevronDown, Download, Loader2, Trash2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import axios from 'axios';
+
+// Form & UI Imports
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
 
 // ============================================================================
 // CENTRALIZED DATA STORES
 // ============================================================================
 
-
-const employeeHeaderData = {
-  name: "Sara Javed",
-  initials: "SJ",
-  role: "Senior Engineer",
-  department: "Engineering dept",
-  sinceDate: "Jan 2022",
-  status: "Active",
-  type: "Full-time",
-  location: "Islamabad · HQ",
-  tenure: "3 yrs tenure",
-  empId: "ID: EMP-00142",
-  email: "sara.javed@antrosys.com",
-  phone: "+92 300 1234567",
-  handle: "@sara.eng",
-  reportsTo: "Zara Khan",
-  contractType: "Permanent",
-  metrics: [
-    { label: "Attendance", value: "94%", strokeColor: "#7B6AE6", percentage: 94 },
-    { label: "Performance", value: "88%", strokeColor: "#10B981", percentage: 88 },
-    { label: "KPI avg", value: "72%", strokeColor: "#F59E0B", percentage: 72 }
-  ]
-};
-
-const personalInformation = {
-  fields: [
-    { label: "Full name", value: "Sara Javed Khan" },
-    { label: "Preferred name", value: "Sara" },
-    { label: "Date of birth", value: "14 Aug 1995" },
-    { label: "Gender", value: "Female" },
-    { label: "Nationality", value: "Pakistani" },
-    { label: "CNIC", value: "61101-1234567-8" },
-    { label: "Personal email", value: "sara.j.95@gmail.com" },
-    { label: "Personal phone", value: "+92 321 7654321" }
-  ],
-  emergencyContact: "Javed Khan (Father) — +92 333 1112233",
-  homeAddress: "House 42, Street 10, Sector F-8/4, Islamabad, Pakistan 44000"
-};
-
-const employmentSnapshot = [
-  { label: "Employee ID", value: "EMP-00142", isLink: false },
-  { label: "Department", value: "Engineering", isLink: false },
-  { label: "Designation", value: "Senior Engineer", isLink: false },
-  { label: "Grade", value: "L4", isLink: false },
-  { label: "Line Manager", value: "Zara Khan", isLink: true },
-  { label: "Join Date", value: "15 Jan 2022", isLink: false },
-  { label: "Probation End", value: "15 Apr 2022", isLink: false, verified: true },
-  { label: "Emp Type", value: "Permanent", isLink: false }
-];
-
-const skillsData = {
-  tags: ["React", "TypeScript", "Node.js", "System Design", "AWS"],
-  progress: [
-    { skill: "React", percentage: 90 },
-    { skill: "TypeScript", percentage: 80 },
-    { skill: "System Design", percentage: 70 }
-  ]
-};
-
+// The mock data for the Personal tab has been replaced with dynamic backend state.
 const officeAccessData = {
   details: [
     { label: "Location", value: "Islamabad HQ" },
@@ -109,19 +64,320 @@ const payslipsData = [
 ];
 
 // ============================================================================
+// FORM SCHEMAS
+// ============================================================================
+
+const profileSchema = z.object({
+  firstName: z.string().min(1, 'First name is required'),
+  lastName: z.string().min(1, 'Last name is required'),
+  preferredName: z.string().nullable().optional(),
+  dateOfBirth: z.string().nullable().optional(),
+  gender: z.string().nullable().optional(),
+  nationality: z.string().nullable().optional(),
+  cnic: z.string().nullable().optional(),
+  personalEmail: z.string().email('Invalid email').nullable().optional().or(z.literal('')),
+  personalPhone: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  emergencyContactName: z.string().nullable().optional(),
+  emergencyContactRelation: z.string().nullable().optional(),
+  emergencyContactPhone: z.string().nullable().optional(),
+  homeAddress: z.string().nullable().optional(),
+  department: z.string().nullable().optional(),
+  designation: z.string().nullable().optional(),
+  grade: z.string().nullable().optional(),
+  location: z.string().nullable().optional(),
+  employeeType: z.string().nullable().optional(),
+});
+
+type ProfileFormValues = z.infer<typeof profileSchema>;
+
+const skillSchema = z.object({
+  skillName: z.string().min(1, 'Skill name is required'),
+  percentage: z.number().int().min(0).max(100).nullable().optional(),
+});
+
+type SkillFormValues = z.infer<typeof skillSchema>;
+
+function toDateInputValue(date: string | Date | null | undefined): string {
+  if (!date) return '';
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toISOString().slice(0, 10);
+}
+
+function toApiDateValue(value: string | null | undefined): string | null {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(`${value}T00:00:00.000Z`).toISOString();
+  }
+  return value;
+}
+
+function employeeToProfileFormValues(employee: {
+  firstName?: string | null;
+  lastName?: string | null;
+  preferredName?: string | null;
+  dateOfBirth?: string | Date | null;
+  gender?: string | null;
+  nationality?: string | null;
+  cnic?: string | null;
+  personalEmail?: string | null;
+  personalPhone?: string | null;
+  phone?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactRelation?: string | null;
+  emergencyContactPhone?: string | null;
+  homeAddress?: string | null;
+  department?: string | null;
+  designation?: string | null;
+  grade?: string | null;
+  location?: string | null;
+  employeeType?: string | null;
+}): ProfileFormValues {
+  return {
+    firstName: employee.firstName || '',
+    lastName: employee.lastName || '',
+    preferredName: employee.preferredName || '',
+    dateOfBirth: toDateInputValue(employee.dateOfBirth),
+    gender: employee.gender || '',
+    nationality: employee.nationality || '',
+    cnic: employee.cnic || '',
+    personalEmail: employee.personalEmail || '',
+    personalPhone: employee.personalPhone || '',
+    phone: employee.phone || '',
+    emergencyContactName: employee.emergencyContactName || '',
+    emergencyContactRelation: employee.emergencyContactRelation || '',
+    emergencyContactPhone: employee.emergencyContactPhone || '',
+    homeAddress: employee.homeAddress || '',
+    department: employee.department || '',
+    designation: employee.designation || '',
+    grade: employee.grade || '',
+    location: employee.location || '',
+    employeeType: employee.employeeType || '',
+  };
+}
+
+function buildProfilePayload(values: ProfileFormValues) {
+  return Object.fromEntries(
+    Object.entries(values).map(([key, value]) => {
+      if (value === '') return [key, null];
+      if (key === 'dateOfBirth') return [key, toApiDateValue(value as string)];
+      return [key, value];
+    }),
+  );
+}
+
+// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
 function EmployeeDashboardContent() {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
+  const idParam = searchParams.get('id') ?? searchParams.get('employeeId');
+  const { toast } = useToast();
+
   const [activeTab, setActiveTab] = useState("Personal");
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // Modals state
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  const [isSkillsManagerOpen, setIsSkillsManagerOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [skillSubmitting, setSkillSubmitting] = useState(false);
+
+  // Forms
+  const profileForm = useForm<ProfileFormValues>({
+    resolver: zodResolver(profileSchema),
+    defaultValues: {
+      firstName: '', lastName: '', preferredName: '', dateOfBirth: '', gender: '',
+      nationality: '', cnic: '', personalEmail: '', personalPhone: '', phone: '',
+      emergencyContactName: '', emergencyContactRelation: '', emergencyContactPhone: '',
+      homeAddress: '', department: '', designation: '', grade: '', location: '', employeeType: ''
+    }
+  });
+
+  const skillForm = useForm<SkillFormValues>({
+    resolver: zodResolver(skillSchema),
+    defaultValues: { skillName: '', percentage: null }
+  });
+
+  // Dynamic backend data state
+  const [employeeHeaderData, setEmployeeHeaderData] = useState<{
+    firstName: string; lastName: string; name: string; initials: string; role: string; department: string;
+    sinceDate: string; status: string; type: string; location: string;
+    tenure: string; empId: string; email: string; phone: string;
+    handle: string; reportsTo: string; contractType: string;
+    metrics: { label: string; value: string; strokeColor: string; percentage: number }[];
+  } | null>(null);
+
+  const [personalInformation, setPersonalInformation] = useState<{
+    fields: { label: string; value: string }[];
+    emergencyContact: string; homeAddress: string;
+  } | null>(null);
+
+  const [employmentSnapshot, setEmploymentSnapshot] = useState<{
+    label: string; value: string; isLink: boolean; verified?: boolean;
+  }[] | null>(null);
+
+  const [skillsData, setSkillsData] = useState<{
+    tags: string[]; progress: { skill: string; percentage: number }[];
+  } | null>(null);
+
+  // Raw skills for CRUD in the Skills Manager dialog
+  const [rawSkills, setRawSkills] = useState<{ id: string; skillName: string; percentage: number | null }[]>([]);
+  const profileFormDefaultsRef = useRef<ProfileFormValues | null>(null);
+
+  const fetchEmployeeData = useCallback(async (options?: { silent?: boolean }) => {
+    if (!idParam) {
+      setIsLoading(false);
+      return;
+    }
+    try {
+      if (!options?.silent) {
+        setIsLoading(true);
+      }
+      const { default: apiClient } = await import('@/lib/api-client');
+      const response = await apiClient.get(`/employees/${idParam}`);
+      const data = response.data.data;
+
+      setEmployeeHeaderData(data.headerData);
+      setPersonalInformation(data.personalInformation);
+      setEmploymentSnapshot(data.employmentSnapshot);
+      setSkillsData(data.skillsData);
+      setRawSkills(data.skills || []);
+      profileFormDefaultsRef.current = employeeToProfileFormValues(data.employee);
+    } catch (error) {
+      console.error('Failed to load employee profile:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Failed to load profile',
+        description: 'Could not fetch employee data. Please try again.',
+      });
+    } finally {
+      if (!options?.silent) {
+        setIsLoading(false);
+      }
+    }
+  }, [idParam, toast]);
 
   useEffect(() => {
     if (tabParam) {
       setActiveTab(tabParam);
     }
   }, [tabParam]);
+
+  useEffect(() => {
+    fetchEmployeeData();
+  }, [fetchEmployeeData]);
+
+  const openEditProfile = () => {
+    if (profileFormDefaultsRef.current) {
+      profileForm.reset(profileFormDefaultsRef.current);
+    }
+    setIsEditProfileOpen(true);
+  };
+
+  const onProfileSubmit = async (values: ProfileFormValues) => {
+    if (!idParam) {
+      toast({
+        variant: 'destructive',
+        title: 'Save failed',
+        description: 'Employee ID is missing from the page URL.',
+      });
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      const { default: apiClient } = await import('@/lib/api-client');
+      await apiClient.put(`/employees/${idParam}`, buildProfilePayload(values));
+      await fetchEmployeeData({ silent: true });
+      setIsEditProfileOpen(false);
+      toast({ title: 'Profile updated', description: 'Employee information was saved successfully.' });
+    } catch (error) {
+      console.error('Failed to update profile', error);
+      let description = 'Could not save employee information. Please try again.';
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 403) {
+          description = 'You do not have permission to edit employee profiles.';
+        } else if (error.response?.data?.error) {
+          description = String(error.response.data.error);
+        }
+      }
+      toast({ variant: 'destructive', title: 'Save failed', description });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const onProfileSubmitError = () => {
+    toast({
+      variant: 'destructive',
+      title: 'Please fix the form errors',
+      description: 'Check the highlighted fields and try again.',
+    });
+  };
+
+  const onSkillSubmit = async (values: SkillFormValues) => {
+    if (!idParam) return;
+
+    try {
+      setSkillSubmitting(true);
+      const { default: apiClient } = await import('@/lib/api-client');
+      await apiClient.post(`/employees/${idParam}/skills`, values);
+      await fetchEmployeeData({ silent: true });
+      skillForm.reset({ skillName: '', percentage: null });
+      toast({ title: 'Skill added' });
+    } catch (error) {
+      console.error('Failed to add skill', error);
+      toast({
+        variant: 'destructive',
+        title: 'Failed to add skill',
+        description: axios.isAxiosError(error) && error.response?.data?.error
+          ? String(error.response.data.error)
+          : 'Please try again.',
+      });
+    } finally {
+      setSkillSubmitting(false);
+    }
+  };
+
+  const onSkillDelete = async (skillId: string) => {
+    if (!idParam || !confirm('Are you sure you want to remove this skill?')) return;
+
+    try {
+      const { default: apiClient } = await import('@/lib/api-client');
+      await apiClient.delete(`/employees/${idParam}/skills/${skillId}`);
+      await fetchEmployeeData({ silent: true });
+      toast({ title: 'Skill removed' });
+    } catch (error) {
+      console.error('Failed to delete skill', error);
+      toast({
+        variant: 'destructive',
+        title: 'Failed to remove skill',
+        description: 'Please try again.',
+      });
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="bg-[#f8f9fa] min-h-screen flex items-center justify-center">
+        <Loader2 className="w-10 h-10 text-primary animate-spin" />
+      </div>
+    );
+  }
+
+  if (!employeeHeaderData) {
+    return (
+      <div className="bg-[#f8f9fa] min-h-screen flex flex-col items-center justify-center p-6 text-center">
+        <h2 className="text-2xl font-bold mb-2">Employee not found</h2>
+        <p className="text-muted-foreground mb-6">The employee record you are looking for does not exist or has been removed.</p>
+        <Link href="/hr/employees" className="text-primary hover:underline font-medium">Return to Directory</Link>
+      </div>
+    );
+  }
 
   const navigationTabs = [
     { name: "Personal" },
@@ -143,15 +399,18 @@ function EmployeeDashboardContent() {
            ========================================== */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1 pb-2 mb-6">
           <div className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
-            <span className="text-muted-foreground hover:text-foreground cursor-pointer">Employees</span>
+            <Link href="/hr/employees" className="text-muted-foreground hover:text-foreground cursor-pointer">Employees</Link>
             <ChevronRight className="w-4 h-4 text-muted-foreground/60" />
-            <span className="text-muted-foreground hover:text-foreground cursor-pointer">Engineering</span>
+            <Link href={`/hr/employees?department=${employeeHeaderData.department?.replace(' dept', '') || 'Unassigned'}`} className="text-muted-foreground hover:text-foreground cursor-pointer">{employeeHeaderData.department?.replace(' dept', '') || 'Unassigned'}</Link>
             <ChevronRight className="w-4 h-4 text-muted-foreground/60" />
-            <span className="text-foreground font-bold">Sara Javed</span>
+            <span className="text-foreground font-bold">{employeeHeaderData.name}</span>
           </div>
 
           <div className="flex items-center gap-2.5">
-            <button className="px-4 py-2 border border-border text-xs font-bold text-foreground bg-card hover:bg-muted/50 rounded-[var(--radius)] transition-colors shadow-sm">
+            <button 
+              onClick={openEditProfile}
+              className="px-4 py-2 border border-border text-xs font-bold text-foreground bg-card hover:bg-muted/50 rounded-[var(--radius)] transition-colors shadow-sm"
+            >
               Edit profile
             </button>
             <button className="px-4 py-2 border border-border text-xs font-bold text-foreground bg-card hover:bg-muted/50 rounded-[var(--radius)] transition-colors shadow-sm">
@@ -560,7 +819,7 @@ fill="none"
                 <h2 className="text-lg font-bold text-foreground tracking-tight">Personal information</h2>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-12 gap-y-4">
-                  {personalInformation.fields.map((field, idx) => (
+                  {personalInformation?.fields.map((field, idx) => (
                     <div key={idx} className="space-y-1">
                       <span className="block text-xs font-medium text-muted-foreground tracking-tight">{field.label}</span>
                       <span className="block text-sm text-foreground font-semibold">{field.value}</span>
@@ -571,12 +830,12 @@ fill="none"
                 <div className="border-t border-border pt-4 space-y-4">
                   <div className="space-y-1">
                     <span className="block text-xs font-medium text-muted-foreground tracking-tight">Emergency contact</span>
-                    <span className="block text-sm text-foreground font-semibold">{personalInformation.emergencyContact}</span>
+                    <span className="block text-sm text-foreground font-semibold">{personalInformation?.emergencyContact}</span>
                   </div>
                   
                   <div className="border-t border-border pt-4 space-y-1">
                     <span className="block text-xs font-medium text-muted-foreground tracking-tight">Home address</span>
-                    <span className="block text-sm text-foreground font-semibold leading-relaxed">{personalInformation.homeAddress}</span>
+                    <span className="block text-sm text-foreground font-semibold leading-relaxed">{personalInformation?.homeAddress}</span>
                   </div>
                 </div>
               </section>
@@ -584,13 +843,16 @@ fill="none"
               <section className="bg-white text-card-foreground border border-border rounded-[var(--radius)] p-6 shadow-sm space-y-5">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-bold text-foreground tracking-tight">Skills & expertise</h2>
-                  <button className="text-muted-foreground/70 hover:text-foreground p-1 transition-colors border border-border rounded bg-muted/20" aria-label="Modify Matrix">
+                  <button 
+                    onClick={() => setIsSkillsManagerOpen(true)}
+                    className="text-muted-foreground/70 hover:text-foreground p-1 transition-colors border border-border rounded bg-muted/20" aria-label="Modify Matrix"
+                  >
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
                 <div className="flex flex-wrap gap-1.5">
-                  {skillsData.tags.map((tag, idx) => (
+                  {skillsData?.tags.map((tag, idx) => (
                     <span key={idx} className="px-3 py-1 bg-muted/40 border border-border rounded-[var(--radius)] text-xs font-semibold text-foreground">
                       {tag}
                     </span>
@@ -598,7 +860,7 @@ fill="none"
                 </div>
 
                 <div className="space-y-4 pt-2">
-                  {skillsData.progress.map((item, idx) => (
+                  {skillsData?.progress.map((item, idx) => (
                     <div key={idx} className="space-y-1.5">
                       <div className="flex justify-between text-xs font-bold tracking-tight">
                         <span className="text-foreground">{item.skill}</span>
@@ -627,7 +889,7 @@ fill="none"
                     </tr>
                   </thead>
                   <tbody>
-                    {employmentSnapshot.map((row, idx) => (
+                    {employmentSnapshot?.map((row, idx) => (
                       <tr key={idx} className="border-b last:border-0 border-border bg-transparent hover:bg-muted/10 transition-colors">
                         <td className="px-6 py-3.5 font-medium text-muted-foreground w-[40%] tracking-tight">{row.label}</td>
                         <td className="px-6 py-3.5 font-bold text-foreground">
@@ -680,6 +942,197 @@ fill="none"
 
           </div>
         )}
+
+        {/* ==========================================
+            MODALS & SLIDING SHEETS
+           ========================================== */}
+        <Sheet open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen}>
+          <SheetContent className="overflow-y-auto w-full sm:max-w-xl">
+            <SheetHeader className="mb-6">
+              <SheetTitle>Edit Profile Information</SheetTitle>
+            </SheetHeader>
+            <form onSubmit={profileForm.handleSubmit(onProfileSubmit, onProfileSubmitError)} className="space-y-6">
+              
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold text-foreground tracking-tight border-b pb-2">Personal Info</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">First Name <span className="text-red-500">*</span></Label>
+                    <Input {...profileForm.register('firstName')} className="text-sm" />
+                    {profileForm.formState.errors.firstName && (
+                      <p className="text-xs text-red-500">{profileForm.formState.errors.firstName.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Last Name <span className="text-red-500">*</span></Label>
+                    <Input {...profileForm.register('lastName')} className="text-sm" />
+                    {profileForm.formState.errors.lastName && (
+                      <p className="text-xs text-red-500">{profileForm.formState.errors.lastName.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Preferred Name</Label>
+                    <Input {...profileForm.register('preferredName')} className="text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Date of Birth</Label>
+                    <Input type="date" {...profileForm.register('dateOfBirth')} className="text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Gender</Label>
+                    <Input {...profileForm.register('gender')} className="text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Nationality</Label>
+                    <Input {...profileForm.register('nationality')} className="text-sm" />
+                  </div>
+                  <div className="space-y-1.5 col-span-2">
+                    <Label className="text-xs">CNIC</Label>
+                    <Input {...profileForm.register('cnic')} className="text-sm" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold text-foreground tracking-tight border-b pb-2">Contact</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Personal Email</Label>
+                    <Input type="email" {...profileForm.register('personalEmail')} className="text-sm" />
+                    {profileForm.formState.errors.personalEmail && (
+                      <p className="text-xs text-red-500">{profileForm.formState.errors.personalEmail.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Personal Phone</Label>
+                    <Input {...profileForm.register('personalPhone')} className="text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Work Phone</Label>
+                    <Input {...profileForm.register('phone')} className="text-sm" />
+                  </div>
+                  <div className="space-y-1.5 col-span-2">
+                    <Label className="text-xs">Home Address</Label>
+                    <Input {...profileForm.register('homeAddress')} className="text-sm" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold text-foreground tracking-tight border-b pb-2">Emergency Contact</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Name</Label>
+                    <Input {...profileForm.register('emergencyContactName')} className="text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Relation</Label>
+                    <Input {...profileForm.register('emergencyContactRelation')} className="text-sm" />
+                  </div>
+                  <div className="space-y-1.5 col-span-2">
+                    <Label className="text-xs">Phone Number</Label>
+                    <Input {...profileForm.register('emergencyContactPhone')} className="text-sm" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold text-foreground tracking-tight border-b pb-2">Employment</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Department</Label>
+                    <Input {...profileForm.register('department')} className="text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Designation</Label>
+                    <Input {...profileForm.register('designation')} className="text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Grade</Label>
+                    <Input {...profileForm.register('grade')} className="text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Location</Label>
+                    <Input {...profileForm.register('location')} className="text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Employment Type</Label>
+                    <Input {...profileForm.register('employeeType')} className="text-sm" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-6 pb-8 border-t flex justify-end gap-3">
+                <Button type="button" variant="outline" onClick={() => setIsEditProfileOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={isSubmitting} className="bg-[#7B6AE6] hover:bg-[#6959cf] text-white font-bold">
+                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                  Save Changes
+                </Button>
+              </div>
+            </form>
+          </SheetContent>
+        </Sheet>
+
+        <Dialog open={isSkillsManagerOpen} onOpenChange={setIsSkillsManagerOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Manage Skills & Expertise</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-6 pt-4">
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Current Skills</h4>
+                {rawSkills.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4 border border-dashed rounded-md bg-muted/20">No skills added yet.</p>
+                ) : (
+                  <ul className="space-y-2 max-h-[250px] overflow-y-auto px-1">
+                    {rawSkills.map((s) => (
+                      <li key={s.id} className="flex items-center justify-between p-2.5 border rounded-md bg-card">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-foreground">{s.skillName}</span>
+                          {s.percentage !== null && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">{s.percentage}%</span>
+                          )}
+                        </div>
+                        <button 
+                          onClick={() => onSkillDelete(s.id)}
+                          className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <form onSubmit={skillForm.handleSubmit(onSkillSubmit)} className="space-y-4 border-t pt-4">
+                <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Add New Skill</h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2 space-y-1.5">
+                    <Label className="text-xs">Skill Name <span className="text-red-500">*</span></Label>
+                    <Input {...skillForm.register('skillName')} placeholder="e.g. React" className="text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Proficiency %</Label>
+                    <Input 
+                      type="number" 
+                      min="0" max="100" 
+                      placeholder="Optional" 
+                      {...skillForm.register('percentage', { valueAsNumber: true, setValueAs: v => v === "" || isNaN(v) ? null : v })} 
+                      className="text-sm" 
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button type="submit" disabled={skillSubmitting} className="w-full sm:w-auto bg-[#7B6AE6] hover:bg-[#6959cf] text-white font-bold">
+                    {skillSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                    Add Skill
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </DialogContent>
+        </Dialog>
 
       </div>
     </div>

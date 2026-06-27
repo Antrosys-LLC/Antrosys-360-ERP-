@@ -90,57 +90,153 @@ enum ServiceHealthStatus {
   DOWN
 }
 
+enum Department {
+  ENGINEERING
+  OPERATIONS
+  SALES
+  FINANCE
+  HR
+  OTHER
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum EmploymentStatus {
+  OFFER_SIGNED
+  ONBOARDING
+  ACTIVE
+  OFFBOARDING
+  TERMINATED
+}
+
+enum JobPostingStatus {
+  DRAFT
+  OPEN
+  CLOSED
+}
+
+enum ApplicationStage {
+  APPLIED
+  SCREENING
+  INTERVIEW
+  OFFER_SENT
+  HIRED
+  REJECTED
+  WITHDRAWN
+}
+
+enum OnboardingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum HrLetterType {
+  OFFER
+  APPOINTMENT
+  EXPERIENCE
+  SALARY_CERTIFICATE
+  OTHER
+}
+
 model User {
-  id                    String            @id @default(cuid())
-  email                 String            @unique
-  passwordHash          String
-  role                  Role
-  mfaSecret             String?
-  mfaEnabled            Boolean           @default(false)
-  isActive              Boolean           @default(true)
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
-  employee              Employee?
-  auditLogs             AuditLog[]
-  invoicesIssued        Invoice[]         @relation("InvoicesIssued")
-  payrollsSubmitted     Payroll[]         @relation("PayrollSubmitted")
-  payrollsApproved      Payroll[]         @relation("PayrollApproved")
-  vendorPaymentsCreated VendorPayment[]   @relation("VendorPaymentsCreated")
-  approvalTasksAssigned ApprovalTask[]    @relation("ApprovalTasksAssigned")
-  financialEventsCreated FinancialEvent[] @relation("FinancialEventsCreated")
-  notifications         Notification[]
+  id                       String             @id @default(cuid())
+  email                    String             @unique
+  passwordHash             String
+  role                     Role
+  mfaSecret                String?
+  mfaEnabled               Boolean            @default(false)
+  isActive                 Boolean            @default(true)
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+  employee                 Employee?
+  auditLogs                AuditLog[]
+  invoicesIssued           Invoice[]          @relation("InvoicesIssued")
+  payrollsSubmitted        Payroll[]          @relation("PayrollSubmitted")
+  payrollsApproved         Payroll[]          @relation("PayrollApproved")
+  vendorPaymentsCreated    VendorPayment[]    @relation("VendorPaymentsCreated")
+  approvalTasksAssigned    ApprovalTask[]     @relation("ApprovalTasksAssigned")
+  financialEventsCreated   FinancialEvent[]   @relation("FinancialEventsCreated")
+  notifications            Notification[]
   operatingExpensesCreated OperatingExpense[] @relation("OperatingExpensesCreated")
   biReports             BIReport[]        @relation("UserBIReports")
+  jobPostingsCreated       JobPosting[]       @relation("JobPostingsCreated")
+  onboardingCreated        OnboardingRecord[] @relation("OnboardingCreated")
+  hrLettersGenerated       HrLetter[]         @relation("HrLettersGenerated")
 
   @@map("users")
 }
 
 model Employee {
-  id                     String         @id @default(cuid())
-  userId                 String         @unique
-  user                   User           @relation(fields: [userId], references: [id])
+  id                     String           @id @default(cuid())
+  userId                 String           @unique
+  user                   User             @relation(fields: [userId], references: [id])
+  employeeCode           String?          @unique
   firstName              String
   lastName               String
+  preferredName          String?
   dateOfBirth            DateTime?
+  gender                 Gender
+  nationality            String?
+  cnic                   String?
   phone                  String?
-  department             String?
+  personalEmail          String?
+  personalPhone          String?
+  emergencyContactName   String?
+  emergencyContactRelation String?
+  emergencyContactPhone  String?
+  homeAddress            String?
+  department             Department?
   designation            String?
+  grade                  String?
+  employeeType           String?
+  location               String?
+  employmentStatus       EmploymentStatus @default(ACTIVE)
+  socialHandle           String?
+  performanceScore       Int?
+  kpiScore               Int?
   joiningDate            DateTime?
+  terminatedAt           DateTime?
   contractType           String?
   probationEnd           DateTime?
   managerId              String?
-  manager                Employee?      @relation("ManagerReports", fields: [managerId], references: [id])
-  reports                Employee[]     @relation("ManagerReports")
-  isActive               Boolean        @default(true)
-  createdAt              DateTime       @default(now())
-  updatedAt              DateTime       @updatedAt
+  manager                Employee?        @relation("ManagerReports", fields: [managerId], references: [id])
+  reports                Employee[]       @relation("ManagerReports")
+  isActive               Boolean          @default(true)
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
   approvalTasksRequested ApprovalTask[]
   attendances            Attendance[]
   leaveRequests          LeaveRequest[]   @relation("EmployeeLeaves")
   approvedLeaves         LeaveRequest[]   @relation("ApprovedLeaves")
   announcements          Announcement[]
+  skills                 EmployeeSkill[]
+  jobApplications        JobApplication[]
+  onboarding             OnboardingRecord?
+  hrLetters              HrLetter[]
 
+  @@index([department])
+  @@index([employmentStatus])
+  @@index([isActive, employmentStatus])
   @@map("employees")
+}
+
+model EmployeeSkill {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  skillName  String
+  percentage Int? // If null, it's just a tag. If set, it's a progress bar.
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([employeeId])
+  @@map("employee_skills")
 }
 
 model AuditLog {
@@ -197,10 +293,10 @@ model Invoice {
   terms             String?
   stripePaymentLink String?
   subtotal          Decimal           @db.Decimal(14, 2)
-  discountTotal     Decimal           @db.Decimal(14, 2) @default(0)
+  discountTotal     Decimal           @default(0) @db.Decimal(14, 2)
   taxableAmount     Decimal           @db.Decimal(14, 2)
-  taxTotal          Decimal           @db.Decimal(14, 2) @default(0)
-  withholdingTotal  Decimal           @db.Decimal(14, 2) @default(0)
+  taxTotal          Decimal           @default(0) @db.Decimal(14, 2)
+  withholdingTotal  Decimal           @default(0) @db.Decimal(14, 2)
   totalDue          Decimal           @db.Decimal(14, 2)
   issuedByUserId    String
   issuedBy          User              @relation("InvoicesIssued", fields: [issuedByUserId], references: [id])
@@ -223,11 +319,11 @@ model InvoiceLineItem {
   quantity      Decimal  @db.Decimal(12, 4)
   unit          String?
   unitPrice     Decimal  @db.Decimal(14, 2)
-  discountPct   Decimal  @db.Decimal(5, 2) @default(0)
+  discountPct   Decimal  @default(0) @db.Decimal(5, 2)
   taxType       String
-  taxRatePct    Decimal  @db.Decimal(5, 2) @default(0)
+  taxRatePct    Decimal  @default(0) @db.Decimal(5, 2)
   lineSubtotal  Decimal  @db.Decimal(14, 2)
-  lineTaxAmount Decimal  @db.Decimal(14, 2) @default(0)
+  lineTaxAmount Decimal  @default(0) @db.Decimal(14, 2)
   lineTotal     Decimal  @db.Decimal(14, 2)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -243,7 +339,7 @@ model Payroll {
   periodEnd         DateTime      @db.Date
   totalGross        Decimal       @db.Decimal(14, 2)
   totalNet          Decimal       @db.Decimal(14, 2)
-  taxWithheld       Decimal       @db.Decimal(14, 2) @default(0)
+  taxWithheld       Decimal       @default(0) @db.Decimal(14, 2)
   employeeCount     Int
   status            PayrollStatus @default(DRAFT)
   submittedByUserId String?
@@ -263,9 +359,9 @@ model Payroll {
 model DailyCashflow {
   id            String   @id @default(cuid())
   date          DateTime @unique @db.Date
-  inflowAmount  Decimal  @db.Decimal(14, 2) @default(0)
-  outflowAmount Decimal  @db.Decimal(14, 2) @default(0)
-  netAmount     Decimal  @db.Decimal(14, 2) @default(0)
+  inflowAmount  Decimal  @default(0) @db.Decimal(14, 2)
+  outflowAmount Decimal  @default(0) @db.Decimal(14, 2)
+  netAmount     Decimal  @default(0) @db.Decimal(14, 2)
   currencyCode  String   @default("USD") @db.VarChar(3)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -296,8 +392,8 @@ model ApprovalTask {
   id                  String               @id @default(cuid())
   assigneeUserId      String
   assignee            User                 @relation("ApprovalTasksAssigned", fields: [assigneeUserId], references: [id])
-  requesterEmployeeId   String
-  requester             Employee             @relation(fields: [requesterEmployeeId], references: [id])
+  requesterEmployeeId String
+  requester           Employee             @relation(fields: [requesterEmployeeId], references: [id])
   actionTitle         String
   priority            ApprovalTaskPriority @default(MEDIUM)
   status              ApprovalTaskStatus   @default(PENDING)
@@ -396,7 +492,7 @@ model Attendance {
   date       DateTime  @db.Date
   checkIn    DateTime?
   checkOut   DateTime?
-  status     String    // "PRESENT", "ABSENT", "LATE", "LEAVE"
+  status     String // "PRESENT", "ABSENT", "LATE", "LEAVE"
   hours      Decimal?  @db.Decimal(4, 2)
   isFlagged  Boolean   @default(false)
   createdAt  DateTime  @default(now())
@@ -412,11 +508,11 @@ model LeaveRequest {
   id           String    @id @default(cuid())
   employeeId   String
   employee     Employee  @relation("EmployeeLeaves", fields: [employeeId], references: [id], onDelete: Cascade)
-  type         String    // "SICK", "ANNUAL", "CASUAL", "MATERNITY"
+  type         String // "SICK", "ANNUAL", "CASUAL", "MATERNITY"
   startDate    DateTime
   endDate      DateTime
   durationDays Int
-  status       String    // "PENDING", "APPROVED", "REJECTED"
+  status       String // "PENDING", "APPROVED", "REJECTED"
   reason       String?
   approvedById String?
   approvedBy   Employee? @relation("ApprovedLeaves", fields: [approvedById], references: [id])
@@ -428,12 +524,85 @@ model LeaveRequest {
   @@map("leave_requests")
 }
 
-model Recruitment {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model JobPosting {
+  id              String           @id @default(cuid())
+  title           String
+  department      Department
+  description     String?
+  location        String?
+  status          JobPostingStatus @default(DRAFT)
+  postedAt        DateTime?
+  closedAt        DateTime?
+  createdByUserId String
+  createdBy       User             @relation("JobPostingsCreated", fields: [createdByUserId], references: [id])
+  applications    JobApplication[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
-  @@map("recruitments")
+  @@index([status])
+  @@index([department])
+  @@map("job_postings")
+}
+
+model JobApplication {
+  id              String           @id @default(cuid())
+  jobPostingId    String
+  jobPosting      JobPosting       @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  firstName       String
+  lastName        String
+  email           String
+  phone           String?
+  stage           ApplicationStage @default(APPLIED)
+  appliedAt       DateTime         @default(now())
+  stageChangedAt  DateTime         @default(now())
+  interviewAt     DateTime?
+  offerSentAt     DateTime?
+  offerAcceptedAt DateTime?
+  hiredAt         DateTime?
+  rejectedAt      DateTime?
+  employeeId      String?
+  employee        Employee?        @relation(fields: [employeeId], references: [id])
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([jobPostingId])
+  @@index([stage])
+  @@index([appliedAt])
+  @@map("job_applications")
+}
+
+model OnboardingRecord {
+  id              String           @id @default(cuid())
+  employeeId      String           @unique
+  employee        Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  status          OnboardingStatus @default(NOT_STARTED)
+  startDate       DateTime         @db.Date
+  targetEndDate   DateTime?        @db.Date
+  completedAt     DateTime?
+  checklist       Json?
+  createdByUserId String
+  createdBy       User             @relation("OnboardingCreated", fields: [createdByUserId], references: [id])
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([status])
+  @@index([startDate])
+  @@map("onboarding_records")
+}
+
+model HrLetter {
+  id                String       @id @default(cuid())
+  type              HrLetterType
+  employeeId        String
+  employee          Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  subject           String
+  body              String
+  generatedByUserId String
+  generatedBy       User         @relation("HrLettersGenerated", fields: [generatedByUserId], references: [id])
+  createdAt         DateTime     @default(now())
+
+  @@index([employeeId])
+  @@map("hr_letters")
 }
 
 model Announcement {

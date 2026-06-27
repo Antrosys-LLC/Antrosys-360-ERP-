@@ -569,7 +569,7 @@ export default function ManagerDashboard() {
                       >
                         <td className="py-4 px-6">
                           <Link
-                            href={`/employee/employee_profile_personal?employeeId=${row.employeeId}&tab=Attendance+logs`}
+                            href={`/employee/employee_profile_personal?id=${row.employeeId}&tab=Attendance+logs`}
                             className="text-slate-900 dark:text-slate-100 font-medium hover:text-primary hover:underline transition-colors"
                           >
                             {row.name}
