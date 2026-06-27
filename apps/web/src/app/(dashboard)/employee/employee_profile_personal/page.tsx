@@ -3,6 +3,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { Mail, Phone, Hash, Pencil, CheckCircle2, ChevronRight, ChevronDown, Download, Loader2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 
 // ============================================================================
 // CENTRALIZED DATA STORES
@@ -143,9 +144,9 @@ function EmployeeDashboardContent() {
            ========================================== */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1 pb-2 mb-6">
           <div className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
-            <span className="text-muted-foreground hover:text-foreground cursor-pointer">Employees</span>
+            <Link href="/hr/employees" className="text-muted-foreground hover:text-foreground cursor-pointer">Employees</Link>
             <ChevronRight className="w-4 h-4 text-muted-foreground/60" />
-            <span className="text-muted-foreground hover:text-foreground cursor-pointer">Engineering</span>
+            <Link href="/hr/employees?department=Engineering" className="text-muted-foreground hover:text-foreground cursor-pointer">Engineering</Link>
             <ChevronRight className="w-4 h-4 text-muted-foreground/60" />
             <span className="text-foreground font-bold">Sara Javed</span>
           </div>
