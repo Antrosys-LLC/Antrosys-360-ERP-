@@ -26,6 +26,7 @@ import { manpowerRoutes } from './modules/operations/manpower/manpower.routes';
 import { clientsRoutes } from './modules/clients/clients.routes';
 import { reportsRoutes } from './modules/reports/reports.routes';
 import { adminRoutes } from './modules/admin/admin.routes';
+import { bizIntelRoutes } from './modules/biz_intel/biz_intel.routes';
 import { cfoRoutes } from './modules/cfo/cfo.routes';
 import { ceoRoutes } from './modules/ceo/ceo.routes';
 import { invoiceRoutes } from './modules/invoice/invoice.routes';
@@ -86,6 +87,7 @@ export async function buildApp() {
       await api.register(clientsRoutes, { prefix: '/clients' });
       await api.register(reportsRoutes, { prefix: '/reports' });
       await api.register(adminRoutes, { prefix: '/admin' });
+      await api.register(bizIntelRoutes, { prefix: '/biz-intel' });
       await api.register(managerRoutes, { prefix: '/manager' });
       await api.register(notificationsRoutes, { prefix: '/notifications' });
     },
