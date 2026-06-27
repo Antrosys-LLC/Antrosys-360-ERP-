@@ -1,14 +1,5 @@
-/*
-  Warnings:
-
-  - You are about to drop the `recruitments` table. If the table is not empty, all the data it contains will be lost.
-
-*/
 -- CreateEnum
 CREATE TYPE "PipelineStage" AS ENUM ('APPLIED', 'SCREENING', 'INTERVIEW', 'OFFER', 'HIRED', 'REJECTED');
-
--- DropTable
-DROP TABLE "recruitments";
 
 -- CreateTable
 CREATE TABLE "job_requisitions" (
