@@ -119,6 +119,8 @@ export async function getEmployeeHandler(request: FastifyRequest, reply: Fastify
 
     // Pre-formatted sections matching the frontend data contracts
     headerData: {
+      firstName: employee.firstName,
+      lastName: employee.lastName,
       name: fullName,
       initials: initials.toUpperCase(),
       role: employee.designation || '',
