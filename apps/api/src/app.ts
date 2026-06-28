@@ -23,6 +23,7 @@ import { performanceRoutes } from './modules/hr/performance/performance.routes';
 import { attendanceRoutes } from './modules/operations/attendance/attendance.routes';
 import { leaveRoutes } from './modules/operations/leave/leave.routes';
 import { manpowerRoutes } from './modules/operations/manpower/manpower.routes';
+import { onboardRoutes } from './modules/onboard/onboard.routes';
 import { clientsRoutes } from './modules/clients/clients.routes';
 import { reportsRoutes } from './modules/reports/reports.routes';
 import { adminRoutes } from './modules/admin/admin.routes';
@@ -93,6 +94,7 @@ export async function buildApp() {
       await api.register(attendanceRoutes, { prefix: '/operations/attendance' });
       await api.register(leaveRoutes, { prefix: '/operations/leave' });
       await api.register(manpowerRoutes, { prefix: '/operations/manpower' });
+      await api.register(onboardRoutes, { prefix: '/onboard' });
       await api.register(clientsRoutes, { prefix: '/clients' });
       await api.register(reportsRoutes, { prefix: '/reports' });
       await api.register(adminRoutes, { prefix: '/admin' });
