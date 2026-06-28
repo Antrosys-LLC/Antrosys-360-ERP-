@@ -33,6 +33,7 @@ import { invoiceRoutes } from './modules/invoice/invoice.routes';
 import { managerRoutes } from './modules/manager/manager.routes';
 import { notificationsRoutes } from './modules/notifications/notifications.routes';
 import { recruitRoutes } from './modules/recruit/recruit.routes';
+import { ledgerRoutes } from './modules/ledger/ledger.routes';
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
@@ -92,6 +93,7 @@ export async function buildApp() {
       await api.register(managerRoutes, { prefix: '/manager' });
       await api.register(notificationsRoutes, { prefix: '/notifications' });
       await api.register(recruitRoutes, { prefix: '/recruit' });
+      await api.register(ledgerRoutes, { prefix: '/ledger' });
     },
     { prefix: '/api/v1' },
   );
