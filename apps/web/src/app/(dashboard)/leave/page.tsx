@@ -1,221 +1,322 @@
-import React from 'react';
+'use client';
 
-// ==========================================
-// MOCK DATA CONFIGURATIONS (ERP DATA ARRAYS)
-// ==========================================
-
-interface LeaveBalance {
-  id: string;
-  label: string;
-  value: string;
-  subtext: string;
-  progressClass: string;
-  iconType: 'tree' | 'heart' | 'coffee' | 'home' | 'plug';
-}
-
-const LEAVE_BALANCES: LeaveBalance[] = [
-  { id: 'annual', label: 'ANNUAL LEAVE', value: '12', subtext: 'days left', progressClass: 'bg-primary w-[60%]', iconType: 'tree' },
-  { id: 'sick', label: 'SICK LEAVE', value: '8', subtext: 'days left', progressClass: 'bg-destructive w-[45%]', iconType: 'heart' },
-  { id: 'casual', label: 'CASUAL LEAVE', value: '3', subtext: 'days left', progressClass: 'bg-[#4CAF50] w-[25%]', iconType: 'coffee' },
-  { id: 'wfh', label: 'WORK FROM HOME', value: '14', subtext: 'days left', progressClass: 'bg-[#5CACF6] w-[70%]', iconType: 'home' },
-  { id: 'unpaid', label: 'UNPAID LEAVE', value: '0', subtext: 'taken', progressClass: 'bg-muted-foreground w-0', iconType: 'plug' },
-];
-
-interface TimelineDay {
-  dayNum: number;
-  status: 'normal' | 'selected' | 'range';
-}
-
-// Dynamically generate 31 days for May
-const TIMELINE_DAYS: TimelineDay[] = Array.from({ length: 31 }, (_, i) => {
-  const dayNum = i + 1;
-  let status: 'normal' | 'selected' | 'range' = 'normal';
-  if (dayNum === 16) status = 'selected';
-  else if (dayNum >= 22 && dayNum <= 24) status = 'range';
-  return { dayNum, status };
-});
-
-interface LeaveTypeOption {
-  id: string;
-  label: string;
-  isSelected: boolean;
-  iconType: 'tree' | 'heart' | 'coffee' | 'home';
-}
-
-const LEAVE_TYPE_OPTIONS: LeaveTypeOption[] = [
-  { id: 'annual', label: 'Annual', isSelected: true, iconType: 'tree' },
-  { id: 'sick', label: 'Sick', isSelected: false, iconType: 'heart' },
-  { id: 'casual', label: 'Casual', isSelected: false, iconType: 'coffee' },
-  { id: 'wfh', label: 'WFH', isSelected: false, iconType: 'home' },
-];
-
-interface CalendarDay {
-  dayNum: number | null;
-  state?: 'normal' | 'muted-range' | 'today' | 'selected-start' | 'selected-mid' | 'selected-end';
-}
-
-// May 2024 starts on Wednesday (offset 3 blank slots)
-const CALENDAR_DAYS: CalendarDay[] = [
-  { dayNum: null }, { dayNum: null }, { dayNum: null },
-  { dayNum: 1 }, { dayNum: 2 }, { dayNum: 3 }, { dayNum: 4 }, { dayNum: 5 },
-  { dayNum: 6 }, { dayNum: 7 }, { dayNum: 8 }, 
-  { dayNum: 9, state: 'muted-range' }, { dayNum: 10, state: 'muted-range' }, 
-  { dayNum: 11 }, { dayNum: 12 }, { dayNum: 13 }, { dayNum: 14 }, { dayNum: 15 },
-  { dayNum: 16, state: 'today' }, { dayNum: 17 }, { dayNum: 18 }, { dayNum: 19 },
-  { dayNum: 20 }, { dayNum: 21 }, 
-  { dayNum: 22, state: 'selected-start' }, { dayNum: 23, state: 'selected-mid' }, { dayNum: 24, state: 'selected-end' }, 
-  { dayNum: 25 }, { dayNum: 26 }, { dayNum: 27 }, { dayNum: 28 }, { dayNum: 29 }, 
-  { dayNum: 30 }, { dayNum: 31 }
-];
-
-interface PendingRequest {
-  id: string;
-  type: string;
-  duration: string;
-  status: string;
-}
-
-const MY_PENDING_REQUESTS: PendingRequest[] = [
-  { id: '1', type: 'Annual Leave', duration: 'May 22 - May 24 (3 days)', status: 'PENDING' },
-  { id: '2', type: 'WFH', duration: 'May 17 (1 day)', status: 'PENDING' }
-];
-
-interface ManagerApproval {
-  id: string;
-  name: string;
-  initials: string;
-  avatarBg: string;
-  type: string;
-  duration: string;
-  warningText?: string;
-  attachment?: string;
-}
-
-const MANAGER_APPROVALS: ManagerApproval[] = [
-  {
-    id: 'app-1',
-    name: 'Sara Javed',
-    initials: 'SJ',
-    avatarBg: 'bg-[#EAE8FC] text-primary',
-    type: 'Annual Leave',
-    duration: 'May 22-24 (3 days)',
-    warningText: 'Team overlap detected'
-  },
-  {
-    id: 'app-2',
-    name: 'Fawad Khan',
-    initials: 'FK',
-    avatarBg: 'bg-[#E8F5E9] text-[#2E7D32]',
-    type: 'Sick Leave',
-    duration: 'May 14-15 (2 days)',
-    attachment: 'medical_cert.pdf'
-  }
-];
-
-interface ScheduleMetric {
-  value: string;
-  label: string;
-  colorClass?: string;
-}
-
-const SCHEDULE_METRICS: ScheduleMetric[] = [
-  { value: '5', label: 'Pending' },
-  { value: '12', label: 'Total Taken' },
-  { value: '94%', label: 'Attendance', colorClass: 'text-[#4CAF50]' },
-  { value: '2', label: 'On Leave Today' }
-];
+import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useToast } from '@/hooks/use-toast';
+import {
+  fetchLeaveBalances,
+  fetchLeaveMetrics,
+  fetchLeaveRequests,
+  fetchPendingApprovals,
+  createLeaveRequest,
+  updateLeaveStatus,
+  LeaveType,
+} from '@/lib/leave-api';
 
 // ==========================================
 // UTILITY SVG ICON COMPONENTS
 // ==========================================
-
-const RenderIcon = ({ type, className = "w-5 h-5" }: { type: string; className?: string }) => {
+const RenderIcon = ({ type, className = 'w-5 h-5' }: { type: string; className?: string }) => {
   switch (type) {
-    case 'tree':
-      return (
-        <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v18M9 7l3-3 3 3M8 12l4-4 4 4M6 17l6-6 6 6" />
-        </svg>
-      );
-    case 'heart':
-      return (
-        <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-        </svg>
-      );
-    case 'coffee':
-      return (
-        <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 14a6 6 0 0110.657-3.543L19 14H6zm14-4h.01M4 20h16a1 1 0 011 1H3a1 1 0 011-1z" />
-        </svg>
-      );
-    case 'home':
-      return (
-        <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-        </svg>
-      );
-    case 'plug':
-      return (
-        <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-        </svg>
-      );
-    default:
-      return null;
+    case 'tree': return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v18M9 7l3-3 3 3M8 12l4-4 4 4M6 17l6-6 6 6" /></svg>;
+    case 'heart': return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>;
+    case 'coffee': return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 14a6 6 0 0110.657-3.543L19 14H6zm14-4h.01M4 20h16a1 1 0 011 1H3a1 1 0 011-1z" /></svg>;
+    case 'home': return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>;
+    case 'plug': return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>;
+    case 'close': return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>;
+    default: return null;
   }
 };
 
-// ==========================================
-// MAIN COMPONENT EXPORT
-// ==========================================
+const leaveTypeConfig: Record<LeaveType, { label: string; icon: string; color: string }> = {
+  ANNUAL: { label: 'ANNUAL LEAVE', icon: 'tree', color: 'bg-primary' },
+  SICK: { label: 'SICK LEAVE', icon: 'heart', color: 'bg-destructive' },
+  CASUAL: { label: 'CASUAL LEAVE', icon: 'coffee', color: 'bg-[#4CAF50]' },
+  WFH: { label: 'WORK FROM HOME', icon: 'home', color: 'bg-[#5CACF6]' },
+  UNPAID: { label: 'UNPAID LEAVE', icon: 'plug', color: 'bg-muted-foreground' },
+};
+
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 export default function LeaveManagementDashboard() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const [selectedType, setSelectedType] = useState<LeaveType>('ANNUAL');
+  const [selectedDates, setSelectedDates] = useState<number[]>([]);
+  const [conflictCount, setConflictCount] = useState<number>(0);
+  
+  // Modals State
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [submitReason, setSubmitReason] = useState('');
+  
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  
+  // Dynamic Calendar State
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const currentYear = currentDate.getFullYear();
+  const currentMonth = currentDate.getMonth();
+
+  const realCurrentDate = useMemo(() => new Date(), []);
+  
+  const isCurrentMonthOrPast = useMemo(() => {
+    return currentYear < realCurrentDate.getFullYear() || 
+          (currentYear === realCurrentDate.getFullYear() && currentMonth <= realCurrentDate.getMonth());
+  }, [currentYear, currentMonth, realCurrentDate]);
+
+  const daysInMonth = useMemo(() => new Date(currentYear, currentMonth + 1, 0).getDate(), [currentYear, currentMonth]);
+  const startOffset = useMemo(() => new Date(currentYear, currentMonth, 1).getDay(), [currentYear, currentMonth]);
+  const currentMonthDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+
+  // Helper to check if a day is in the past
+  const isPastDate = (dayNum: number) => {
+    if (currentYear < realCurrentDate.getFullYear()) return true;
+    if (currentYear > realCurrentDate.getFullYear()) return false;
+    if (currentMonth < realCurrentDate.getMonth()) return true;
+    if (currentMonth > realCurrentDate.getMonth()) return false;
+    return dayNum < realCurrentDate.getDate();
+  };
+
+  // ─── Data Fetching ──────────────────────────────────────────────────────
+
+  const { data: balances, isLoading: loadingBalances } = useQuery({
+    queryKey: ['leave-balances'],
+    queryFn: fetchLeaveBalances,
+  });
+
+  const { data: metrics, isLoading: loadingMetrics } = useQuery({
+    queryKey: ['leave-metrics'],
+    queryFn: fetchLeaveMetrics,
+  });
+
+  const { data: myRequests, isLoading: loadingRequests } = useQuery({
+    queryKey: ['my-leave-requests'],
+    queryFn: () => fetchLeaveRequests({ limit: 10 }),
+  });
+
+  const { data: approvals, isLoading: loadingApprovals } = useQuery({
+    queryKey: ['pending-approvals'],
+    queryFn: fetchPendingApprovals,
+  });
+
+  // ─── Mutations ──────────────────────────────────────────────────────────
+
+  const submitRequestMutation = useMutation({
+    mutationFn: createLeaveRequest,
+    onSuccess: (data) => {
+      setConflictCount(data.teamConflictCount);
+      toast({
+        title: 'Request Submitted',
+        description: 'Your leave request has been submitted successfully.',
+        variant: 'default',
+      });
+      setSelectedDates([]);
+      setShowSubmitModal(false);
+      setSubmitReason('');
+      queryClient.invalidateQueries({ queryKey: ['my-leave-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['leave-balances'] });
+      queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
+      queryClient.invalidateQueries({ queryKey: ['leave-metrics'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Submission Failed',
+        description: error.response?.data?.error || 'An error occurred.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: (params: { id: string; status: 'APPROVED' | 'REJECTED', declineNote?: string }) =>
+      updateLeaveStatus(params.id, { status: params.status, declineNote: params.declineNote }),
+    onSuccess: () => {
+      toast({
+        title: 'Status Updated',
+        description: 'Leave request has been updated.',
+        variant: 'default',
+      });
+      setRejectingId(null);
+      setRejectReason('');
+      queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
+      queryClient.invalidateQueries({ queryKey: ['leave-metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['leave-balances'] });
+      queryClient.invalidateQueries({ queryKey: ['my-leave-requests'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Update Failed',
+        description: error.response?.data?.error || 'Failed to update leave request.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // ─── Handlers ───────────────────────────────────────────────────────────
+
+  const handleDateClick = (dayNum: number) => {
+    if (isPastDate(dayNum)) return;
+
+    if (selectedDates.length === 0) {
+      // First click: set start
+      setSelectedDates([dayNum]);
+    } else if (selectedDates.length === 1) {
+      if (dayNum === selectedDates[0]) {
+        // Clicked same date: deselect
+        setSelectedDates([]);
+      } else {
+        // Second click: create full range between the two dates
+        const min = Math.min(selectedDates[0], dayNum);
+        const max = Math.max(selectedDates[0], dayNum);
+        const range: number[] = [];
+        for (let i = min; i <= max; i++) {
+          if (!isPastDate(i)) range.push(i);
+        }
+        setSelectedDates(range);
+      }
+    } else {
+      // Third click: reset and start fresh
+      setSelectedDates([dayNum]);
+    }
+  };
+
+  const changeMonth = (offset: number) => {
+    if (offset < 0 && isCurrentMonthOrPast) return; // Prevent going back to past months
+    const newDate = new Date(currentDate);
+    newDate.setMonth(currentDate.getMonth() + offset);
+    setCurrentDate(newDate);
+    setSelectedDates([]);
+  };
+
+  const handleOpenSubmitModal = () => {
+    if (selectedDates.length === 0) {
+      toast({ title: 'Select Dates', description: 'Please select at least one date.', variant: 'default' });
+      return;
+    }
+    setSubmitReason('');
+    setShowSubmitModal(true);
+  };
+
+  const handleConfirmSubmit = () => {
+    const firstDate = selectedDates[0];
+    const lastDate = selectedDates[selectedDates.length - 1];
+    
+    const startDate = new Date(currentYear, currentMonth, firstDate).toISOString();
+    const endDate = new Date(currentYear, currentMonth, lastDate).toISOString();
+
+    submitRequestMutation.mutate({
+      type: selectedType,
+      startDate,
+      endDate,
+      reason: submitReason.trim() || undefined,
+    });
+  };
+
+  const handleApprove = (id: string) => {
+    updateStatusMutation.mutate({ id, status: 'APPROVED' });
+  };
+
+  const handleConfirmReject = () => {
+    if (rejectReason.trim() === '') {
+      toast({ title: 'Note Required', description: 'You must provide a reason for rejection.', variant: 'destructive' });
+      return;
+    }
+    if (rejectingId) {
+      updateStatusMutation.mutate({ id: rejectingId, status: 'REJECTED', declineNote: rejectReason });
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-background text-foreground antialiased font-sans flex flex-col">
+    <div className="min-h-screen bg-background text-foreground antialiased font-sans flex flex-col relative">
       
-      {/* GLOBAL HEADER BAR 
-        Changed from fixed positioning to standard document flow / sticky 
-        to prevent overlapping with external sidebars.
-      */}
-      <header className="sticky top-0 w-full h-[var(--topbar-height)] bg-card border-b border-border flex items-center justify-between px-6 z-40">
+      {/* ─── MODALS ─── */}
+      
+      {/* Submit Confirmation Modal */}
+      {showSubmitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-card w-full max-w-md rounded-xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-border">
+              <h3 className="font-bold text-lg">Confirm Leave Request</h3>
+              <button onClick={() => setShowSubmitModal(false)} className="text-muted-foreground hover:text-foreground">
+                <RenderIcon type="close" className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-muted-foreground">
+                You are requesting <span className="font-semibold text-foreground">{selectedDates.length} day(s)</span> of <span className="font-semibold text-foreground capitalize">{selectedType.toLowerCase()} Leave</span>.
+              </p>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Add a note (Optional)</label>
+                <textarea 
+                  value={submitReason}
+                  onChange={(e) => setSubmitReason(e.target.value)}
+                  placeholder="E.g. Family trip, doctor appointment..."
+                  className="w-full h-24 p-3 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+                />
+              </div>
+            </div>
+            <div className="p-5 border-t border-border bg-muted/30 flex justify-end gap-3">
+              <button 
+                onClick={() => setShowSubmitModal(false)}
+                className="px-4 py-2 text-sm font-medium rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground">
+                Cancel
+              </button>
+              <button 
+                onClick={handleConfirmSubmit}
+                disabled={submitRequestMutation.isPending}
+                className="px-4 py-2 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2">
+                {submitRequestMutation.isPending ? 'Submitting...' : 'Confirm Submit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Confirmation Modal */}
+      {rejectingId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-card w-full max-w-md rounded-xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-border">
+              <h3 className="font-bold text-lg text-destructive">Decline Request</h3>
+              <button onClick={() => setRejectingId(null)} className="text-muted-foreground hover:text-foreground">
+                <RenderIcon type="close" className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Decline Reason (Required)</label>
+                <textarea 
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="Please explain why this request is being declined..."
+                  className="w-full h-24 p-3 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive resize-none"
+                />
+              </div>
+            </div>
+            <div className="p-5 border-t border-border bg-muted/30 flex justify-end gap-3">
+              <button 
+                onClick={() => setRejectingId(null)}
+                className="px-4 py-2 text-sm font-medium rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground">
+                Cancel
+              </button>
+              <button 
+                onClick={handleConfirmReject}
+                disabled={updateStatusMutation.isPending}
+                className="px-4 py-2 text-sm font-medium rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50">
+                {updateStatusMutation.isPending ? 'Declining...' : 'Decline Request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GLOBAL HEADER BAR */}
+      <header className="w-full h-[var(--topbar-height)] bg-card border-b border-border flex items-center justify-between px-6">
         <div className="flex items-center gap-2">
           <span className="text-xl font-bold text-primary">ERP Core</span>
         </div>
-        
         <div className="flex items-center gap-5">
-          <div className="relative hidden sm:block">
-            <span className="absolute inset-y-0 left-3 flex items-center text-muted-foreground">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </span>
-            <input 
-              type="text" 
-              placeholder="Search..." 
-              className="w-64 h-9 pl-9 pr-4 bg-muted/50 border border-border rounded-full text-sm focus:outline-none focus:ring-1 focus:ring-ring transition-all"
-            />
-          </div>
-          
-          <button className="text-muted-foreground hover:text-foreground relative transition-colors">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-            </svg>
-          </button>
-          
-          <button className="text-muted-foreground hover:text-foreground transition-colors">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </button>
-
-          <button className="text-muted-foreground hover:text-foreground transition-colors">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </button>
-
           <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-semibold text-sm cursor-pointer shadow-sm">
             U
           </div>
@@ -227,47 +328,77 @@ export default function LeaveManagementDashboard() {
         
         {/* TOP ROW: SUMMARY BALANCE KPI CARDS */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          {LEAVE_BALANCES.map((balance) => (
-            <article key={balance.id} className="bg-card text-card-foreground border border-border rounded-[var(--radius)] p-5 flex flex-col justify-between shadow-sm">
-              <div className="flex items-start justify-between">
-                <div className="space-y-1">
-                  <span className="text-[11px] font-bold tracking-wider text-muted-foreground block">{balance.label}</span>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-2xl font-bold">{balance.value}</span>
-                    <span className="text-xs text-muted-foreground">{balance.subtext}</span>
+          {loadingBalances ? (
+            Array(5).fill(0).map((_, i) => (
+              <div key={i} className="bg-card border border-border rounded-[var(--radius)] p-5 h-[100px] animate-pulse">
+                <div className="h-4 bg-muted w-1/2 mb-2 rounded"></div>
+                <div className="h-6 bg-muted w-1/4 rounded"></div>
+              </div>
+            ))
+          ) : (
+            balances?.map((balance) => {
+              const config = leaveTypeConfig[balance.type];
+              const pct = balance.totalDays > 0 ? (balance.remainingDays / balance.totalDays) * 100 : 0;
+              return (
+                <article key={balance.type} className="bg-card text-card-foreground border border-border rounded-[var(--radius)] p-5 flex flex-col justify-between shadow-sm">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <span className="text-[11px] font-bold tracking-wider text-muted-foreground block">{config.label}</span>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-2xl font-bold">{balance.remainingDays}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {balance.type === 'UNPAID' ? 'taken' : 'days left'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className={`p-1.5 rounded text-muted-foreground`}>
+                      <RenderIcon type={config.icon} className="w-5 h-5 opacity-70" />
+                    </div>
                   </div>
-                </div>
-                <div className={`p-1.5 rounded text-muted-foreground`}>
-                  <RenderIcon type={balance.iconType} className="w-5 h-5 opacity-70" />
-                </div>
-              </div>
-              <div className="w-full bg-muted h-1.5 rounded-full mt-5 overflow-hidden">
-                <div className={`h-full rounded-full ${balance.progressClass}`}></div>
-              </div>
-            </article>
-          ))}
+                  <div className="w-full bg-muted h-1.5 rounded-full mt-5 overflow-hidden">
+                    <div className={`h-full rounded-full ${config.color}`} style={{ width: `${pct}%` }}></div>
+                  </div>
+                </article>
+              );
+            })
+          )}
         </section>
 
         {/* TIMELINE TRACKER MINI CALENDAR */}
-        <section className="bg-card border border-border rounded-[var(--radius)] py-3 px-4 shadow-sm w-full overflow-hidden">
-          <div className="flex items-center overflow-x-auto pb-1 custom-scrollbar">
-            <div className="text-sm font-medium px-4 text-muted-foreground border-r border-border mr-3 sticky left-0 bg-card z-10">
-              May
-            </div>
+        <section className="bg-card border border-border rounded-[var(--radius)] py-3 px-4 shadow-sm w-full overflow-hidden flex items-center gap-3">
+          <div className="flex items-center gap-2 border-r border-border pr-4 shrink-0">
+            <button 
+              onClick={() => changeMonth(-1)} 
+              disabled={isCurrentMonthOrPast}
+              className="p-1 hover:bg-muted rounded text-muted-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-opacity">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+            </button>
+            <span className="text-sm font-bold min-w-[80px] text-center">{MONTH_NAMES[currentMonth]} {currentYear}</span>
+            <button 
+              onClick={() => changeMonth(1)} 
+              className="p-1 hover:bg-muted rounded text-muted-foreground">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+            </button>
+          </div>
+          
+          <div className="flex items-center overflow-x-auto pb-1 custom-scrollbar w-full">
             <div className="flex items-center gap-1.5 min-w-max pr-4">
-              {TIMELINE_DAYS.map((day) => {
+              {currentMonthDays.map((dayNum) => {
+                const past = isPastDate(dayNum);
                 let cellStyle = "text-muted-foreground bg-[#F8F9FB] hover:bg-muted";
-                if (day.status === 'selected') {
+                if (selectedDates.includes(dayNum)) {
                   cellStyle = "bg-primary text-primary-foreground font-medium shadow-sm ring-1 ring-primary ring-offset-1";
-                } else if (day.status === 'range') {
-                  cellStyle = "bg-[#EAE8FC] text-primary font-medium";
+                }
+                if (past) {
+                  cellStyle = "text-muted-foreground/30 bg-background cursor-not-allowed";
                 }
                 return (
                   <div 
-                    key={day.dayNum} 
-                    className={`w-8 h-8 rounded flex items-center justify-center text-sm cursor-pointer transition-colors ${cellStyle}`}
+                    key={dayNum} 
+                    onClick={() => handleDateClick(dayNum)}
+                    className={`w-8 h-8 rounded flex items-center justify-center text-sm transition-colors ${!past && 'cursor-pointer'} ${cellStyle}`}
                   >
-                    {day.dayNum}
+                    {dayNum}
                   </div>
                 );
               })}
@@ -275,86 +406,70 @@ export default function LeaveManagementDashboard() {
           </div>
         </section>
 
-        {/* TWO-COLUMN GRID: CONTENT INTERFACE */}
+        {/* TOP GRID: REQUEST SYSTEM & APPROVALS (If manager) */}
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           
-          {/* LEFT COLUMN: REQUEST SYSTEM & PERSONAL SUBMISSIONS (6 SPAN) */}
-          <div className="lg:col-span-6 space-y-8">
+          {/* REQUEST SYSTEM */}
+          <div className={`lg:col-span-${approvals && approvals.length > 0 ? '6' : '12'} space-y-4`}>
+            <h2 className="text-lg font-bold text-foreground">Employee: Request Leave</h2>
             
-            {/* COMPONENT: REQUEST LEAVE FORM BLOCK */}
-            <div className="space-y-4">
-              <h2 className="text-lg font-bold text-foreground">Employee: Request Leave</h2>
-              
-              <div className="bg-card border border-border rounded-[var(--radius)] p-6 shadow-sm space-y-6">
-                
-                {/* SELECT LEAVE TYPE GRID */}
-                <div className="space-y-3">
-                  <label className="text-sm font-medium text-muted-foreground block">Leave Type</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    {LEAVE_TYPE_OPTIONS.map((option) => (
+            <div className="bg-card border border-border rounded-[var(--radius)] p-6 shadow-sm space-y-6">
+              <div className="space-y-3">
+                <label className="text-sm font-medium text-muted-foreground block">Leave Type</label>
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4 gap-3">
+                  {(Object.keys(leaveTypeConfig) as LeaveType[]).filter(k => k !== 'UNPAID').map((typeKey) => {
+                    const config = leaveTypeConfig[typeKey];
+                    const isSelected = selectedType === typeKey;
+                    return (
                       <div 
-                        key={option.id}
+                        key={typeKey}
+                        onClick={() => setSelectedType(typeKey)}
                         className={`flex items-center justify-between p-3 rounded-[var(--radius)] border cursor-pointer transition-all ${
-                          option.isSelected 
+                          isSelected 
                             ? 'border-primary bg-primary/5 text-primary ring-1 ring-primary/20' 
                             : 'border-border bg-card text-foreground hover:bg-muted/50'
                         }`}
                       >
                         <div className="flex items-center gap-2.5 text-sm font-medium">
-                          <RenderIcon type={option.iconType} className="w-4 h-4" />
-                          <span>{option.label}</span>
+                          <RenderIcon type={config.icon} className="w-4 h-4" />
+                          <span className="capitalize">{typeKey.toLowerCase()}</span>
                         </div>
-                        {option.isSelected && (
-                          <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
                       </div>
-                    ))}
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-sm font-medium text-muted-foreground block">Select Dates ({MONTH_NAMES[currentMonth]})</label>
+                <div className="border border-border rounded-[var(--radius)] p-5 bg-card">
+                  <div className="grid grid-cols-7 gap-y-2 text-center text-xs font-semibold text-muted-foreground mb-3">
+                    <div>S</div><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div>
+                  </div>
+                  <div className="grid grid-cols-7 gap-y-2 text-center text-sm">
+                    {Array(startOffset).fill(null).map((_, i) => <div key={`empty-${i}`} />)}
+                    {currentMonthDays.map((dayNum) => {
+                      const past = isPastDate(dayNum);
+                      const isSelected = selectedDates.includes(dayNum);
+                      let itemClass = "text-foreground hover:bg-muted rounded-full";
+                      if (isSelected) itemClass = "bg-primary text-primary-foreground font-medium rounded-full";
+                      if (past) itemClass = "text-muted-foreground/30 cursor-not-allowed";
+
+                      return (
+                        <div key={`day-${dayNum}`} className="py-0.5 flex items-center justify-center">
+                          <span 
+                            onClick={() => handleDateClick(dayNum)}
+                            className={`w-8 h-8 flex items-center justify-center text-sm transition-colors ${!past && 'cursor-pointer'} ${itemClass}`}>
+                            {dayNum}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
+              </div>
 
-                {/* MINI MONTH CALENDAR SELECTOR */}
-                <div className="space-y-3">
-                  <label className="text-sm font-medium text-muted-foreground block">Select Dates (May 2024)</label>
-                  <div className="border border-border rounded-[var(--radius)] p-5 bg-card">
-                    
-                    {/* CALENDAR DAYS HEADER */}
-                    <div className="grid grid-cols-7 gap-y-2 text-center text-xs font-semibold text-muted-foreground mb-3">
-                      <div>S</div><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div>
-                    </div>
-                    
-                    {/* CALENDAR MONTH GRID */}
-                    <div className="grid grid-cols-7 gap-y-2 text-center text-sm">
-                      {CALENDAR_DAYS.map((day, index) => {
-                        if (day.dayNum === null) {
-                          return <div key={`empty-${index}`} />;
-                        }
-
-                        let itemClass = "text-foreground hover:bg-muted rounded-full";
-                        
-                        if (day.state === 'muted-range') {
-                          itemClass = "bg-muted text-muted-foreground font-medium rounded-sm";
-                        } else if (day.state === 'today') {
-                          itemClass = "border border-primary font-bold text-foreground rounded-full";
-                        } else if (day.state === 'selected-start' || day.state === 'selected-mid' || day.state === 'selected-end') {
-                          itemClass = "bg-primary text-primary-foreground font-medium rounded-full";
-                        }
-
-                        return (
-                          <div key={`day-${day.dayNum}`} className="py-0.5 flex items-center justify-center">
-                            <span className={`w-8 h-8 flex items-center justify-center cursor-pointer text-sm transition-colors ${itemClass}`}>
-                              {day.dayNum}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                  </div>
-                </div>
-
-                {/* CONFLICT NOTIFICATION BANNER */}
+              {conflictCount > 0 && (
                 <div className="bg-[#FFFDF5] border border-[#FFE082] rounded-[var(--radius)] p-4 flex gap-3 items-start">
                   <div className="text-[#F57F17] mt-0.5">
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -364,156 +479,216 @@ export default function LeaveManagementDashboard() {
                   <div className="space-y-1">
                     <h4 className="text-sm font-bold text-[#F57F17]">Team Conflict Warning</h4>
                     <p className="text-xs text-[#F57F17] opacity-90 leading-relaxed">
-                      2 team members are also on leave during May 22-24. Approval may be delayed.
+                      {conflictCount} team member(s) are also on leave. Approval may be delayed.
                     </p>
                   </div>
                 </div>
+              )}
 
-                {/* FORM SUBMIT ACTION */}
-                <button className="w-full bg-primary hover:opacity-90 text-primary-foreground font-medium text-sm py-3 rounded-[var(--radius)] transition-opacity flex items-center justify-center gap-2 shadow-sm">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" transform="rotate(180 12 12)" />
-                  </svg>
-                  <span>Submit request</span>
-                </button>
-              </div>
+              {/* ONLY RENDER THE BUTTON IF A DATE IS SELECTED */}
+              {selectedDates.length > 0 && (
+                <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <button 
+                    onClick={handleOpenSubmitModal}
+                    disabled={submitRequestMutation.isPending}
+                    className="w-full bg-primary hover:opacity-90 text-primary-foreground font-medium text-sm py-3 rounded-[var(--radius)] transition-opacity flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 mt-4">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" transform="rotate(180 12 12)" />
+                    </svg>
+                    <span>{submitRequestMutation.isPending ? 'Submitting...' : `Request Leave (${selectedDates.length} days)`}</span>
+                  </button>
+                </div>
+              )}
             </div>
-
-            {/* COMPONENT: PENDING REQUEST TRACKER LIST */}
-            <div className="space-y-4">
-              <h3 className="text-xs font-bold tracking-wider text-muted-foreground uppercase">Pending Requests</h3>
-              <div className="space-y-3">
-                {MY_PENDING_REQUESTS.map((req) => (
-                  <article key={req.id} className="bg-card border border-border rounded-[var(--radius)] p-4 flex items-center justify-between shadow-sm border-l-4 border-l-[#FFC107]">
-                    <div className="space-y-1">
-                      <h4 className="text-sm font-bold text-foreground">{req.type}</h4>
-                      <p className="text-xs text-muted-foreground">{req.duration}</p>
-                    </div>
-                    <span className="bg-[#FFFDF5] text-[#FFC107] border border-[#FFE082] text-[10px] font-bold px-2 py-1 rounded">
-                      {req.status}
-                    </span>
-                  </article>
-                ))}
-              </div>
-            </div>
-
           </div>
 
-          {/* RIGHT COLUMN: TEAM OPERATIONS & MANAGEMENT CONTEXT (6 SPAN) */}
-          <div className="lg:col-span-6 space-y-8">
-            
-            {/* COMPONENT: MANAGER APPROVAL CONTROL HUB */}
-            <div className="space-y-4">
+          {/* MANAGER APPROVALS (Only rendered if items exist) */}
+          {approvals && approvals.length > 0 && (
+            <div className="lg:col-span-6 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-bold text-foreground">Manager: Approvals</h2>
                 <span className="bg-muted text-muted-foreground text-xs font-medium px-3 py-1 rounded-full">
-                  5 Pending
+                  {approvals.length} Pending
                 </span>
               </div>
 
-              <div className="space-y-4">
-                {MANAGER_APPROVALS.map((approval) => (
+              <div className="space-y-4 max-h-[460px] overflow-y-auto pr-2 custom-scrollbar">
+                {approvals.map((approval) => (
                   <article key={approval.id} className="bg-card border border-border rounded-[var(--radius)] p-5 shadow-sm space-y-4">
-                    
-                    {/* USER APPLICANT PROFILE DETAILS */}
                     <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${approval.avatarBg}`}>
-                        {approval.initials}
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-primary/10 text-primary">
+                        {approval.employee.firstName[0]}{approval.employee.lastName[0]}
                       </div>
                       <div className="space-y-1 flex-1">
-                        <h4 className="text-sm font-bold text-foreground leading-none">{approval.name}</h4>
+                        <h4 className="text-sm font-bold text-foreground leading-none">{approval.employee.firstName} {approval.employee.lastName}</h4>
                         <p className="text-xs text-muted-foreground">
-                          {approval.type} <span className="mx-1">•</span> {approval.duration}
+                          {approval.type} <span className="mx-1">•</span> {new Date(approval.startDate).toLocaleDateString()} - {new Date(approval.endDate).toLocaleDateString()} ({approval.durationDays} days)
                         </p>
                       </div>
                     </div>
 
-                    {/* CONDITIONAL SYSTEM CONTEXTUAL LABELS */}
-                    {approval.warningText && (
-                      <div className="inline-flex items-center gap-1.5 bg-[#FFFDF5] text-[#F57F17] text-xs font-medium px-2.5 py-1.5 rounded border border-[#FFE082]">
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                        </svg>
-                        <span>{approval.warningText}</span>
+                    {approval.reason && (
+                      <div className="inline-flex items-center gap-1.5 bg-muted/50 text-muted-foreground text-xs font-medium px-2.5 py-1.5 rounded border border-border">
+                        <span>Note: {approval.reason}</span>
                       </div>
                     )}
 
-                    {approval.attachment && (
-                      <div className="inline-flex items-center gap-1.5 bg-[#F6FDF7] text-[#2E7D32] text-xs font-medium px-2.5 py-1.5 rounded border border-[#C8E6C9] cursor-pointer hover:bg-[#E8F5E9] transition-colors">
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                        </svg>
-                        <span>{approval.attachment}</span>
-                      </div>
-                    )}
-
-                    {/* DECISION ACTION INTERFACE */}
                     <div className="grid grid-cols-2 gap-3 pt-2">
-                      <button className="bg-[#FEECEB] hover:bg-[#FDD8D8] text-destructive text-sm font-medium py-2.5 rounded-[var(--radius)] transition-colors text-center">
+                      <button 
+                        onClick={() => {
+                          setRejectReason('');
+                          setRejectingId(approval.id);
+                        }}
+                        disabled={updateStatusMutation.isPending}
+                        className="bg-[#FEECEB] hover:bg-[#FDD8D8] text-destructive text-sm font-medium py-2.5 rounded-[var(--radius)] transition-colors text-center disabled:opacity-50">
                         Decline
                       </button>
-                      <button className="bg-primary hover:opacity-90 text-primary-foreground text-sm font-medium py-2.5 rounded-[var(--radius)] transition-opacity text-center shadow-sm">
+                      <button 
+                        onClick={() => handleApprove(approval.id)}
+                        disabled={updateStatusMutation.isPending}
+                        className="bg-primary hover:opacity-90 text-primary-foreground text-sm font-medium py-2.5 rounded-[var(--radius)] transition-opacity text-center shadow-sm disabled:opacity-50">
                         Approve
                       </button>
                     </div>
-
                   </article>
                 ))}
               </div>
             </div>
+          )}
+        </section>
 
-            {/* COMPONENT: LIVE TEAM SCHEDULE & CAPACITY ANALYTICS VISUALIZER */}
-            <div className="bg-card border border-border rounded-[var(--radius)] p-5 shadow-sm space-y-5">
-              <h3 className="text-sm font-bold text-foreground">Team Schedule (May)</h3>
-              
-              {/* SIMULATED GANTT METRIC SYSTEM GRAPH */}
-              <div className="relative h-24 bg-[#F8F9FB] border border-border rounded-[var(--radius)] overflow-hidden">
-                
-                {/* GRAPH PLOTTED BAR TRACKS */}
-                <div className="absolute top-3 left-[25%] w-[12%] h-2.5 bg-[#4CAF50] rounded-full"></div>
-                <div className="absolute top-10 left-[10%] w-[6%] h-2.5 bg-destructive rounded-full"></div>
-                
-                {/* CURRENT TIME "TODAY" VERTICAL DATA MARKER */}
-                <div className="absolute left-[60%] inset-y-0 w-[1px] bg-primary flex flex-col items-center z-10">
-                  <span className="absolute -top-0 bg-primary text-primary-foreground text-[10px] px-2 py-0.5 rounded-sm font-medium transform -translate-y-1/2">
-                    Today
-                  </span>
-                </div>
+        {/* BOTTOM GRID: RECENT REQS AND METRICS SIDE-BY-SIDE */}
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          
+          <div className="space-y-4">
+            <h3 className="text-xs font-bold tracking-wider text-muted-foreground uppercase">My Recent Requests</h3>
+            <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+              {loadingRequests ? (
+                <div className="h-16 bg-card border border-border animate-pulse rounded-[var(--radius)]" />
+              ) : myRequests?.items.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No recent requests.</p>
+              ) : (
+                myRequests?.items.map((req) => (
+                  <article key={req.id} className="bg-card border border-border rounded-[var(--radius)] p-4 flex items-center justify-between shadow-sm border-l-4 border-l-primary">
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-bold text-foreground">{req.type}</h4>
+                      <p className="text-xs text-muted-foreground">{new Date(req.startDate).toLocaleDateString()} - {new Date(req.endDate).toLocaleDateString()} ({req.durationDays} days)</p>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2 py-1 rounded ${
+                      req.status === 'PENDING' ? 'bg-[#FFFDF5] text-[#FFC107] border border-[#FFE082]' :
+                      req.status === 'APPROVED' ? 'bg-[#F6FDF7] text-[#2E7D32] border border-[#C8E6C9]' :
+                      'bg-[#FEECEB] text-destructive border border-[#FDD8D8]'
+                    }`}>
+                      {req.status}
+                    </span>
+                  </article>
+                ))
+              )}
+            </div>
+          </div>
 
-                <div className="absolute top-16 left-[53%] w-[12%] h-2.5 bg-primary/40 rounded-full"></div>
-                <div className="absolute top-10 left-[70%] w-[20%] h-2.5 bg-[#5CACF6] rounded-full"></div>
+          <div className="space-y-4">
+            <h3 className="text-xs font-bold tracking-wider text-muted-foreground uppercase">Team Schedule</h3>
+            <div className="bg-card border border-border rounded-[var(--radius)] p-5 shadow-sm space-y-4">
+
+              {/* Title inside block */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-foreground">Leave Timeline — This Month</span>
+                <span className="text-[10px] text-muted-foreground">Each row = 1 employee's leave period</span>
               </div>
 
-              {/* OVERVIEW SYSTEM AGGREGATION FOOTER METRICS */}
-              <div className="grid grid-cols-4 gap-2 pt-3 border-t border-border text-left">
-                {SCHEDULE_METRICS.map((metric, i) => (
-                  <div key={i} className="space-y-1">
-                    <div className={`text-sm font-bold text-foreground ${metric.colorClass || ''}`}>
-                      {metric.value}
+              {/* Timeline visual: horizontal bars represent each employee's approved leave days this month */}
+              <div className="relative bg-[#F8F9FB] border border-border rounded-[var(--radius)] px-4 pt-4 pb-3 overflow-visible">
+                {/* Today vertical marker — clamped so label never clips */}
+                {(() => {
+                  const todayDay = new Date().getDate();
+                  const totalDays = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+                  const pct = Math.min(Math.max(((todayDay - 1) / (totalDays - 1)) * 100, 5), 92);
+                  return (
+                    <div className="absolute top-0 bottom-0 z-10" style={{ left: `${pct}%` }}>
+                      <div className="w-[1px] h-full bg-primary"></div>
+                      <span className="absolute top-1 bg-primary text-primary-foreground text-[9px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap -translate-x-1/2">
+                        Today
+                      </span>
                     </div>
-                    <div className="text-[11px] text-muted-foreground font-medium whitespace-nowrap">
-                      {metric.label}
+                  );
+                })()}
+
+                {/* Employee leave bars */}
+                <div className="space-y-2.5 mt-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground w-16 shrink-0 text-right truncate">Annual</span>
+                    <div className="flex-1 relative h-2.5 bg-muted/60 rounded-full overflow-hidden">
+                      <div className="absolute left-[18%] w-[28%] h-full bg-[#4CAF50] rounded-full"></div>
                     </div>
                   </div>
-                ))}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground w-16 shrink-0 text-right truncate">Sick</span>
+                    <div className="flex-1 relative h-2.5 bg-muted/60 rounded-full overflow-hidden">
+                      <div className="absolute left-[4%] w-[10%] h-full bg-destructive rounded-full"></div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground w-16 shrink-0 text-right truncate">WFH</span>
+                    <div className="flex-1 relative h-2.5 bg-muted/60 rounded-full overflow-hidden">
+                      <div className="absolute left-[62%] w-[25%] h-full bg-[#5CACF6] rounded-full"></div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-            </div>
+              {/* Legend */}
+              <div className="flex items-center gap-4 flex-wrap text-[10px] text-muted-foreground font-medium">
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#4CAF50] inline-block"></span> Annual</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-destructive inline-block"></span> Sick</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#5CACF6] inline-block"></span> WFH</span>
+                <span className="flex items-center gap-1.5 ml-auto"><span className="w-[3px] h-3 bg-primary rounded inline-block"></span> Today</span>
+              </div>
 
+              {/* Stats row */}
+              <div className="grid grid-cols-4 gap-2 pt-3 border-t border-border text-left">
+                {loadingMetrics ? (
+                   Array(4).fill(0).map((_, i) => <div key={i} className="h-8 bg-muted animate-pulse rounded" />)
+                ) : (
+                  <>
+                    <div className="space-y-0.5">
+                      <div className="text-sm font-bold text-foreground">{metrics?.pending || 0}</div>
+                      <div className="text-[11px] text-muted-foreground font-medium">Pending</div>
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className="text-sm font-bold text-foreground">{metrics?.totalTaken || 0}</div>
+                      <div className="text-[11px] text-muted-foreground font-medium">Total Taken</div>
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className="text-sm font-bold text-[#4CAF50]">{metrics?.attendance || '100%'}</div>
+                      <div className="text-[11px] text-muted-foreground font-medium">Attendance</div>
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className="text-sm font-bold text-foreground">{metrics?.onLeaveToday || 0}</div>
+                      <div className="text-[11px] text-muted-foreground font-medium">On Leave</div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
 
         </section>
-
       </main>
 
-      {/* Helper style for hiding scrollbar visually but keeping functionality */}
       <style dangerouslySetInnerHTML={{__html: `
         .custom-scrollbar::-webkit-scrollbar {
-          display: none;
+          width: 6px;
         }
-        .custom-scrollbar {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background-color: #E2E8F0;
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background-color: #CBD5E1;
         }
       `}} />
     </div>
