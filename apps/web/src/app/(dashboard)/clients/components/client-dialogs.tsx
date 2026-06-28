@@ -20,10 +20,6 @@ export function ClientDialog({ open, onOpenChange, client, onSaved }: ClientDial
   const [email, setEmail] = useState(client?.email ?? '');
   const [phone, setPhone] = useState(client?.phone ?? '');
   const [pipelineStage, setPipelineStage] = useState(client?.pipelineStage ?? 'PROSPECT');
-  const [annualRevenue, setAnnualRevenue] = useState(client?.annualRevenue ? String(client.annualRevenue) : '');
-  const [monthlyRevenue, setMonthlyRevenue] = useState(client?.monthlyRevenue ? String(client.monthlyRevenue) : '');
-  const [renewalDueAt, setRenewalDueAt] = useState(client?.renewalDueAt ?? '');
-  const [isAtRisk, setIsAtRisk] = useState(client?.isAtRisk ?? false);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async () => {
@@ -36,10 +32,6 @@ export function ClientDialog({ open, onOpenChange, client, onSaved }: ClientDial
         email: email.trim() || null,
         phone: phone.trim() || null,
         pipelineStage,
-        annualRevenue: annualRevenue ? parseFloat(annualRevenue) : null,
-        monthlyRevenue: monthlyRevenue ? parseFloat(monthlyRevenue) : null,
-        renewalDueAt: renewalDueAt ? new Date(renewalDueAt).toISOString() : null,
-        isAtRisk,
       };
       if (isEdit && client) {
         await updateClient(client.id, payload);
@@ -79,34 +71,11 @@ export function ClientDialog({ open, onOpenChange, client, onSaved }: ClientDial
               onChange={(e) => setPipelineStage(e.target.value)}
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {['PROSPECT', 'PROPOSAL', 'NEGOTIATION', 'ACTIVE', 'AT_RISK'].map((s) => (
+              {['PROSPECT', 'PROPOSAL', 'NEGOTIATION', 'ACTIVE'].map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Annual Revenue (PKR)</Label>
-              <Input value={annualRevenue} onChange={(e) => setAnnualRevenue(e.target.value)} placeholder="50000000" type="number" />
-            </div>
-            <div className="space-y-2">
-              <Label>Monthly Revenue (PKR)</Label>
-              <Input value={monthlyRevenue} onChange={(e) => setMonthlyRevenue(e.target.value)} placeholder="4200000" type="number" />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Renewal Due</Label>
-            <Input value={renewalDueAt} onChange={(e) => setRenewalDueAt(e.target.value)} type="datetime-local" className="w-full" />
-          </div>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={isAtRisk}
-              onChange={(e) => setIsAtRisk(e.target.checked)}
-              className="rounded border-input"
-            />
-            <span className="text-sm font-medium">Mark as at-risk</span>
-          </label>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

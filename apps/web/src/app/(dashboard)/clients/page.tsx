@@ -9,8 +9,6 @@ import { fetchSummary, fetchClients, fetchClient } from "./lib/clients-api";
 import { ClientMetrics } from "./components/client-metrics";
 import { ClientList } from "./components/client-list";
 import { ClientDetail } from "./components/client-detail";
-import { ClientTasks } from "./components/client-tasks";
-import { ClientTimeline } from "./components/client-timeline";
 import { ClientDialog } from "./components/client-dialogs";
 
 export default function ClientManagementDashboard() {
@@ -137,28 +135,6 @@ export default function ClientManagementDashboard() {
           </div>
         </div>
       ) : null}
-
-      {/* Tasks & Timeline */}
-      {selectedClient && (
-        <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <div className="bg-card border border-border rounded-xl p-5 shadow-xs lg:col-span-6 space-y-4 h-[340px] flex flex-col">
-            <h3 className="font-bold text-sm text-foreground uppercase tracking-wider flex items-center gap-2">
-              <span>Upcoming Tasks</span>
-            </h3>
-            <div className="flex-1 overflow-y-auto">
-              <ClientTasks tasks={selectedClient.tasks ?? []} onUpdate={refresh} clientId={selectedClient.id} />
-            </div>
-          </div>
-          <div className="bg-card border border-border rounded-xl p-5 shadow-xs lg:col-span-6 space-y-4 h-[340px] flex flex-col">
-            <h3 className="font-bold text-sm text-foreground uppercase tracking-wider flex items-center gap-2">
-              <span>Timeline</span>
-            </h3>
-            <div className="flex-1 overflow-y-auto">
-              <ClientTimeline clientId={selectedClient.id} events={selectedClient.timelineEvents ?? []} />
-            </div>
-          </div>
-        </section>
-      )}
 
       {/* Dialogs */}
       <ClientDialog

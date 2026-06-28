@@ -162,6 +162,52 @@ export async function deleteClient(clientId: string): Promise<void> {
   await apiClient.delete(`/clients/${clientId}`);
 }
 
+// ── Invoice ──────────────────────────────────────────────────────────────
+
+export async function createInvoice(payload: {
+  invoiceNumber: string;
+  clientId: string;
+  projectId: string;
+  invoiceDate: string;
+  dueDate: string;
+  paymentTermsDays?: number;
+  currencyCode?: string;
+  notes?: string;
+  lineItems: Array<{
+    description: string;
+    quantity: number;
+    unitPrice: number;
+    unit?: string;
+    discountPct?: number;
+    taxType?: string;
+    taxRatePct?: number;
+  }>;
+}) {
+  const { data } = await apiClient.post('/invoices', payload);
+  return data.data;
+}
+
+export async function updateInvoice(invoiceId: string, payload: Partial<{
+  status: string;
+  invoiceDate: string;
+  dueDate: string;
+  paymentTermsDays: number;
+  currencyCode: string;
+  notes: string | null;
+}>) {
+  const { data } = await apiClient.patch(`/invoices/${invoiceId}`, payload);
+  return data.data;
+}
+
+export async function deleteInvoice(invoiceId: string) {
+  await apiClient.delete(`/invoices/${invoiceId}`);
+}
+
+export async function sendInvoice(invoiceId: string) {
+  const { data } = await apiClient.post(`/invoices/${invoiceId}/send`, { markAsSent: true });
+  return data.data;
+}
+
 // ── Status ───────────────────────────────────────────────────────────────
 
 export async function fetchStatuses(clientId: string): Promise<ClientStatus[]> {

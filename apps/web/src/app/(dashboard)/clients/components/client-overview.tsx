@@ -21,7 +21,7 @@ export function ClientOverview({ client }: ClientOverviewProps) {
   ];
 
   const healthMetrics = [
-    { name: 'Pipeline Stage', value: client.pipelineStage === 'ACTIVE' ? 90 : client.pipelineStage === 'AT_RISK' ? 30 : 60 },
+    { name: 'Pipeline Stage', value: client.pipelineStage === 'ACTIVE' ? 90 : client.isAtRisk ? 30 : 60 },
     { name: 'Revenue Trend', value: client.annualRevenue && client.annualRevenue > 0 ? 80 : 40 },
     { name: 'Account Activity', value: (client._count?.invoices ?? 0) > 0 ? 75 : 30 },
   ];

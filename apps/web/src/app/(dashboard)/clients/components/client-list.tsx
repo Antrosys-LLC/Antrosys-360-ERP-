@@ -17,7 +17,6 @@ const stageColors: Record<string, string> = {
   PROSPECT: 'bg-blue-500/10 text-blue-600',
   PROPOSAL: 'bg-violet-500/10 text-violet-600',
   NEGOTIATION: 'bg-amber-500/10 text-amber-600',
-  AT_RISK: 'bg-rose-500/10 text-rose-600',
 };
 
 const initials = (name: string) =>

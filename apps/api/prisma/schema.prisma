@@ -350,6 +350,7 @@ model ClientProject {
   startDate   DateTime?
   endDate     DateTime?
   budget      Decimal?  @db.Decimal(14, 2)
+  invoices    Invoice[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -398,6 +399,8 @@ model Invoice {
   invoiceNumber     String            @unique
   clientId          String
   client            Client            @relation(fields: [clientId], references: [id])
+  projectId         String?
+  project           ClientProject?    @relation(fields: [projectId], references: [id])
   status            InvoiceStatus     @default(DRAFT)
   invoiceDate       DateTime
   dueDate           DateTime
@@ -420,6 +423,7 @@ model Invoice {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
+  @@index([projectId])
   @@index([status])
   @@index([invoiceDate])
   @@index([dueDate])
