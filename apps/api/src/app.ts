@@ -33,6 +33,9 @@ import { invoiceRoutes } from './modules/invoice/invoice.routes';
 import { managerRoutes } from './modules/manager/manager.routes';
 import { notificationsRoutes } from './modules/notifications/notifications.routes';
 import { recruitRoutes } from './modules/recruit/recruit.routes';
+import { documentsRoutes } from './modules/documents/documents.routes';
+import { uploadRouter } from './modules/documents/uploadthing';
+import { createRouteHandler } from 'uploadthing/fastify';
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
@@ -67,6 +70,11 @@ export async function buildApp() {
   // Health check
   app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
+  // UploadThing route handler
+  await app.register(createRouteHandler, {
+    router: uploadRouter,
+  });
+
   // Register all module routes under /api/v1
   await app.register(
     async function apiV1(api) {
@@ -92,6 +100,7 @@ export async function buildApp() {
       await api.register(managerRoutes, { prefix: '/manager' });
       await api.register(notificationsRoutes, { prefix: '/notifications' });
       await api.register(recruitRoutes, { prefix: '/recruit' });
+      await api.register(documentsRoutes, { prefix: '/documents' });
     },
     { prefix: '/api/v1' },
   );
