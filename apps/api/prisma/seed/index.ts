@@ -165,7 +165,7 @@ async function main() {
     }
   }
 
-  console.log('🔗 Connecting management hierarchy...');
+  console.log('🔗 Connecting management hierarchy and teams...');
   const mainManager = await prisma.employee.findFirst({
     where: { user: { email: 'manager@antrosys.com' } },
   });
@@ -174,9 +174,23 @@ async function main() {
   });
 
   if (mainManager && subManager) {
+    const managerTeam = await prisma.team.create({
+      data: {
+        name: 'Operations Main Team',
+        managerId: mainManager.id,
+      }
+    });
+
+    const subManagerTeam = await prisma.team.create({
+      data: {
+        name: 'Engineering Sub Team',
+        managerId: subManager.id,
+      }
+    });
+
     await prisma.employee.update({
       where: { id: subManager.id },
-      data: { managerId: mainManager.id },
+      data: { managerId: mainManager.id, teamId: managerTeam.id },
     });
 
     const subManagerReports = ['sara.javed@antrosys.com', 'fawad.khan@antrosys.com', 'bilal.hassan@antrosys.com', 'hina.baig@antrosys.com'];
@@ -185,7 +199,7 @@ async function main() {
       if (emp) {
         await prisma.employee.update({
           where: { id: emp.id },
-          data: { managerId: subManager.id },
+          data: { managerId: subManager.id, teamId: subManagerTeam.id },
         });
       }
     }
@@ -196,7 +210,7 @@ async function main() {
       if (emp) {
         await prisma.employee.update({
           where: { id: emp.id },
-          data: { managerId: mainManager.id },
+          data: { managerId: mainManager.id, teamId: managerTeam.id },
         });
       }
     }
@@ -270,6 +284,7 @@ async function main() {
           durationDays: item.duration,
           status: 'PENDING',
           reason: item.reason,
+          attachmentUrl: item.attachmentUrl,
         },
       });
     }
