@@ -8,17 +8,21 @@ const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
   ANNUAL: 'Annual',
   SICK: 'Sick',
   CASUAL: 'Casual',
+  WFH: 'Work From Home',
+  UNPAID: 'Unpaid',
   MATERNITY: 'Maternity',
   OTHER: 'Other',
 };
 
-const LEAVE_TYPE_ICONS = {
+const LEAVE_TYPE_ICONS: Record<LeaveType, { bg: string; iconColor: string }> = {
   ANNUAL: { bg: '#EEEDFE', iconColor: '#534AB7' },
   SICK: { bg: '#EEEDFE', iconColor: '#534AB7' },
   CASUAL: { bg: '#FCEBEB', iconColor: '#A32D2D' },
+  WFH: { bg: '#EEEDFE', iconColor: '#534AB7' },
+  UNPAID: { bg: '#F8F9FC', iconColor: '#888888' },
   MATERNITY: { bg: '#EEEDFE', iconColor: '#534AB7' },
   OTHER: { bg: '#F8F9FC', iconColor: '#888888' },
-} as const;
+};
 
 type DayStatus = 'present' | 'half' | 'absent' | 'holiday' | 'today' | 'none';
 

@@ -166,6 +166,8 @@ enum LeaveType {
   CASUAL
   MATERNITY
   OTHER
+  WFH
+  UNPAID
 }
 
 enum LeaveRequestStatus {
@@ -173,6 +175,8 @@ enum LeaveRequestStatus {
   APPROVED
   REJECTED
   CANCELLED
+}
+
 enum LedgerEntryType {
   DEBIT
   CREDIT
@@ -252,13 +256,13 @@ model Employee {
   attendances            Attendance[]
   leaveRequests          LeaveRequest[]   @relation("EmployeeLeaves")
   approvedLeaves         LeaveRequest[]   @relation("ApprovedLeaves")
+  leaveBalances          LeaveBalance[]
   announcements          Announcement[]
   skills                 EmployeeSkill[]
   jobApplications        JobApplication[]
   onboarding             OnboardingRecord?
   hrLetters              HrLetter[]
   documents             Document[]           @relation("EmployeeDocuments")
-  leaveBalances          LeaveBalance[]
   payslips               EmployeePayslip[]
 
   @@index([department])
@@ -666,6 +670,7 @@ model LeaveRequest {
   durationDays Int
   status       LeaveRequestStatus @default(PENDING)
   reason       String?
+  declineNote  String?
   approvedById String?
   approvedBy   Employee?          @relation("ApprovedLeaves", fields: [approvedById], references: [id])
   createdAt    DateTime           @default(now())
@@ -673,6 +678,7 @@ model LeaveRequest {
 
   @@index([employeeId])
   @@index([status])
+  @@index([startDate])
   @@map("leave_requests")
 }
 

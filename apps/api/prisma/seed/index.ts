@@ -1,4 +1,4 @@
-import { PrismaClient, Role, Department, Gender, EmploymentStatus } from '@prisma/client';
+import { PrismaClient, Role, Department, Gender, EmploymentStatus, LeaveType } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import process from 'process';
 
@@ -247,15 +247,15 @@ async function main() {
   console.log('✈️ Seeding leave requests...');
   const leaveData: {
     email: string;
-    type: 'SICK' | 'ANNUAL' | 'CASUAL' | 'MATERNITY';
+    type: LeaveType;
     duration: number;
     reason: string;
   }[] = [
-    { email: 'sara.javed@antrosys.com', type: 'SICK', duration: 1, reason: 'Flu & headache' },
-    { email: 'fawad.khan@antrosys.com', type: 'ANNUAL', duration: 3, reason: 'Family trip' },
-    { email: 'omar.mirza@antrosys.com', type: 'CASUAL', duration: 1, reason: 'Personal errand' },
-    { email: 'maria.raza@antrosys.com', type: 'MATERNITY', duration: 90, reason: 'Maternity leave starts' },
-    { email: 'nadia.qureshi@antrosys.com', type: 'ANNUAL', duration: 5, reason: 'Travel plan' },
+    { email: 'sara.javed@antrosys.com', type: LeaveType.SICK, duration: 1, reason: 'Flu & headache' },
+    { email: 'fawad.khan@antrosys.com', type: LeaveType.ANNUAL, duration: 3, reason: 'Family trip' },
+    { email: 'omar.mirza@antrosys.com', type: LeaveType.CASUAL, duration: 1, reason: 'Personal errand' },
+    { email: 'maria.raza@antrosys.com', type: LeaveType.MATERNITY, duration: 90, reason: 'Maternity leave starts' },
+    { email: 'nadia.qureshi@antrosys.com', type: LeaveType.ANNUAL, duration: 5, reason: 'Travel plan' },
   ];
 
   for (const item of leaveData) {
@@ -339,6 +339,10 @@ async function main() {
   await seedBizIntelData(prisma);
   const { seedHrData } = await import('./hr.seed');
   await seedHrData();
+
+  const { seedLeaveData } = await import('./leave.seed');
+  await seedLeaveData();
+
   const { seedLedgerData } = await import('./ledger.seed');
   await seedLedgerData(prisma);
 
