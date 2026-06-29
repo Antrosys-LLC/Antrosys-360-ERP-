@@ -22,7 +22,9 @@ export type Permission =
   | 'announcements:write'
   | 'admin:read'
   | 'admin:write'
-  | 'audit:read';
+  | 'audit:read'
+  | 'documents:read'
+  | 'documents:write';
 
 const ALL_PERMISSIONS: Permission[] = [
   'finance:read',
@@ -47,6 +49,8 @@ const ALL_PERMISSIONS: Permission[] = [
   'admin:read',
   'admin:write',
   'audit:read',
+  'documents:read',
+  'documents:write',
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
@@ -59,6 +63,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'payroll:write',
     'reports:read',
     'clients:read',
+    'documents:read',
+    'documents:write',
   ],
 
   [Role.OPERATIONS_HEAD]: [
@@ -70,6 +76,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'manpower:write',
     'announcements:read',
     'announcements:write',
+    'documents:read',
+    'documents:write',
   ],
 
   [Role.HR_HEAD]: [
@@ -79,6 +87,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'recruitment:write',
     'attendance:read',
     'leave:read',
+    'documents:read',
+    'documents:write',
   ],
 
   [Role.FINANCE_MANAGER]: [
@@ -86,11 +96,14 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'finance:write',
     'payroll:read',
     'payroll:write',
+    'documents:read',
+    'documents:write',
   ],
 
   [Role.PROJECT_MANAGER]: [
     'clients:read',
     'reports:read',
+    'documents:read',
   ],
 
   [Role.MANAGER]: [
@@ -100,6 +113,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'hr:read',
     'announcements:read',
     'announcements:write',
+    'documents:read',
+    'documents:write',
   ],
 
   [Role.SUB_MANAGER]: [
@@ -109,17 +124,24 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'hr:read',
     'announcements:read',
     'announcements:write',
+    'documents:read',
+    'documents:write',
   ],
 
   [Role.TEAM_LEAD]: [
     'attendance:read',
     'hr:read',
+    'documents:read',
   ],
 
   [Role.EMPLOYEE]: [
+    'attendance:read',
     'attendance:write',
     'leave:read',
     'leave:write',
+    'documents:read',
+    'announcements:read',
+    'payroll:read',
   ],
 };
 

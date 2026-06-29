@@ -155,6 +155,29 @@ enum HrLetterType {
 enum PayslipStatus {
   PROCESSING
   PAID
+} 
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  LEAVE
+  HALF_DAY
+}
+
+enum LeaveType {
+  ANNUAL
+  SICK
+  CASUAL
+  MATERNITY
+  OTHER
+  WFH
+  UNPAID
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
   CANCELLED
 }
 
@@ -188,6 +211,10 @@ model User {
   jobPostingsCreated       JobPosting[]       @relation("JobPostingsCreated")
   onboardingCreated        OnboardingRecord[] @relation("OnboardingCreated")
   hrLettersGenerated       HrLetter[]         @relation("HrLettersGenerated")
+  uploadedDocuments        Document[]         @relation("DocumentUploadedBy")
+  assignedTasks            EmployeeTask[]     @relation("TaskAssignments")
+  sentMessages             Message[]          @relation("SentMessages")
+  workScheduleUpdates      WorkScheduleConfig[] @relation("WorkScheduleUpdatedBy")
   ledgerEntriesCreated     LedgerEntry[]      @relation("LedgerEntriesCreated")
 
   @@map("users")
@@ -235,6 +262,7 @@ model Employee {
   attendances            Attendance[]
   leaveRequests          LeaveRequest[]   @relation("EmployeeLeaves")
   approvedLeaves         LeaveRequest[]   @relation("ApprovedLeaves")
+  leaveBalances          LeaveBalance[]
   announcements          Announcement[]
   skills                 EmployeeSkill[]
   payslips               EmployeePayslip[]
@@ -244,6 +272,11 @@ model Employee {
   teamId                 String?
   team                   Team?            @relation("TeamMembers", fields: [teamId], references: [id])
   managedTeam            Team?            @relation("TeamManager")
+  documents             Document[]           @relation("EmployeeDocuments")
+  teams                 EmployeeTeam[]
+  tasks                 EmployeeTask[]
+  receivedMessages      Message[]            @relation("ReceivedMessages")
+  payslips               EmployeePayslip[]
 
   @@index([department])
   @@index([employmentStatus])
@@ -314,6 +347,13 @@ model Client {
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
   invoices       Invoice[]
+  documents      Document[]          @relation("ClientDocuments")
+  statuses       ClientStatus[]
+  renewals       ClientRenewal[]
+  activities     ClientActivity[]
+  projects       ClientProject[]
+  tasks          ClientTask[]
+  timelineEvents ClientTimelineEvent[]
 
   @@index([pipelineStage])
   @@index([isAtRisk])
@@ -321,11 +361,112 @@ model Client {
   @@map("clients")
 }
 
+model ClientStatus {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  status    String   // ACTIVE, PROSPECT, PROPOSAL, NEGOTIATION, AT_RISK, INACTIVE
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([clientId])
+  @@index([createdAt])
+  @@map("client_statuses")
+}
+
+model ClientRenewal {
+  id          String    @id @default(cuid())
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  dueAt       DateTime
+  completedAt DateTime?
+  amount      Decimal?  @db.Decimal(14, 2)
+  status      String    @default("PENDING") // PENDING, COMPLETED, CANCELLED
+  note        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([clientId])
+  @@index([dueAt])
+  @@index([status])
+  @@map("client_renewals")
+}
+
+model ClientActivity {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  type        String   // NOTE, CALL, EMAIL, MEETING, TASK, PROJECT, STATUS_CHANGE, RENEWAL
+  title       String
+  description String?
+  createdAt   DateTime @default(now())
+
+  @@index([clientId])
+  @@index([createdAt])
+  @@map("client_activities")
+}
+
+model ClientProject {
+  id          String    @id @default(cuid())
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  status      String    @default("PLANNING") // PLANNING, ACTIVE, ON_HOLD, COMPLETED, CANCELLED
+  startDate   DateTime?
+  endDate     DateTime?
+  budget      Decimal?  @db.Decimal(14, 2)
+  invoices    Invoice[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([clientId])
+  @@index([status])
+  @@map("client_projects")
+}
+
+model ClientTask {
+  id          String    @id @default(cuid())
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  dueAt       DateTime?
+  completedAt DateTime?
+  priority    String    @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  status      String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, CANCELLED
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([clientId])
+  @@index([dueAt])
+  @@index([status])
+  @@map("client_tasks")
+}
+
+model ClientTimelineEvent {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  eventType   String   // CREATED, STATUS_CHANGED, RENEWAL_DUE, PROJECT_STARTED, PROJECT_COMPLETED, TASK_COMPLETED, ACTIVITY, NOTE_ADDED
+  title       String
+  description String?
+  eventDate   DateTime @default(now())
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([clientId])
+  @@index([eventDate])
+  @@map("client_timeline_events")
+}
+
 model Invoice {
   id                String            @id @default(cuid())
   invoiceNumber     String            @unique
   clientId          String
   client            Client            @relation(fields: [clientId], references: [id])
+  projectId         String?
+  project           ClientProject?    @relation(fields: [projectId], references: [id])
   status            InvoiceStatus     @default(DRAFT)
   invoiceDate       DateTime
   dueDate           DateTime
@@ -348,6 +489,7 @@ model Invoice {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
+  @@index([projectId])
   @@index([status])
   @@index([invoiceDate])
   @@index([dueDate])
@@ -530,17 +672,19 @@ model SystemServiceHealth {
 }
 
 model Attendance {
-  id         String    @id @default(cuid())
-  employeeId String
-  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  date       DateTime  @db.Date
-  checkIn    DateTime?
-  checkOut   DateTime?
-  status     String // "PRESENT", "ABSENT", "LATE", "LEAVE"
-  hours      Decimal?  @db.Decimal(4, 2)
-  isFlagged  Boolean   @default(false)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id              String           @id @default(cuid())
+  employeeId      String
+  employee        Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date            DateTime         @db.Date
+  checkIn         DateTime?
+  checkOut        DateTime?
+  checkInLocation String?
+  status          AttendanceStatus @default(ABSENT)
+  hours           Decimal?         @db.Decimal(4, 2)
+  overtimeHours   Decimal?         @db.Decimal(4, 2)
+  isFlagged       Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   @@unique([employeeId, date])
   @@index([employeeId])
@@ -549,24 +693,95 @@ model Attendance {
 }
 
 model LeaveRequest {
-  id           String    @id @default(cuid())
+  id           String             @id @default(cuid())
   employeeId   String
-  employee     Employee  @relation("EmployeeLeaves", fields: [employeeId], references: [id], onDelete: Cascade)
-  type         String // "SICK", "ANNUAL", "CASUAL", "MATERNITY"
-  startDate    DateTime
-  endDate      DateTime
+  employee     Employee           @relation("EmployeeLeaves", fields: [employeeId], references: [id], onDelete: Cascade)
+  type         LeaveType
+  startDate    DateTime           @db.Date
+  endDate      DateTime           @db.Date
   durationDays Int
-  status       String // "PENDING", "APPROVED", "REJECTED"
+  status       LeaveRequestStatus @default(PENDING)
   reason       String?
   attachmentUrl String?
+  declineNote  String?
   approvedById String?
-  approvedBy   Employee? @relation("ApprovedLeaves", fields: [approvedById], references: [id])
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  approvedBy   Employee?          @relation("ApprovedLeaves", fields: [approvedById], references: [id])
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
 
   @@index([employeeId])
   @@index([status])
+  @@index([startDate])
   @@map("leave_requests")
+}
+
+model LeaveBalance {
+  id            String    @id @default(cuid())
+  employeeId    String
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType     LeaveType
+  year          Int
+  allocatedDays Decimal   @db.Decimal(5, 1)
+  usedDays      Decimal   @default(0) @db.Decimal(5, 1)
+  pendingDays   Decimal   @default(0) @db.Decimal(5, 1)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([employeeId, leaveType, year])
+  @@index([employeeId, year])
+  @@map("leave_balances")
+}
+
+model EmployeePayslip {
+  id              String    @id @default(cuid())
+  employeeId      String
+  employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  payrollId       String?
+  periodStart     DateTime  @db.Date
+  periodEnd       DateTime  @db.Date
+  periodLabel     String
+  currencyCode    String    @default("USD") @db.VarChar(3)
+  grossPay        Decimal   @db.Decimal(14, 2)
+  netPay          Decimal   @db.Decimal(14, 2)
+  taxAmount       Decimal   @default(0) @db.Decimal(14, 2)
+  deductionsTotal Decimal   @default(0) @db.Decimal(14, 2)
+  netPayRatioPct  Int       @default(78)
+  documentUrl     String?
+  paidAt          DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([employeeId, periodStart])
+  @@map("employee_payslips")
+}
+
+model CompanyHoliday {
+  id         String    @id @default(cuid())
+  title      String
+  date       DateTime  @db.Date
+  endDate    DateTime? @db.Date
+  location   String?
+  isNational Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([date])
+  @@map("company_holidays")
+}
+
+model WorkScheduleConfig {
+  id                    String   @id @default("default")
+  standardHoursPerDay   Decimal  @default(8) @db.Decimal(4, 2)
+  halfDayThresholdHours Decimal  @default(4) @db.Decimal(4, 2)
+  overtimeEnabled       Boolean  @default(true)
+  lateAfterHour         Int      @default(9)
+  lateAfterMinute       Int      @default(0)
+  updatedByUserId       String?
+  updatedBy             User?    @relation("WorkScheduleUpdatedBy", fields: [updatedByUserId], references: [id])
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("work_schedule_config")
 }
 
 model JobRequisition {
@@ -701,15 +916,17 @@ model HrLetter {
 }
 
 model Announcement {
-  id        String   @id @default(cuid())
-  title     String
-  content   String
-  authorId  String
-  author    Employee @relation(fields: [authorId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String      @id @default(cuid())
+  title      String
+  content    String
+  authorId   String
+  author     Employee    @relation(fields: [authorId], references: [id])
+  department Department?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
 
   @@index([authorId])
+  @@index([department])
   @@map("announcements")
 }
 
@@ -765,6 +982,116 @@ model Notification {
   @@index([userId])
   @@index([isRead])
   @@map("notifications")
+}
+
+model Team {
+  id          String         @id @default(cuid())
+  name        String
+  description String?
+  department  Department?
+  members     EmployeeTeam[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([department])
+  @@map("teams")
+}
+
+model EmployeeTeam {
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  teamId     String
+  team       Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, teamId])
+  @@map("employee_teams")
+}
+
+model EmployeeTask {
+  id           String    @id @default(cuid())
+  employeeId   String
+  employee     Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  title        String
+  description  String?
+  dueAt        DateTime?
+  completedAt  DateTime?
+  status       String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED
+  assignedById String?
+  assignedBy   User?     @relation("TaskAssignments", fields: [assignedById], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([employeeId])
+  @@index([status])
+  @@map("employee_tasks")
+}
+
+model Message {
+  id          String    @id @default(cuid())
+  senderId    String
+  sender      User      @relation("SentMessages", fields: [senderId], references: [id])
+  recipientId String
+  recipient   Employee  @relation("ReceivedMessages", fields: [recipientId], references: [id])
+  subject     String
+  body        String
+  isRead      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  @@index([recipientId, isRead])
+  @@index([senderId])
+  @@map("messages")
+}
+
+// =========================================================================
+// Document Vault Models
+// =========================================================================
+
+model DocumentFolder {
+  id        String           @id @default(cuid())
+  name      String
+  parentId  String?
+  parent    DocumentFolder?  @relation("FolderChildren", fields: [parentId], references: [id])
+  children  DocumentFolder[] @relation("FolderChildren")
+  isLocked  Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  documents Document[]
+
+  @@index([parentId])
+  @@map("document_folders")
+}
+
+model Document {
+  id             String          @id @default(cuid())
+  title          String
+  fileName       String
+  fileType       String
+  fileSize       String
+  fileUrl        String
+  thumbnailUrl   String?
+  isConfidential Boolean         @default(false)
+  description    String?
+  tags           String[]
+
+  folderId       String
+  folder         DocumentFolder  @relation(fields: [folderId], references: [id])
+
+  employeeId     String?
+  employee       Employee?       @relation("EmployeeDocuments", fields: [employeeId], references: [id])
+  clientId       String?
+  client         Client?         @relation("ClientDocuments", fields: [clientId], references: [id])
+
+  uploadedById   String
+  uploadedBy     User            @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([folderId])
+  @@index([employeeId])
+  @@index([clientId])
+  @@index([title])
+  @@map("documents")
 }
 
 // =========================================================================

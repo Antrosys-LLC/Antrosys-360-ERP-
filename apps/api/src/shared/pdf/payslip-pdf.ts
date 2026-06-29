@@ -1,5 +1,4 @@
 import PDFDocument from 'pdfkit';
-import { formatCurrencyAmount } from '../currency/format-currency';
 
 export interface PayslipPdfInput {
   employeeName: string;
@@ -8,9 +7,12 @@ export interface PayslipPdfInput {
   designation: string | null;
   periodLabel: string;
   grossAmount: number;
+  grossPay: number;
   deductionsAmount: number;
+  deductionsTotal: number;
   taxAmount: number;
   netAmount: number;
+  netPay: number;
   currencyCode: string;
   status: string;
   generatedAt: Date;
@@ -32,7 +34,7 @@ export function buildPayslipPdf(input: PayslipPdfInput): Promise<Buffer> {
     doc.fontSize(18).fillColor('#1A1A1A').text(`Payslip · ${input.periodLabel}`, { align: 'left' });
     doc.moveDown(0.3);
     doc.fontSize(10).fillColor('#888888').text(
-      `Generated ${input.generatedAt.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} · Status: ${input.status}`,
+      `Generated ${input.generatedAt.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`,
     );
     doc.moveDown(1.5);
 
@@ -40,18 +42,16 @@ export function buildPayslipPdf(input: PayslipPdfInput): Promise<Buffer> {
     doc.moveDown(0.5);
     doc.fontSize(11).text(`Name: ${input.employeeName}`);
     if (input.employeeCode) doc.text(`Employee ID: ${input.employeeCode}`);
-    if (input.department) doc.text(`Department: ${input.department}`);
-    if (input.designation) doc.text(`Designation: ${input.designation}`);
     doc.moveDown(1.5);
 
     doc.fontSize(12).fillColor('#333333').text('Earnings summary', { underline: true });
     doc.moveDown(0.5);
     doc.fontSize(11);
-    doc.text(`Gross pay:        ${fmt(input.grossAmount)}`);
-    doc.text(`Deductions:       ${fmt(input.deductionsAmount)}`);
+    doc.text(`Gross pay:        ${fmt(input.grossPay)}`);
+    doc.text(`Deductions:       ${fmt(input.deductionsTotal)}`);
     doc.text(`Tax withheld:     ${fmt(input.taxAmount)}`);
     doc.moveDown(0.5);
-    doc.fontSize(13).fillColor('#1A1A1A').text(`Net pay:          ${fmt(input.netAmount)}`, { continued: false });
+    doc.fontSize(13).fillColor('#1A1A1A').text(`Net pay:          ${fmt(input.netPay)}`, { continued: false });
 
     doc.moveDown(2);
     doc.fontSize(9).fillColor('#AAAAAA').text(
@@ -62,3 +62,4 @@ export function buildPayslipPdf(input: PayslipPdfInput): Promise<Buffer> {
     doc.end();
   });
 }
+

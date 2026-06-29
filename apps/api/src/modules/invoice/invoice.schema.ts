@@ -26,6 +26,7 @@ export const updateInvoiceLineItemSchema = createInvoiceLineItemSchema.extend({
 export const createInvoiceBodySchema = z.object({
   invoiceNumber: z.string().min(1).max(64),
   clientId: z.string().cuid(),
+  projectId: z.string().cuid(),
   invoiceDate: z.coerce.date(),
   dueDate: z.coerce.date(),
   paymentTermsDays: z.number().int().min(0).max(365).default(15),

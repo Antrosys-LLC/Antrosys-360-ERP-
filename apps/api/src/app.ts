@@ -23,6 +23,7 @@ import { performanceRoutes } from './modules/hr/performance/performance.routes';
 import { attendanceRoutes } from './modules/operations/attendance/attendance.routes';
 import { leaveRoutes } from './modules/operations/leave/leave.routes';
 import { manpowerRoutes } from './modules/operations/manpower/manpower.routes';
+import { onboardRoutes } from './modules/onboard/onboard.routes';
 import { clientsRoutes } from './modules/clients/clients.routes';
 import { reportsRoutes } from './modules/reports/reports.routes';
 import { adminRoutes } from './modules/admin/admin.routes';
@@ -33,6 +34,10 @@ import { invoiceRoutes } from './modules/invoice/invoice.routes';
 import { managerRoutes } from './modules/manager/manager.routes';
 import { notificationsRoutes } from './modules/notifications/notifications.routes';
 import { recruitRoutes } from './modules/recruit/recruit.routes';
+import { documentsRoutes } from './modules/documents/documents.routes';
+import { uploadRouter } from './modules/documents/uploadthing';
+import { createRouteHandler } from 'uploadthing/fastify';
+import { employeeDashboardRoutes } from './modules/employee/EmployeeDashboard/employee_dashboard.routes';
 import { ledgerRoutes } from './modules/ledger/ledger.routes';
 import { currencyRoutes } from './modules/currency/currency.routes';
 
@@ -69,6 +74,11 @@ export async function buildApp() {
   // Health check
   app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
+  // UploadThing route handler
+  await app.register(createRouteHandler, {
+    router: uploadRouter,
+  });
+
   // Register all module routes under /api/v1
   await app.register(
     async function apiV1(api) {
@@ -87,6 +97,7 @@ export async function buildApp() {
       await api.register(attendanceRoutes, { prefix: '/operations/attendance' });
       await api.register(leaveRoutes, { prefix: '/operations/leave' });
       await api.register(manpowerRoutes, { prefix: '/operations/manpower' });
+      await api.register(onboardRoutes, { prefix: '/onboard' });
       await api.register(clientsRoutes, { prefix: '/clients' });
       await api.register(reportsRoutes, { prefix: '/reports' });
       await api.register(adminRoutes, { prefix: '/admin' });
@@ -94,6 +105,8 @@ export async function buildApp() {
       await api.register(managerRoutes, { prefix: '/manager' });
       await api.register(notificationsRoutes, { prefix: '/notifications' });
       await api.register(recruitRoutes, { prefix: '/recruit' });
+      await api.register(documentsRoutes, { prefix: '/documents' });
+      await api.register(employeeDashboardRoutes, { prefix: '/employee/dashboard' });
       await api.register(ledgerRoutes, { prefix: '/ledger' });
       await api.register(currencyRoutes, { prefix: '/currency' });
     },
