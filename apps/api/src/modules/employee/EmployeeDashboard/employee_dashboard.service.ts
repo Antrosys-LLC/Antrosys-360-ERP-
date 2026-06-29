@@ -2,6 +2,7 @@ import { Prisma, AttendanceStatus, LeaveType, LeaveRequestStatus } from '@prisma
 import { prisma } from '../../../config/database';
 import { formatCurrency } from '../../../shared/currency/exchange-rate';
 import { buildPayslipPdf } from '../../../shared/pdf/payslip-pdf';
+import { payslipPeriodLabel } from '../../../shared/payslip/payslip-period-label';
 import type { CalendarQuery, CheckInBody } from './employee_dashboard.schema';
 
 const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
@@ -372,7 +373,7 @@ export async function getDashboard(userId: string) {
       ? {
           id: latestPayslip.id,
           label: 'Latest Payslip',
-          period: latestPayslip.periodLabel,
+          period: payslipPeriodLabel(new Date(latestPayslip.periodStart)),
           netPayLabel: 'NET PAY',
           netPay: formatCurrency(Number(latestPayslip.netPay), latestPayslip.currencyCode),
           currencyCode: latestPayslip.currencyCode,
@@ -579,12 +580,14 @@ export async function downloadPayslip(userId: string, payslipId: string) {
     return null;
   }
 
+  const periodLabel = payslipPeriodLabel(new Date(payslip.periodStart));
+
   const pdfBuffer = await buildPayslipPdf({
     employeeName: `${employee.firstName} ${employee.lastName}`,
     employeeCode: employee.employeeCode,
     department: employee.department?.replace(/_/g, ' ') ?? null,
     designation: employee.designation,
-    periodLabel: payslip.periodLabel,
+    periodLabel,
     grossAmount: Number(payslip.grossPay),
     grossPay: Number(payslip.grossPay),
     deductionsAmount: Number(payslip.deductionsTotal),
@@ -605,7 +608,7 @@ export async function downloadPayslip(userId: string, payslipId: string) {
   }
 
   return {
-    filename: `payslip-${employee.employeeCode ?? employee.id}-${payslip.id}.pdf`,
+    filename: `payslip-${employee.employeeCode ?? employee.id}-${periodLabel.replace(/\s+/g, '-')}.pdf`,
     buffer: pdfBuffer,
   };
 }

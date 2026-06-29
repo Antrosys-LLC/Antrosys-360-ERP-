@@ -13,6 +13,7 @@ import { validateEmploymentDates } from '../../shared/validation/employment-date
 import { APP_DEFAULT_CURRENCY } from '../../shared/currency/currency-constants';
 import { formatCurrencyAmount, formatCurrencyCompact } from '../../shared/currency/format-currency';
 import { buildPayslipPdf } from '../../shared/pdf/payslip-pdf';
+import { payslipPeriodLabel } from '../../shared/payslip/payslip-period-label';
 
 const DEPARTMENT_ALIASES: Record<string, Department> = {
   engineering: 'ENGINEERING',
@@ -356,10 +357,6 @@ const PAYSLIP_STATUS_COLOR: Record<PayslipStatus, string> = {
   PAID: 'bg-emerald-50 text-emerald-700 border-emerald-100',
   CANCELLED: 'bg-rose-50 text-rose-500 border-rose-100',
 };
-
-function payslipPeriodLabel(date: Date): string {
-  return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-}
 
 export async function getEmployeePayslips(employeeId: string, query: EmployeePayslipsQuery) {
   const employee = await prisma.employee.findUnique({
