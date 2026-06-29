@@ -16,16 +16,20 @@ export async function getDashboardData(userId: string, userRole: string) {
 
   // 2. Resolve data scope (team employees)
   let teamEmployees: any[] = [];
-  if (isSubManager) {
-    // Sub-Manager: reports to Main Manager, only manages direct reports
-    teamEmployees = await prisma.employee.findMany({
-      where: { managerId: employee.id, isActive: true, user: { role: 'EMPLOYEE' } },
-      include: {
-        user: {
-          select: { email: true }
-        }
-      }
+  let managedTeam = null;
+  
+  if (isSubManager || userRole === 'MANAGER') {
+    // Sub-Manager / Manager manages a specific team
+    managedTeam = await prisma.team.findUnique({
+      where: { managerId: employee.id }
     });
+    
+    if (managedTeam) {
+      teamEmployees = await prisma.employee.findMany({
+        where: { teamId: managedTeam.id, isActive: true },
+        include: { user: { select: { email: true } } }
+      });
+    }
   } else {
     // Main Manager / CEO / Operations Head: manages all active employees in their department
     // or all active employees globally (excluding themselves)
@@ -98,17 +102,55 @@ export async function getDashboardData(userId: string, userRole: string) {
   });
 
   const leavesPendingCount = leaveRequests.length;
+  
+  const approvedTeamLeaves = await prisma.leaveRequest.findMany({
+    where: {
+      employeeId: { in: teamEmployeeIds },
+      status: 'APPROVED',
+      endDate: { gte: today }
+    }
+  });
+  
+  const allTeamLeaves = [...leaveRequests, ...approvedTeamLeaves];
 
-  const formattedLeaves = leaveRequests.map((req) => ({
-    id: req.id,
-    name: `${req.employee.firstName} ${req.employee.lastName}`,
-    type: req.type,
-    startDate: req.startDate.toISOString(),
-    endDate: req.endDate.toISOString(),
-    durationDays: req.durationDays,
-    status: req.status,
-    reason: req.reason,
-  }));
+  const formattedLeaves = leaveRequests.map((req) => {
+    // Consistent avatar color hash based on name
+    const firstName = req.employee.firstName || '';
+    const lastName = req.employee.lastName || '';
+    const hash = firstName.charCodeAt(0) + (lastName ? lastName.charCodeAt(0) : 0);
+    const colors = [
+      { bg: 'bg-[#E3D5FF] dark:bg-purple-900/40', text: 'text-[#4A154B] dark:text-purple-300' },
+      { bg: 'bg-[#CDEADD] dark:bg-emerald-900/40', text: 'text-[#1B4B36] dark:text-emerald-300' },
+      { bg: 'bg-[#FFE2D5] dark:bg-orange-900/40', text: 'text-[#9C3915] dark:text-orange-300' },
+      { bg: 'bg-[#D5E8FF] dark:bg-blue-900/40', text: 'text-[#154B9C] dark:text-blue-300' },
+    ];
+    const avatarColor = colors[hash % colors.length];
+    
+    // Check overlap
+    const reqStart = new Date(req.startDate).getTime();
+    const reqEnd = new Date(req.endDate).getTime();
+    
+    const overlapDetected = allTeamLeaves.some(otherReq => {
+       if (otherReq.id === req.id) return false;
+       const otherStart = new Date(otherReq.startDate).getTime();
+       const otherEnd = new Date(otherReq.endDate).getTime();
+       return reqStart <= otherEnd && reqEnd >= otherStart;
+    });
+
+    return {
+      id: req.id,
+      name: `${firstName} ${lastName}`,
+      type: req.type,
+      startDate: req.startDate.toISOString(),
+      endDate: req.endDate.toISOString(),
+      durationDays: req.durationDays,
+      status: req.status,
+      reason: req.reason,
+      attachment: req.attachmentUrl || null,
+      avatarColor,
+      overlapDetected
+    };
+  });
 
   // 8. Fetch department KPIs
   const departmentName = employee.department || 'Operations';
@@ -210,9 +252,14 @@ export async function updateLeaveStatus(leaveId: string, status: 'APPROVED' | 'R
     return null;
   }
 
-  // Sub-manager check: can only edit leaves for direct reports
-  if (userRole === 'SUB_MANAGER' && leave.employee.managerId !== employee.id) {
-    throw new Error('Unauthorized: Sub-manager can only manage leaves for their team');
+  // Sub-manager / Manager check: can only edit leaves for direct team
+  if (userRole === 'SUB_MANAGER' || userRole === 'MANAGER') {
+    const managedTeam = await prisma.team.findUnique({
+      where: { managerId: employee.id }
+    });
+    if (!managedTeam || leave.employee.teamId !== managedTeam.id) {
+      throw new Error('Unauthorized: You can only manage leaves for your team');
+    }
   }
 
   return prisma.$transaction(async (tx) => {
@@ -250,10 +297,16 @@ export async function approveAllLeaves(userId: string, userRole: string) {
     throw new Error('Logged in user is not registered as an employee');
   }
 
-  const isSubManager = userRole === 'SUB_MANAGER';
-  const targetFilter = isSubManager
-    ? { employee: { managerId: employee.id } }
-    : {};
+  const isSubManager = userRole === 'SUB_MANAGER' || userRole === 'MANAGER';
+  let targetFilter = {};
+  if (isSubManager) {
+    const managedTeam = await prisma.team.findUnique({
+      where: { managerId: employee.id }
+    });
+    if (managedTeam) {
+      targetFilter = { employee: { teamId: managedTeam.id } };
+    }
+  }
 
   return prisma.$transaction(async (tx) => {
     const pendingLeaves = await tx.leaveRequest.findMany({
@@ -320,9 +373,14 @@ export async function postAnnouncement(userId: string, userRole: string, payload
     let teamEmployees = [];
 
     if (isSubManager) {
-      teamEmployees = await tx.employee.findMany({
-        where: { managerId: employee.id, isActive: true },
+      const managedTeam = await tx.team.findUnique({
+        where: { managerId: employee.id }
       });
+      if (managedTeam) {
+        teamEmployees = await tx.employee.findMany({
+          where: { teamId: managedTeam.id, isActive: true },
+        });
+      }
     } else {
       teamEmployees = await tx.employee.findMany({
         where: { id: { not: employee.id }, isActive: true },
@@ -376,8 +434,13 @@ export async function overrideAttendance(targetEmployeeId: string, status: strin
     throw new Error('Target employee not found');
   }
 
-  if (userRole === 'SUB_MANAGER' && targetEmployee.managerId !== managerEmployee.id) {
-    throw new Error('Unauthorized: Sub-manager can only override attendance for their team');
+  if (userRole === 'SUB_MANAGER' || userRole === 'MANAGER') {
+    const managedTeam = await prisma.team.findUnique({
+      where: { managerId: managerEmployee.id }
+    });
+    if (!managedTeam || targetEmployee.teamId !== managedTeam.id) {
+      throw new Error('Unauthorized: You can only override attendance for your team');
+    }
   }
 
   const today = new Date();
@@ -465,8 +528,13 @@ export async function toggleFlag(targetEmployeeId: string, isFlagged: boolean, u
     throw new Error('Target employee not found');
   }
 
-  if (userRole === 'SUB_MANAGER' && targetEmployee.managerId !== managerEmployee.id) {
-    throw new Error('Unauthorized: Sub-manager can only flag attendance for their team');
+  if (userRole === 'SUB_MANAGER' || userRole === 'MANAGER') {
+    const managedTeam = await prisma.team.findUnique({
+      where: { managerId: managerEmployee.id }
+    });
+    if (!managedTeam || targetEmployee.teamId !== managedTeam.id) {
+      throw new Error('Unauthorized: You can only flag attendance for your team');
+    }
   }
 
   const today = new Date();
@@ -524,4 +592,48 @@ export async function toggleFlag(targetEmployeeId: string, isFlagged: boolean, u
 
     return result;
   });
+}
+
+export async function generateKpiReportCsv(userId: string, userRole: string) {
+  const employee = await prisma.employee.findUnique({
+    where: { userId },
+  });
+
+  if (!employee) {
+    throw new Error('Logged in user is not registered as an employee');
+  }
+
+  const departmentName = employee.department || 'Operations';
+  let kpis = await prisma.departmentKpi.findUnique({
+    where: { department: departmentName },
+  });
+
+  if (!kpis) {
+    kpis = {
+      id: 'default',
+      department: departmentName,
+      sprintVelocity: 84,
+      bugResolution: 72,
+      codeReview: 78,
+      deliveryOnTime: 91,
+      teamUtilization: 82,
+      openTickets: 64,
+      documentation: 48,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+  }
+
+  const csvRows = [
+    ['Metric', 'Percentage'],
+    ['Sprint velocity', `${kpis.sprintVelocity}%`],
+    ['Bug resolution', `${kpis.bugResolution}%`],
+    ['Code review', `${kpis.codeReview}%`],
+    ['Delivery on time', `${kpis.deliveryOnTime}%`],
+    ['Team utilization', `${kpis.teamUtilization}%`],
+    ['Open tickets', `${kpis.openTickets}`],
+    ['Documentation', `${kpis.documentation}%`]
+  ];
+
+  return csvRows.map(row => row.join(',')).join('\n');
 }

@@ -234,6 +234,9 @@ model Employee {
   jobApplications        JobApplication[]
   onboarding             OnboardingRecord?
   hrLetters              HrLetter[]
+  teamId                 String?
+  team                   Team?            @relation("TeamMembers", fields: [teamId], references: [id])
+  managedTeam            Team?            @relation("TeamManager")
 
   @@index([department])
   @@index([employmentStatus])
@@ -529,6 +532,7 @@ model LeaveRequest {
   durationDays Int
   status       String // "PENDING", "APPROVED", "REJECTED"
   reason       String?
+  attachmentUrl String?
   approvedById String?
   approvedBy   Employee? @relation("ApprovedLeaves", fields: [approvedById], references: [id])
   createdAt    DateTime  @default(now())
@@ -857,3 +861,17 @@ model LedgerPeriodSummary {
   @@index([periodStart])
   @@map("ledger_period_summaries")
 }
+
+model Team {
+  id          String     @id @default(cuid())
+  name        String
+  department  String?
+  managerId   String?    @unique
+  manager     Employee?  @relation("TeamManager", fields: [managerId], references: [id])
+  members     Employee[] @relation("TeamMembers")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("teams")
+}
+

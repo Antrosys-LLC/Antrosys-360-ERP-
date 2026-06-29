@@ -85,6 +85,9 @@ interface LeaveRequest {
   durationDays: number;
   status: string;
   reason: string | null;
+  attachment?: string | null;
+  avatarColor?: { bg: string, text: string };
+  overlapDetected?: boolean;
 }
 
 interface AnnouncementItem {
@@ -443,13 +446,29 @@ export default function ManagerDashboard() {
     setIsRefreshing(false);
   }, [refetch]);
 
-  const handleQuickAction = (actionName: string) => {
+  const handleQuickAction = async (actionName: string) => {
     if (actionName === 'Approve all leave') {
       approveAllMutation.mutate();
       return;
     }
     if (actionName === 'Post team announcement') {
       setAnnouncementOpen(true);
+      return;
+    }
+    if (actionName === 'Generate team report') {
+      try {
+        const response = await apiClient.get('/manager/report', { responseType: 'blob' });
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', 'team_report.csv');
+        document.body.appendChild(link);
+        link.click();
+        link.parentNode?.removeChild(link);
+        toast({ title: 'Report Downloaded', description: 'Team report generated successfully.' });
+      } catch (error) {
+        toast({ title: 'Error', description: 'Failed to download report', variant: 'destructive' });
+      }
       return;
     }
     if (actionName === 'Start performance review') {
@@ -646,22 +665,10 @@ export default function ManagerDashboard() {
             </div>
           ) : (
             leaves.map((req) => {
-              const isSara = req.name.toLowerCase().includes("sara");
-              const isFawad = req.name.toLowerCase().includes("fawad");
               const initials = req.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
               
-              let avatarBg = 'bg-slate-100 dark:bg-slate-800';
-              let avatarText = 'text-slate-600 dark:text-slate-300';
-              if (isSara) {
-                avatarBg = 'bg-[#E3D5FF] dark:bg-purple-900/40';
-                avatarText = 'text-[#4A154B] dark:text-purple-300';
-              } else if (isFawad) {
-                avatarBg = 'bg-[#CDEADD] dark:bg-emerald-900/40';
-                avatarText = 'text-[#1B4B36] dark:text-emerald-300';
-              }
-              
-              const overlapDetected = isSara;
-              const attachment = isFawad ? 'medical_cert.pdf' : null;
+              const avatarBg = req.avatarColor?.bg || 'bg-slate-100 dark:bg-slate-800';
+              const avatarText = req.avatarColor?.text || 'text-slate-600 dark:text-slate-300';
               
               return (
                 <div key={req.id} className="rounded-xl border border-slate-200/60 dark:border-slate-800 bg-card p-4 shadow-sm flex flex-col gap-3">
@@ -677,18 +684,18 @@ export default function ManagerDashboard() {
                     </div>
                   </div>
                   
-                  {(overlapDetected || attachment) && (
+                  {(req.overlapDetected || req.attachment) && (
                     <div className="flex items-center gap-2 mt-0.5">
-                      {overlapDetected && (
+                      {req.overlapDetected && (
                         <div className="flex items-center gap-1.5 rounded bg-[#FFF4E5] dark:bg-amber-950/30 px-2 py-1 text-[11px] font-medium text-[#D97706] dark:text-amber-400 border border-[#FFE0B2] dark:border-amber-900/50">
                           <Users className="h-3.5 w-3.5" />
                           Team overlap detected
                         </div>
                       )}
-                      {attachment && (
+                      {req.attachment && (
                         <div className="flex items-center gap-1.5 rounded bg-[#E6F4EA] dark:bg-emerald-950/30 px-2 py-1 text-[11px] font-medium text-[#1E8E3E] dark:text-emerald-400 border border-[#CEEAD6] dark:border-emerald-900/50">
                           <Paperclip className="h-3.5 w-3.5" />
-                          {attachment}
+                          {req.attachment}
                         </div>
                       )}
                     </div>

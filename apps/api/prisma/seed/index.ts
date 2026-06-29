@@ -165,7 +165,7 @@ async function main() {
     }
   }
 
-  console.log('🔗 Connecting management hierarchy...');
+  console.log('🔗 Connecting management hierarchy and teams...');
   const mainManager = await prisma.employee.findFirst({
     where: { user: { email: 'manager@antrosys.com' } },
   });
@@ -174,9 +174,23 @@ async function main() {
   });
 
   if (mainManager && subManager) {
+    const managerTeam = await prisma.team.create({
+      data: {
+        name: 'Operations Main Team',
+        managerId: mainManager.id,
+      }
+    });
+
+    const subManagerTeam = await prisma.team.create({
+      data: {
+        name: 'Engineering Sub Team',
+        managerId: subManager.id,
+      }
+    });
+
     await prisma.employee.update({
       where: { id: subManager.id },
-      data: { managerId: mainManager.id },
+      data: { managerId: mainManager.id, teamId: managerTeam.id },
     });
 
     const subManagerReports = ['sara.javed@antrosys.com', 'fawad.khan@antrosys.com', 'bilal.hassan@antrosys.com', 'hina.baig@antrosys.com'];
@@ -185,7 +199,7 @@ async function main() {
       if (emp) {
         await prisma.employee.update({
           where: { id: emp.id },
-          data: { managerId: subManager.id },
+          data: { managerId: subManager.id, teamId: subManagerTeam.id },
         });
       }
     }
@@ -196,7 +210,7 @@ async function main() {
       if (emp) {
         await prisma.employee.update({
           where: { id: emp.id },
-          data: { managerId: mainManager.id },
+          data: { managerId: mainManager.id, teamId: managerTeam.id },
         });
       }
     }
@@ -241,11 +255,11 @@ async function main() {
 
   console.log('✈️ Seeding leave requests...');
   const leaveData = [
-    { email: 'sara.javed@antrosys.com', type: 'Sick Leave', duration: 1, reason: 'Flu & headache' },
-    { email: 'fawad.khan@antrosys.com', type: 'Annual Leave', duration: 3, reason: 'Family trip' },
-    { email: 'omar.mirza@antrosys.com', type: 'Casual Leave', duration: 1, reason: 'Personal errand' },
-    { email: 'maria.raza@antrosys.com', type: 'Maternity Leave', duration: 90, reason: 'Maternity leave starts' },
-    { email: 'nadia.qureshi@antrosys.com', type: 'Annual Leave', duration: 5, reason: 'Travel plan' },
+    { email: 'sara.javed@antrosys.com', type: 'Sick Leave', duration: 1, reason: 'Flu & headache', attachmentUrl: 'medical_cert.pdf' },
+    { email: 'fawad.khan@antrosys.com', type: 'Annual Leave', duration: 3, reason: 'Family trip', attachmentUrl: null },
+    { email: 'omar.mirza@antrosys.com', type: 'Casual Leave', duration: 1, reason: 'Personal errand', attachmentUrl: null },
+    { email: 'maria.raza@antrosys.com', type: 'Maternity Leave', duration: 90, reason: 'Maternity leave starts', attachmentUrl: null },
+    { email: 'nadia.qureshi@antrosys.com', type: 'Annual Leave', duration: 5, reason: 'Travel plan', attachmentUrl: null },
   ];
 
   for (const item of leaveData) {
@@ -260,6 +274,7 @@ async function main() {
           durationDays: item.duration,
           status: 'PENDING',
           reason: item.reason,
+          attachmentUrl: item.attachmentUrl,
         },
       });
     }
