@@ -155,7 +155,8 @@ enum HrLetterType {
 enum PayslipStatus {
   PROCESSING
   PAID
-} 
+  CANCELLED
+}
 enum AttendanceStatus {
   PRESENT
   ABSENT
@@ -276,7 +277,6 @@ model Employee {
   teams                 EmployeeTeam[]
   tasks                 EmployeeTask[]
   receivedMessages      Message[]            @relation("ReceivedMessages")
-  payslips               EmployeePayslip[]
 
   @@index([department])
   @@index([employmentStatus])
@@ -295,25 +295,6 @@ model EmployeeSkill {
 
   @@index([employeeId])
   @@map("employee_skills")
-}
-
-model EmployeePayslip {
-  id               String        @id @default(cuid())
-  employeeId       String
-  employee         Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  periodMonth      DateTime      @db.Date
-  grossAmount      Decimal       @db.Decimal(14, 2)
-  deductionsAmount Decimal       @default(0) @db.Decimal(14, 2)
-  taxAmount        Decimal       @default(0) @db.Decimal(14, 2)
-  netAmount        Decimal       @db.Decimal(14, 2)
-  currencyCode     String        @default("PKR") @db.VarChar(3)
-  status           PayslipStatus @default(PROCESSING)
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-
-  @@unique([employeeId, periodMonth])
-  @@index([employeeId])
-  @@map("employee_payslips")
 }
 
 model AuditLog {
@@ -733,24 +714,26 @@ model LeaveBalance {
 }
 
 model EmployeePayslip {
-  id              String    @id @default(cuid())
+  id              String        @id @default(cuid())
   employeeId      String
-  employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee        Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   payrollId       String?
-  periodStart     DateTime  @db.Date
-  periodEnd       DateTime  @db.Date
+  periodStart     DateTime      @db.Date
+  periodEnd       DateTime      @db.Date
   periodLabel     String
-  currencyCode    String    @default("USD") @db.VarChar(3)
-  grossPay        Decimal   @db.Decimal(14, 2)
-  netPay          Decimal   @db.Decimal(14, 2)
-  taxAmount       Decimal   @default(0) @db.Decimal(14, 2)
-  deductionsTotal Decimal   @default(0) @db.Decimal(14, 2)
-  netPayRatioPct  Int       @default(78)
+  currencyCode    String        @default("PKR") @db.VarChar(3)
+  grossPay        Decimal       @db.Decimal(14, 2)
+  netPay          Decimal       @db.Decimal(14, 2)
+  taxAmount       Decimal       @default(0) @db.Decimal(14, 2)
+  deductionsTotal Decimal       @default(0) @db.Decimal(14, 2)
+  netPayRatioPct  Int           @default(78)
+  status          PayslipStatus @default(PROCESSING)
   documentUrl     String?
   paidAt          DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
+  @@unique([employeeId, periodStart])
   @@index([employeeId, periodStart])
   @@map("employee_payslips")
 }
@@ -985,13 +968,16 @@ model Notification {
 }
 
 model Team {
-  id          String         @id @default(cuid())
-  name        String
-  description String?
-  department  Department?
-  members     EmployeeTeam[]
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  id             String         @id @default(cuid())
+  name           String
+  description    String?
+  department     Department?
+  managerId      String?        @unique
+  manager        Employee?      @relation("TeamManager", fields: [managerId], references: [id])
+  members        EmployeeTeam[]
+  directMembers  Employee[]     @relation("TeamMembers")
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   @@index([department])
   @@map("teams")
@@ -1213,18 +1199,5 @@ model LedgerPeriodSummary {
 
   @@index([periodStart])
   @@map("ledger_period_summaries")
-}
-
-model Team {
-  id          String     @id @default(cuid())
-  name        String
-  department  String?
-  managerId   String?    @unique
-  manager     Employee?  @relation("TeamManager", fields: [managerId], references: [id])
-  members     Employee[] @relation("TeamMembers")
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-
-  @@map("teams")
 }
 

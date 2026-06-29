@@ -225,12 +225,12 @@ export async function getEmployeePayslips(employeeId: string, query: EmployeePay
 
   const allPayslips = await prisma.employeePayslip.findMany({
     where: { employeeId, status: { not: 'CANCELLED' } },
-    select: { periodMonth: true, currencyCode: true },
-    orderBy: { periodMonth: 'desc' },
+    select: { periodStart: true, currencyCode: true },
+    orderBy: { periodStart: 'desc' },
   });
 
   const availableYears = [
-    ...new Set(allPayslips.map((p) => new Date(p.periodMonth).getUTCFullYear())),
+    ...new Set(allPayslips.map((p) => new Date(p.periodStart).getUTCFullYear())),
   ].sort((a, b) => b - a);
 
   const selectedYear =
@@ -244,10 +244,10 @@ export async function getEmployeePayslips(employeeId: string, query: EmployeePay
   const payslips = await prisma.employeePayslip.findMany({
     where: {
       employeeId,
-      periodMonth: { gte: yearStart, lte: yearEnd },
+      periodStart: { gte: yearStart, lte: yearEnd },
       status: { not: 'CANCELLED' },
     },
-    orderBy: { periodMonth: 'desc' },
+    orderBy: { periodStart: 'desc' },
   });
 
   const currencyCode = payslips[0]?.currencyCode ?? APP_DEFAULT_CURRENCY;
@@ -256,9 +256,9 @@ export async function getEmployeePayslips(employeeId: string, query: EmployeePay
   let ytdDeductions = 0;
   let ytdNet = 0;
   for (const p of payslips) {
-    ytdGross += Number(p.grossAmount);
-    ytdDeductions += Number(p.deductionsAmount);
-    ytdNet += Number(p.netAmount);
+    ytdGross += Number(p.grossPay);
+    ytdDeductions += Number(p.deductionsTotal);
+    ytdNet += Number(p.netPay);
   }
 
   return {
@@ -267,11 +267,11 @@ export async function getEmployeePayslips(employeeId: string, query: EmployeePay
     currencyCode,
     rows: payslips.map((p) => ({
       id: p.id,
-      month: payslipPeriodLabel(new Date(p.periodMonth)),
-      gross: formatCurrencyAmount(Number(p.grossAmount), p.currencyCode),
-      deductions: formatCurrencyAmount(Number(p.deductionsAmount), p.currencyCode),
+      month: payslipPeriodLabel(new Date(p.periodStart)),
+      gross: formatCurrencyAmount(Number(p.grossPay), p.currencyCode),
+      deductions: formatCurrencyAmount(Number(p.deductionsTotal), p.currencyCode),
       tax: formatCurrencyAmount(Number(p.taxAmount), p.currencyCode),
-      net: formatCurrencyAmount(Number(p.netAmount), p.currencyCode),
+      net: formatCurrencyAmount(Number(p.netPay), p.currencyCode),
       status: PAYSLIP_STATUS_LABEL[p.status],
       color: PAYSLIP_STATUS_COLOR[p.status],
       downloadable: true,
@@ -307,7 +307,7 @@ export async function downloadEmployeePayslip(employeeId: string, payslipId: str
   if (!payslip) return null;
 
   const employeeName = `${payslip.employee.firstName} ${payslip.employee.lastName}`;
-  const periodLabel = payslipPeriodLabel(new Date(payslip.periodMonth));
+  const periodLabel = payslip.periodLabel ?? payslipPeriodLabel(new Date(payslip.periodStart));
   const filename = `payslip-${payslip.employee.employeeCode ?? employeeId}-${periodLabel.replace(/\s+/g, '-')}.pdf`;
 
   const buffer = await buildPayslipPdf({
@@ -316,10 +316,13 @@ export async function downloadEmployeePayslip(employeeId: string, payslipId: str
     department: payslip.employee.department?.replace(/_/g, ' ') ?? null,
     designation: payslip.employee.designation,
     periodLabel,
-    grossAmount: Number(payslip.grossAmount),
-    deductionsAmount: Number(payslip.deductionsAmount),
+    grossAmount: Number(payslip.grossPay),
+    grossPay: Number(payslip.grossPay),
+    deductionsAmount: Number(payslip.deductionsTotal),
+    deductionsTotal: Number(payslip.deductionsTotal),
     taxAmount: Number(payslip.taxAmount),
-    netAmount: Number(payslip.netAmount),
+    netAmount: Number(payslip.netPay),
+    netPay: Number(payslip.netPay),
     currencyCode: payslip.currencyCode,
     status: PAYSLIP_STATUS_LABEL[payslip.status],
     generatedAt: new Date(),
