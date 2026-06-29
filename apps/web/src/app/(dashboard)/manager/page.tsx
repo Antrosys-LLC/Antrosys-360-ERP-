@@ -8,8 +8,6 @@ import {
   TrendingUp,
   MoreVertical,
   Flag,
-  Check,
-  X,
   ClipboardCheck,
   Play,
   Megaphone,
@@ -19,12 +17,13 @@ import {
   Send,
   Loader2,
   Paperclip,
+  Download,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
+import axios from 'axios';
 import Link from 'next/link';
 
 // ============================================================================
@@ -98,7 +97,24 @@ interface AnnouncementItem {
   createdAt: string;
 }
 
+interface TeamDashboardSlice {
+  id: string;
+  name: string;
+  memberCount: number;
+  managerName: string | null;
+  kpis: DashboardData['kpis'];
+  teamSchedule: NonNullable<DashboardData['teamSchedule']>;
+  attendanceSummary: {
+    present: number;
+    absent: number;
+    onLeave: number;
+    total: number;
+  };
+}
+
 interface DashboardData {
+  managedTeam?: { id: string; name: string } | null;
+  teams?: TeamDashboardSlice[];
   metrics: {
     presentCount: number;
     totalEmployees: number;
@@ -129,6 +145,8 @@ interface DashboardData {
     totalTaken: number;
     attendance: number;
     onLeaveToday: number;
+    presentCount?: number;
+    absentCount?: number;
   };
 }
 
@@ -161,6 +179,34 @@ function getStatusBadge(status: string) {
     default:
       return { label: status, className: 'bg-muted text-muted-foreground' };
   }
+}
+
+function normalizeAttendanceStatus(status: string): string {
+  if (status === 'LEAVE') return 'ON LEAVE';
+  return status;
+}
+
+function isSameAttendanceStatus(a: string, b: string): boolean {
+  return normalizeAttendanceStatus(a) === normalizeAttendanceStatus(b);
+}
+
+function getMutationErrorMessage(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    const apiError = error.response?.data?.error;
+    if (apiError) return String(apiError);
+  }
+  if (error instanceof Error) return error.message;
+  return fallback;
+}
+
+function resolveAttachmentLink(attachment: string): { href: string; label: string } {
+  const label = attachment.split('/').pop() || attachment;
+  if (attachment.startsWith('http://') || attachment.startsWith('https://')) {
+    return { href: attachment, label };
+  }
+  const apiOrigin = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1').replace(/\/api\/v\d+\/?$/, '');
+  const href = attachment.startsWith('/') ? `${apiOrigin}${attachment}` : attachment;
+  return { href, label };
 }
 
 function getAnnouncementDotColor(index: number): string {
@@ -203,6 +249,337 @@ function formatLeaveDates(startDate: string, endDate: string): string {
   } catch {
     return '-';
   }
+}
+
+function getCurrentMonthLabel(): string {
+  return new Date().toLocaleDateString('en-US', { month: 'long' });
+}
+
+async function downloadTeamReport(teamId?: string) {
+  const response = await apiClient.get('/manager/report', {
+    responseType: 'blob',
+    params: teamId ? { teamId } : undefined,
+  });
+  const disposition = response.headers['content-disposition'] as string | undefined;
+  const filenameMatch = disposition?.match(/filename="([^"]+)"/);
+  const filename = filenameMatch?.[1] ?? (teamId ? 'team-kpi-report.csv' : 'all-teams-kpi-report.csv');
+  const url = window.URL.createObjectURL(new Blob([response.data]));
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  link.parentNode?.removeChild(link);
+  window.URL.revokeObjectURL(url);
+}
+
+function TeamScheduleBar({
+  present,
+  onLeave,
+  absent,
+  total,
+}: {
+  present: number;
+  onLeave: number;
+  absent: number;
+  total: number;
+}) {
+  const safeTotal = total > 0 ? total : 1;
+  const presentPct = Math.round((present / safeTotal) * 100);
+  const onLeavePct = Math.round((onLeave / safeTotal) * 100);
+  const absentPct = Math.max(0, 100 - presentPct - onLeavePct);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
+        {presentPct > 0 && (
+          <div className="h-full bg-[#7ec384]" style={{ width: `${presentPct}%` }} title={`Present: ${present}`} />
+        )}
+        {onLeavePct > 0 && (
+          <div className="h-full bg-[#69b4f0]" style={{ width: `${onLeavePct}%` }} title={`On leave: ${onLeave}`} />
+        )}
+        {absentPct > 0 && (
+          <div className="h-full bg-[#e57b73]" style={{ width: `${absentPct}%` }} title={`Absent: ${absent}`} />
+        )}
+      </div>
+      <div className="flex flex-wrap gap-3 text-[10px] text-muted-foreground font-medium">
+        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#7ec384]" /> Present ({present})</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#69b4f0]" /> On leave ({onLeave})</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#e57b73]" /> Absent ({absent})</span>
+      </div>
+    </div>
+  );
+}
+
+function TeamPickerDropdown({
+  teams,
+  selectedTeamId,
+  onSelect,
+}: {
+  teams: Pick<TeamDashboardSlice, 'id' | 'name' | 'memberCount'>[];
+  selectedTeamId: string;
+  onSelect: (teamId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [dropdownStyle, setDropdownStyle] = useState<{ top?: string; bottom?: string; left?: string }>({});
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const selectedTeam = teams.find((team) => team.id === selectedTeamId) ?? teams[0];
+
+  const handleToggle = () => {
+    if (!open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openUpwards = spaceBelow < 160;
+
+      setDropdownStyle({
+        top: openUpwards ? 'auto' : `${rect.bottom + 4}px`,
+        bottom: openUpwards ? `${window.innerHeight - rect.top + 4}px` : 'auto',
+        left: `${rect.left}px`,
+      });
+    }
+    setOpen(!open);
+  };
+
+  return (
+    <div className="relative inline-block">
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={handleToggle}
+        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-muted/50 transition-colors"
+      >
+        <span className="truncate max-w-[180px]">{selectedTeam.name}</span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            style={dropdownStyle}
+            className="fixed z-50 min-w-[220px] max-w-[280px] rounded-lg border bg-card shadow-lg py-1"
+          >
+            {teams.map((team) => (
+              <button
+                key={team.id}
+                type="button"
+                onClick={() => {
+                  onSelect(team.id);
+                  setOpen(false);
+                }}
+                className={`w-full text-left px-3 py-2 text-xs hover:bg-accent transition-colors ${
+                  team.id === selectedTeamId ? 'bg-accent/50 font-semibold' : 'font-medium'
+                }`}
+              >
+                <span className="block text-foreground truncate">{team.name}</span>
+                <span className="block text-[10px] text-muted-foreground mt-0.5">{team.memberCount} members</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function TeamKpiPanel({
+  team,
+  teams,
+  selectedTeamId,
+  onTeamSelect,
+  onDownload,
+}: {
+  team: Pick<TeamDashboardSlice, 'name' | 'memberCount' | 'managerName' | 'kpis' | 'teamSchedule' | 'attendanceSummary' | 'id'>;
+  teams?: Pick<TeamDashboardSlice, 'id' | 'name' | 'memberCount'>[];
+  selectedTeamId?: string;
+  onTeamSelect?: (teamId: string) => void;
+  onDownload: (teamId: string) => void;
+}) {
+  const kpiAvg = Math.round((team.kpis.sprintVelocity + team.kpis.bugResolution + team.kpis.codeReview) / 3);
+  const showTeamPicker = teams && teams.length > 1 && selectedTeamId && onTeamSelect;
+
+  return (
+    <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col justify-between h-full">
+      <div>
+        <div className="flex items-start justify-between gap-3 border-b pb-4">
+          <div className="min-w-0">
+            <h3 className="font-semibold text-foreground text-lg">Team KPI progress</h3>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {showTeamPicker ? (
+                <TeamPickerDropdown
+                  teams={teams}
+                  selectedTeamId={selectedTeamId}
+                  onSelect={onTeamSelect}
+                />
+              ) : (
+                <p className="text-xs font-semibold text-foreground">{team.name}</p>
+              )}
+              <span className="text-xs text-muted-foreground">
+                · {team.memberCount} members
+                {team.managerName ? ` · ${team.managerName}` : ''}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onDownload(team.id)}
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-[11px] font-semibold text-foreground hover:bg-muted/50 transition-colors"
+          >
+            <Download className="h-3.5 w-3.5" />
+            KPI CSV
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 mt-5">
+          {[
+            { label: 'Sprint\nvelocity', value: team.kpis.sprintVelocity },
+            { label: 'Bug\nresolution', value: team.kpis.bugResolution },
+            { label: 'Code\nreview', value: team.kpis.codeReview },
+          ].map((item) => (
+            <div key={item.label} className="flex flex-col items-center">
+              <div className="relative h-16 w-16">
+                <svg className="h-full w-full -rotate-90" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="32" cy="32" r="24" className="stroke-muted" strokeWidth="4" fill="transparent" />
+                  <circle
+                    cx="32" cy="32" r="24"
+                    className="stroke-primary"
+                    strokeWidth="4"
+                    strokeDasharray={2 * Math.PI * 24}
+                    strokeDashoffset={(2 * Math.PI * 24) * (1 - item.value / 100)}
+                    strokeLinecap="round"
+                    fill="transparent"
+                  />
+                </svg>
+                <span className="absolute inset-0 flex items-center justify-center text-sm font-bold">{item.value}%</span>
+              </div>
+              <span className="mt-2 text-center text-[10px] font-semibold text-muted-foreground leading-tight" dangerouslySetInnerHTML={{ __html: item.label.replace('\n', '<br />') }} />
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6 space-y-3.5">
+          {[
+            { label: 'Delivery on time', value: team.kpis.deliveryOnTime, color: 'bg-primary' },
+            { label: 'Team utilization', value: team.kpis.teamUtilization, color: 'bg-primary' },
+            { label: 'Open tickets', value: team.kpis.openTickets, color: 'bg-amber-500' },
+            { label: 'Documentation', value: team.kpis.documentation, color: 'bg-rose-500' },
+          ].map((item) => (
+            <div key={item.label}>
+              <div className="flex justify-between text-xs font-semibold text-foreground">
+                <span>{item.label}</span>
+                <span>{item.value}{item.label === 'Open tickets' ? '' : '%'}</span>
+              </div>
+              <div className="w-full bg-muted rounded-full h-1.5 mt-1">
+                <div
+                  className={`${item.color} h-1.5 rounded-full`}
+                  style={{ width: `${Math.min(100, item.label === 'Open tickets' ? Math.min(item.value * 10, 100) : item.value)}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-4 border-t pt-3 font-semibold uppercase">
+        <span>Team KPI avg: {kpiAvg}%</span>
+        <span>On leave today: {team.teamSchedule.onLeaveToday}</span>
+      </div>
+    </div>
+  );
+}
+
+function AnnouncementsPanel({ announcements }: { announcements: AnnouncementItem[] }) {
+  return (
+    <div className="rounded-xl border bg-card p-6 shadow-sm h-full flex flex-col">
+      <h3 className="font-semibold text-foreground text-lg border-b pb-4 shrink-0">Recent announcements</h3>
+      <div className="mt-5 relative flex-grow min-h-[280px]">
+        <div className="absolute inset-0 overflow-y-auto custom-scrollbar -ml-4 pl-4 -mr-4 pr-4">
+          <div className="space-y-5 relative border-l border-muted pl-4 ml-2 py-1">
+            {announcements.map((ann, index) => {
+              const isOld = index >= 3;
+              return (
+                <div key={ann.id} className={`relative ${isOld ? 'opacity-60' : ''}`}>
+                  <div className={`absolute -left-[22.5px] top-1.5 bg-card h-3 w-3 rounded-full border-[2.5px] ${
+                    isOld ? 'border-slate-300 dark:border-slate-700 bg-slate-300 dark:bg-slate-700' : getAnnouncementDotColor(index)
+                  }`} />
+                  <div className="text-xs">
+                    <span className="font-bold text-foreground text-sm">{ann.title}</span>
+                    <p className="text-muted-foreground font-normal mt-1.5 leading-relaxed text-sm">{ann.content}</p>
+                    <div className="flex items-center gap-2 mt-2 text-[10px] text-muted-foreground font-medium">
+                      <span className="text-foreground">{ann.author}</span>
+                      <span>&bull;</span>
+                      <span>{timeAgo(ann.createdAt)}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {announcements.length === 0 && (
+              <p className="text-sm text-muted-foreground py-6 text-center">No announcements yet.</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuickActionsPanel({
+  metrics,
+  moodPulse,
+  onQuickAction,
+  reportLabel = 'Generate team report',
+}: {
+  metrics: DashboardData['metrics'];
+  moodPulse: DashboardData['moodPulse'];
+  onQuickAction: (actionName: string) => void;
+  reportLabel?: string;
+}) {
+  return (
+    <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col justify-between gap-6 h-full">
+      <div>
+        <h3 className="font-semibold text-foreground text-lg border-b pb-4">Quick actions</h3>
+        <div className="mt-4 space-y-1">
+          <button
+            onClick={() => onQuickAction('Approve all leave')}
+            className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors font-medium text-left"
+          >
+            <ClipboardCheck className="h-5 w-5 text-primary" />
+            <span>Approve all leave ({metrics.leavesPendingCount})</span>
+          </button>
+          <button
+            onClick={() => onQuickAction('Start performance review')}
+            className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm bg-primary/10 text-primary hover:bg-primary/15 transition-colors font-medium text-left"
+          >
+            <Play className="h-5 w-5 fill-current" />
+            <span>Start performance review</span>
+          </button>
+          <button
+            onClick={() => onQuickAction('Post team announcement')}
+            className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors font-medium text-left"
+          >
+            <Megaphone className="h-5 w-5" />
+            <span>Post team announcement</span>
+          </button>
+          <button
+            onClick={() => onQuickAction('Generate team report')}
+            className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors font-medium text-left"
+          >
+            <BarChart3 className="h-5 w-5" />
+            <span>{reportLabel}</span>
+          </button>
+        </div>
+      </div>
+      <div className="border-t pt-4">
+        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Team mood (Weekly pulse)</span>
+        <div className="mt-2.5 flex h-3.5 w-full gap-0.5 overflow-hidden rounded-full">
+          <div className="bg-emerald-500/20 dark:bg-emerald-500/10 hover:bg-emerald-500/30 transition-colors" style={{ flex: moodPulse.happy }} title={`Happy (${moodPulse.happy})`} />
+          <div className="bg-amber-500/20 dark:bg-amber-500/10 hover:bg-amber-500/30 transition-colors" style={{ flex: moodPulse.neutral }} title={`Neutral (${moodPulse.neutral})`} />
+          <div className="bg-rose-500/20 dark:bg-rose-500/10 hover:bg-rose-500/30 transition-colors" style={{ flex: moodPulse.stressed }} title={`Stressed (${moodPulse.stressed})`} />
+          <div className="bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors" style={{ flex: moodPulse.unknown }} title={`Unknown (${moodPulse.unknown})`} />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ============================================================================
@@ -266,7 +643,7 @@ function StatusDropdown({
                     setOpen(false);
                   }}
                   className={`w-full text-left px-3 py-1.5 text-xs font-medium hover:bg-accent transition-colors flex items-center gap-2 ${
-                    opt === currentStatus ? 'bg-accent/50' : ''
+                    isSameAttendanceStatus(opt, currentStatus) ? 'bg-accent/50' : ''
                   }`}
                 >
                   <span className={`inline-block h-2 w-2 rounded-full ${optBadge.className.split(' ')[0]}`} />
@@ -359,6 +736,7 @@ export default function ManagerDashboard() {
   const queryClient = useQueryClient();
   const [announcementOpen, setAnnouncementOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selectedKpiTeamId, setSelectedKpiTeamId] = useState<string | null>(null);
 
   // Fetch dashboard data
   const { data, isLoading, isError, refetch } = useQuery<DashboardData>({
@@ -385,6 +763,13 @@ export default function ManagerDashboard() {
             : 'border-rose-500 bg-rose-50 text-rose-900 dark:bg-rose-950/20 dark:text-rose-200',
       });
     },
+    onError: (error) => {
+      toast({
+        variant: 'destructive',
+        title: 'Leave update failed',
+        description: getMutationErrorMessage(error, 'Could not update the leave request.'),
+      });
+    },
   });
 
   const approveAllMutation = useMutation({
@@ -392,10 +777,25 @@ export default function ManagerDashboard() {
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['manager-dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      const count = res?.data?.count ?? 0;
+      if (count === 0) {
+        toast({
+          title: 'No pending leaves',
+          description: 'There are no leave requests waiting for approval.',
+        });
+        return;
+      }
       toast({
         title: 'Approved All Leaves',
-        description: `Successfully approved all pending leave requests.`,
+        description: `Successfully approved ${count} pending leave request${count === 1 ? '' : 's'}.`,
         className: 'border-emerald-500 bg-emerald-50 text-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-200',
+      });
+    },
+    onError: (error) => {
+      toast({
+        variant: 'destructive',
+        title: 'Approve all failed',
+        description: getMutationErrorMessage(error, 'Could not approve pending leave requests.'),
       });
     },
   });
@@ -430,6 +830,13 @@ export default function ManagerDashboard() {
         description: 'Attendance status has been overridden.',
       });
     },
+    onError: (error) => {
+      toast({
+        variant: 'destructive',
+        title: 'Status update failed',
+        description: getMutationErrorMessage(error, 'Could not update attendance status.'),
+      });
+    },
   });
 
   const flagMutation = useMutation({
@@ -442,6 +849,13 @@ export default function ManagerDashboard() {
         description: variables.isFlagged
           ? 'Check-in has been flagged for review.'
           : 'Flag has been removed.',
+      });
+    },
+    onError: (error) => {
+      toast({
+        variant: 'destructive',
+        title: 'Flag update failed',
+        description: getMutationErrorMessage(error, 'Could not update the flag status.'),
       });
     },
   });
@@ -463,17 +877,14 @@ export default function ManagerDashboard() {
     }
     if (actionName === 'Generate team report') {
       try {
-        const response = await apiClient.get('/manager/report', { responseType: 'blob' });
-        const url = window.URL.createObjectURL(new Blob([response.data]));
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', 'team_report.csv');
-        document.body.appendChild(link);
-        link.click();
-        link.parentNode?.removeChild(link);
-        toast({ title: 'Report Downloaded', description: 'Team report generated successfully.' });
+        await downloadTeamReport();
+        toast({ title: 'Report Downloaded', description: 'Team KPI report generated successfully.' });
       } catch (error) {
-        toast({ title: 'Error', description: 'Failed to download report', variant: 'destructive' });
+        toast({
+          title: 'Error',
+          description: getMutationErrorMessage(error, 'Failed to download report'),
+          variant: 'destructive',
+        });
       }
       return;
     }
@@ -504,7 +915,51 @@ export default function ManagerDashboard() {
     );
   }
 
-  const { metrics, attendance, leaves, kpis, announcements, moodPulse, teamSchedule } = data;
+  const { metrics, attendance, leaves, kpis, announcements, moodPulse, teamSchedule, teams, managedTeam } = data;
+  const teamKpiPanels: TeamDashboardSlice[] =
+    teams && teams.length > 0
+      ? teams
+      : managedTeam
+        ? [{
+            id: managedTeam.id,
+            name: managedTeam.name,
+            memberCount: metrics.totalEmployees,
+            managerName: null,
+            kpis,
+            teamSchedule: teamSchedule ?? {
+              pending: metrics.leavesPendingCount,
+              totalTaken: 0,
+              attendance: 0,
+              onLeaveToday: 0,
+            },
+            attendanceSummary: {
+              present: metrics.presentCount,
+              absent: metrics.absentCount,
+              onLeave: teamSchedule?.onLeaveToday ?? 0,
+              total: metrics.totalEmployees,
+            },
+          }]
+        : [];
+
+  const defaultKpiTeamId = managedTeam?.id ?? teamKpiPanels[0]?.id ?? null;
+  const activeKpiTeamId =
+    selectedKpiTeamId && teamKpiPanels.some((team) => team.id === selectedKpiTeamId)
+      ? selectedKpiTeamId
+      : defaultKpiTeamId;
+  const activeKpiTeam = teamKpiPanels.find((team) => team.id === activeKpiTeamId) ?? teamKpiPanels[0] ?? null;
+
+  const handleTeamReportDownload = async (teamId: string) => {
+    try {
+      await downloadTeamReport(teamId);
+      toast({ title: 'Report Downloaded', description: 'Team KPI report downloaded successfully.' });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: getMutationErrorMessage(error, 'Failed to download report'),
+        variant: 'destructive',
+      });
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -698,12 +1153,20 @@ export default function ManagerDashboard() {
                           Team overlap detected
                         </div>
                       )}
-                      {req.attachment && (
-                        <div className="flex items-center gap-1.5 rounded bg-[#E6F4EA] dark:bg-emerald-950/30 px-2 py-1 text-[11px] font-medium text-[#1E8E3E] dark:text-emerald-400 border border-[#CEEAD6] dark:border-emerald-900/50">
-                          <Paperclip className="h-3.5 w-3.5" />
-                          {req.attachment}
-                        </div>
-                      )}
+                      {req.attachment && (() => {
+                        const { href, label } = resolveAttachmentLink(req.attachment);
+                        return (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 rounded bg-[#E6F4EA] dark:bg-emerald-950/30 px-2 py-1 text-[11px] font-medium text-[#1E8E3E] dark:text-emerald-400 border border-[#CEEAD6] dark:border-emerald-900/50 hover:bg-[#CEEAD6]/60 transition-colors"
+                          >
+                            <Paperclip className="h-3.5 w-3.5" />
+                            {label}
+                          </a>
+                        );
+                      })()}
                     </div>
                   )}
                   
@@ -729,26 +1192,25 @@ export default function ManagerDashboard() {
           )}
           </div>
           
-          {/* Team Schedule (May) Card - Sticky/Permanent */}
+          {/* Team Schedule Card - synced with today's attendance */}
           <div className="mt-auto rounded-xl border border-slate-200/60 dark:border-slate-800 bg-card p-4 shadow-sm shrink-0">
-            <h3 className="font-bold text-sm text-foreground mb-4">Team Schedule (May)</h3>
-            
-            <div className="relative h-24 bg-[#F4F5F8] dark:bg-slate-800/50 rounded-lg border border-slate-200/60 dark:border-slate-700 mb-5 mt-2">
-              <div className="absolute left-[50%] top-0 bottom-0 w-[1px] bg-[#5A4FCF] z-10" />
-              <div className="absolute left-[50%] -translate-x-1/2 -top-2.5 bg-[#5A4FCF] text-white text-[9px] px-1.5 py-0.5 rounded z-20 font-medium tracking-wide">
-                Today
-              </div>
-              
-              <div className="absolute left-[20%] top-[15%] w-[10%] h-2.5 bg-[#7ec384] rounded-sm" />
-              <div className="absolute left-[5%] top-[45%] w-[5%] h-2.5 bg-[#e57b73] rounded-sm" />
-              
-              <div className="absolute left-[45%] top-[30%] w-[15%] h-2.5 bg-white border border-[#a39be3] rounded-sm z-0" />
-              
-              <div className="absolute left-[60%] top-[60%] w-[20%] h-2.5 bg-[#69b4f0] rounded-sm" />
-              <div className="absolute left-[40%] top-[80%] w-[10%] h-2.5 bg-[#a39be3] rounded-sm" />
+            <div className="mb-4">
+              <h3 className="font-bold text-sm text-foreground">
+                Team Schedule ({getCurrentMonthLabel()})
+              </h3>
+              {managedTeam && (
+                <p className="text-[11px] text-muted-foreground mt-0.5">{managedTeam.name}</p>
+              )}
             </div>
+
+            <TeamScheduleBar
+              present={metrics.presentCount}
+              onLeave={teamSchedule?.onLeaveToday ?? 0}
+              absent={metrics.absentCount}
+              total={metrics.totalEmployees}
+            />
             
-            <div className="grid grid-cols-4 gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
+            <div className="grid grid-cols-4 gap-2 pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
               <div>
                 <div className="font-bold text-xs text-foreground">{teamSchedule?.pending ?? 0}</div>
                 <div className="text-[10px] text-muted-foreground mt-0.5">Pending</div>
@@ -772,166 +1234,29 @@ export default function ManagerDashboard() {
 
       {/* Bottom Grid: KPI Progress, Recent Announcements & Quick Actions */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 items-stretch">
-        
-        {/* Column 1: Dept KPI Progress */}
-        <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col justify-between h-full">
-          <div>
-            <h3 className="font-semibold text-foreground text-lg border-b pb-4">Dept KPI progress</h3>
-            
-            {/* Radial SVGs Grid */}
-            <div className="grid grid-cols-3 gap-2 mt-5">
-              {[
-                { label: 'Sprint\nvelocity', value: kpis.sprintVelocity },
-                { label: 'Bug\nresolution', value: kpis.bugResolution },
-                { label: 'Code\nreview', value: kpis.codeReview },
-              ].map((item) => (
-                <div key={item.label} className="flex flex-col items-center">
-                  <div className="relative h-16 w-16">
-                    <svg className="h-full w-full -rotate-90" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-                      <circle cx="32" cy="32" r="24" className="stroke-muted" strokeWidth="4" fill="transparent" />
-                      <circle
-                        cx="32" cy="32" r="24"
-                        className="stroke-primary"
-                        strokeWidth="4"
-                        strokeDasharray={2 * Math.PI * 24}
-                        strokeDashoffset={(2 * Math.PI * 24) * (1 - item.value / 100)}
-                        strokeLinecap="round"
-                        fill="transparent"
-                      />
-                    </svg>
-                    <span className="absolute inset-0 flex items-center justify-center text-sm font-bold">{item.value}%</span>
-                  </div>
-                  <span className="mt-2 text-center text-[10px] font-semibold text-muted-foreground leading-tight" dangerouslySetInnerHTML={{ __html: item.label.replace('\n', '<br />') }} />
-                </div>
-              ))}
-            </div>
-
-            {/* Progress Bars */}
-            <div className="mt-6 space-y-3.5">
-              {[
-                { label: 'Delivery on time', value: kpis.deliveryOnTime, color: 'bg-primary' },
-                { label: 'Team utilization', value: kpis.teamUtilization, color: 'bg-primary' },
-                { label: 'Open tickets', value: kpis.openTickets, color: 'bg-amber-500' },
-                { label: 'Documentation', value: kpis.documentation, color: 'bg-rose-500' },
-              ].map((item) => (
-                <div key={item.label}>
-                  <div className="flex justify-between text-xs font-semibold text-foreground">
-                    <span>{item.label}</span>
-                    <span>{item.value}%</span>
-                  </div>
-                  <div className="w-full bg-muted rounded-full h-1.5 mt-1">
-                    <div className={`${item.color} h-1.5 rounded-full`} style={{ width: `${item.value}%` }} />
-                  </div>
-                </div>
-              ))}
+        {activeKpiTeam ? (
+          <TeamKpiPanel
+            team={activeKpiTeam}
+            teams={teamKpiPanels.length > 1 ? teamKpiPanels : undefined}
+            selectedTeamId={activeKpiTeam.id}
+            onTeamSelect={setSelectedKpiTeamId}
+            onDownload={handleTeamReportDownload}
+          />
+        ) : (
+          <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col justify-between h-full">
+            <div>
+              <h3 className="font-semibold text-foreground text-lg border-b pb-4">Team KPI progress</h3>
+              <p className="text-sm text-muted-foreground mt-4">No team KPI data available yet.</p>
             </div>
           </div>
-
-          {/* Legend */}
-          <div className="flex items-center text-[10px] text-muted-foreground mt-4 border-t pt-3 font-semibold uppercase w-full">
-            <div className="flex items-center gap-1.5 whitespace-nowrap">
-              <span className="h-2 w-2 rounded-full bg-primary" /> Q2 Planning
-            </div>
-            <div className="h-[1px] bg-border flex-grow mx-2" />
-            <div className="flex items-center gap-1.5 whitespace-nowrap">
-              <span className="h-2 w-2 rounded-full bg-muted" /> Mid-cycle
-            </div>
-            <div className="h-[1px] bg-border flex-grow mx-2" />
-            <div className="flex items-center gap-1.5 whitespace-nowrap">
-              <span className="h-2 w-2 rounded-full border border-muted-foreground bg-transparent" /> Review
-            </div>
-          </div>
-        </div>
-
-        {/* Column 2: Recent Announcements */}
-        <div className="rounded-xl border bg-card p-6 shadow-sm h-full flex flex-col">
-          <h3 className="font-semibold text-foreground text-lg border-b pb-4 shrink-0">Recent announcements</h3>
-          
-          <div className="mt-5 relative flex-grow">
-            <div className="absolute inset-0 overflow-y-auto custom-scrollbar -ml-4 pl-4 -mr-4 pr-4">
-              <div className="space-y-5 relative border-l border-muted pl-4 ml-2 py-1">
-                {announcements.map((ann, index) => {
-                const isOld = index >= 3;
-                return (
-                  <div key={ann.id} className={`relative ${isOld ? 'opacity-60' : ''}`}>
-                    <div className={`absolute -left-[22.5px] top-1.5 bg-card h-3 w-3 rounded-full border-[2.5px] ${
-                      isOld ? 'border-slate-300 dark:border-slate-700 bg-slate-300 dark:bg-slate-700' : getAnnouncementDotColor(index)
-                    }`} />
-                    <div className="text-xs">
-                      <span className="font-bold text-foreground text-sm">{ann.title}</span>
-                      <p className="text-muted-foreground font-normal mt-1.5 leading-relaxed text-sm">
-                        {ann.content}
-                      </p>
-                      <div className="flex items-center gap-2 mt-2 text-[10px] text-muted-foreground font-medium">
-                        <span className="text-foreground">{ann.author}</span>
-                        <span>&bull;</span>
-                        <span>{timeAgo(ann.createdAt)}</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-              {announcements.length === 0 && (
-                <p className="text-sm text-muted-foreground py-6 text-center">No announcements yet.</p>
-              )}
-            </div>
-          </div>
-        </div>
-        </div>
-
-        {/* Column 3: Quick Actions & Weekly Mood Pulse */}
-        <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col justify-between gap-6 h-full">
-          {/* Quick Actions List */}
-          <div>
-            <h3 className="font-semibold text-foreground text-lg border-b pb-4">Quick actions</h3>
-            
-            <div className="mt-4 space-y-1">
-              <button
-                onClick={() => handleQuickAction('Approve all leave')}
-                className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors font-medium text-left"
-              >
-                <ClipboardCheck className="h-5 w-5 text-primary" />
-                <span>Approve all leave ({metrics.leavesPendingCount})</span>
-              </button>
-
-              <button
-                onClick={() => handleQuickAction('Start performance review')}
-                className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm bg-primary/10 text-primary hover:bg-primary/15 transition-colors font-medium text-left"
-              >
-                <Play className="h-5 w-5 fill-current" />
-                <span>Start performance review</span>
-              </button>
-
-              <button
-                onClick={() => handleQuickAction('Post team announcement')}
-                className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors font-medium text-left"
-              >
-                <Megaphone className="h-5 w-5" />
-                <span>Post team announcement</span>
-              </button>
-
-              <button
-                onClick={() => handleQuickAction('Generate team report')}
-                className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors font-medium text-left"
-              >
-                <BarChart3 className="h-5 w-5" />
-                <span>Generate team report</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Team Mood pulse check */}
-          <div className="border-t pt-4">
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Team mood (Weekly pulse)</span>
-            
-            <div className="mt-2.5 flex h-3.5 w-full gap-0.5 overflow-hidden rounded-full">
-              <div className={`bg-emerald-500/20 dark:bg-emerald-500/10 hover:bg-emerald-500/30 transition-colors`} style={{ flex: moodPulse.happy }} title={`Happy (${moodPulse.happy})`} />
-              <div className={`bg-amber-500/20 dark:bg-amber-500/10 hover:bg-amber-500/30 transition-colors`} style={{ flex: moodPulse.neutral }} title={`Neutral (${moodPulse.neutral})`} />
-              <div className={`bg-rose-500/20 dark:bg-rose-500/10 hover:bg-rose-500/30 transition-colors`} style={{ flex: moodPulse.stressed }} title={`Stressed (${moodPulse.stressed})`} />
-              <div className={`bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors`} style={{ flex: moodPulse.unknown }} title={`Unknown (${moodPulse.unknown})`} />
-            </div>
-          </div>
-        </div>
+        )}
+        <AnnouncementsPanel announcements={announcements} />
+        <QuickActionsPanel
+          metrics={metrics}
+          moodPulse={moodPulse}
+          onQuickAction={handleQuickAction}
+          reportLabel={(teams?.length ?? 0) > 1 ? 'Download all teams KPI report' : 'Generate team report'}
+        />
       </div>
 
       {/* Announcement Dialog */}

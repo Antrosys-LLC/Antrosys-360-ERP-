@@ -5,6 +5,7 @@ import {
   flagMemberSchema,
   overrideAttendanceSchema,
   postAnnouncementSchema,
+  teamReportQuerySchema,
   updateLeaveStatusSchema,
 } from './manager.schema';
 
@@ -198,16 +199,25 @@ export async function generateTeamReportHandler(request: FastifyRequest, reply: 
     return reply.code(401).send({ error: 'Unauthorized' });
   }
 
+  const queryParsed = teamReportQuerySchema.safeParse(request.query);
+  if (!queryParsed.success) {
+    return sendValidationError(reply, queryParsed.error.flatten());
+  }
+
   try {
-    const csvData = await managerService.generateKpiReportCsv(request.user.id, request.user.role);
-    
+    const report = await managerService.generateKpiReportCsv(
+      request.user.id,
+      request.user.role,
+      queryParsed.data.teamId,
+    );
+
     return reply
       .code(200)
       .header('Content-Type', 'text/csv')
-      .header('Content-Disposition', 'attachment; filename="team_report.csv"')
-      .send(csvData);
+      .header('Content-Disposition', `attachment; filename="${report.filename}"`)
+      .send(report.csv);
   } catch (error) {
-    return reply.code(500).send({
+    return reply.code(400).send({
       error: error instanceof Error ? error.message : 'Failed to generate report',
     });
   }

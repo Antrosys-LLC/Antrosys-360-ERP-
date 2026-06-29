@@ -21,3 +21,9 @@ export type UpdateLeaveStatusInput = z.infer<typeof updateLeaveStatusSchema>;
 export type OverrideAttendanceInput = z.infer<typeof overrideAttendanceSchema>;
 export type FlagMemberInput = z.infer<typeof flagMemberSchema>;
 export type PostAnnouncementInput = z.infer<typeof postAnnouncementSchema>;
+
+export const teamReportQuerySchema = z.object({
+  teamId: z.string().cuid().optional(),
+});
+
+export type TeamReportQuery = z.infer<typeof teamReportQuerySchema>;
