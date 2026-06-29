@@ -5,6 +5,8 @@ import {
   updateEmployeeHandler,
   upsertSkillHandler,
   deleteSkillHandler,
+  getEmployeePayslipsHandler,
+  downloadEmployeePayslipHandler,
 } from './employees.controller';
 
 export async function employeesRoutes(fastify: FastifyInstance) {
@@ -39,5 +41,17 @@ export async function employeesRoutes(fastify: FastifyInstance) {
   fastify.delete('/:id/skills/:skillId', {
     preHandler: [fastify.requirePermission('hr:write')],
     handler: deleteSkillHandler,
+  });
+
+  // List employee payslips (filterable by year)
+  fastify.get('/:id/payslips', {
+    preHandler: [fastify.requirePermission('hr:read')],
+    handler: getEmployeePayslipsHandler,
+  });
+
+  // Download a payslip PDF
+  fastify.get('/:id/payslips/:payslipId/download', {
+    preHandler: [fastify.requirePermission('hr:read')],
+    handler: downloadEmployeePayslipHandler,
   });
 }

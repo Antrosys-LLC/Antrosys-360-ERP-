@@ -39,6 +39,7 @@ import { uploadRouter } from './modules/documents/uploadthing';
 import { createRouteHandler } from 'uploadthing/fastify';
 import { employeeDashboardRoutes } from './modules/employee/EmployeeDashboard/employee_dashboard.routes';
 import { ledgerRoutes } from './modules/ledger/ledger.routes';
+import { currencyRoutes } from './modules/currency/currency.routes';
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
@@ -107,6 +108,7 @@ export async function buildApp() {
       await api.register(documentsRoutes, { prefix: '/documents' });
       await api.register(employeeDashboardRoutes, { prefix: '/employee/dashboard' });
       await api.register(ledgerRoutes, { prefix: '/ledger' });
+      await api.register(currencyRoutes, { prefix: '/currency' });
     },
     { prefix: '/api/v1' },
   );

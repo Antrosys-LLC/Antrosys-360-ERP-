@@ -1,14 +1,20 @@
 import PDFDocument from 'pdfkit';
 
-interface PayslipPdfInput {
+export interface PayslipPdfInput {
   employeeName: string;
   employeeCode: string | null;
+  department: string | null;
+  designation: string | null;
   periodLabel: string;
-  currencyCode: string;
+  grossAmount: number;
   grossPay: number;
-  netPay: number;
-  taxAmount: number;
+  deductionsAmount: number;
   deductionsTotal: number;
+  taxAmount: number;
+  netAmount: number;
+  netPay: number;
+  currencyCode: string;
+  status: string;
   generatedAt: Date;
 }
 
@@ -21,42 +27,39 @@ export function buildPayslipPdf(input: PayslipPdfInput): Promise<Buffer> {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const fmt = (value: number) =>
-      `${input.currencyCode} ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const fmt = (n: number) => formatCurrencyAmount(n, input.currencyCode);
 
-    doc.fontSize(10).fillColor('#888888').text('Antrosys ERP — Payroll', { align: 'left' });
+    doc.fontSize(10).fillColor('#888888').text('Antrosys ERP — Payslip', { align: 'left' });
     doc.moveDown(0.5);
-    doc.fontSize(18).fillColor('#1A1A1A').text('Payslip', { align: 'left' });
+    doc.fontSize(18).fillColor('#1A1A1A').text(`Payslip · ${input.periodLabel}`, { align: 'left' });
     doc.moveDown(0.3);
     doc.fontSize(10).fillColor('#888888').text(
-      `${input.periodLabel} · ${input.generatedAt.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`,
+      `Generated ${input.generatedAt.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`,
     );
     doc.moveDown(1.5);
 
-    doc.fontSize(12).fillColor('#333333').text(`Employee: ${input.employeeName}`, { align: 'left' });
-    if (input.employeeCode) {
-      doc.text(`Employee ID: ${input.employeeCode}`);
-    }
-    doc.moveDown(1);
+    doc.fontSize(12).fillColor('#333333').text('Employee details', { underline: true });
+    doc.moveDown(0.5);
+    doc.fontSize(11).text(`Name: ${input.employeeName}`);
+    if (input.employeeCode) doc.text(`Employee ID: ${input.employeeCode}`);
+    doc.moveDown(1.5);
 
-    const rows: [string, string][] = [
-      ['Gross Pay', fmt(input.grossPay)],
-      ['Tax Withheld', fmt(input.taxAmount)],
-      ['Other Deductions', fmt(input.deductionsTotal)],
-      ['Net Pay', fmt(input.netPay)],
-    ];
-
-    for (const [label, value] of rows) {
-      doc.fontSize(11).fillColor('#333333').text(`${label}:`, { continued: true });
-      doc.text(`  ${value}`, { align: 'right' });
-      doc.moveDown(0.5);
-    }
+    doc.fontSize(12).fillColor('#333333').text('Earnings summary', { underline: true });
+    doc.moveDown(0.5);
+    doc.fontSize(11);
+    doc.text(`Gross pay:        ${fmt(input.grossPay)}`);
+    doc.text(`Deductions:       ${fmt(input.deductionsTotal)}`);
+    doc.text(`Tax withheld:     ${fmt(input.taxAmount)}`);
+    doc.moveDown(0.5);
+    doc.fontSize(13).fillColor('#1A1A1A').text(`Net pay:          ${fmt(input.netPay)}`, { continued: false });
 
     doc.moveDown(2);
-    doc.fontSize(10).fillColor('#888888').text('This is a system-generated payslip. For queries contact HR.', {
-      align: 'left',
-    });
+    doc.fontSize(9).fillColor('#AAAAAA').text(
+      'This is a system-generated payslip from Antrosys ERP. For queries, contact Human Resources.',
+      { align: 'center' },
+    );
 
     doc.end();
   });
 }
+

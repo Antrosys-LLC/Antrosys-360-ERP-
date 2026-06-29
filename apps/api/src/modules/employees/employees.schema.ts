@@ -88,3 +88,22 @@ export const deleteSkillParamsSchema = z.object({
 
 export type UpsertSkillBody = z.infer<typeof upsertSkillBodySchema>;
 export type DeleteSkillParams = z.infer<typeof deleteSkillParamsSchema>;
+
+// ============================================================================
+// QUERY – employee payslips
+// ============================================================================
+
+export const employeePayslipsQuerySchema = z.object({
+  year: z
+    .string()
+    .optional()
+    .transform((v) => (v ? parseInt(v, 10) : new Date().getFullYear())),
+});
+
+export const employeePayslipParamsSchema = z.object({
+  id: z.string().min(1),
+  payslipId: z.string().min(1),
+});
+
+export type EmployeePayslipsQuery = z.infer<typeof employeePayslipsQuerySchema>;
+export type EmployeePayslipParams = z.infer<typeof employeePayslipParamsSchema>;

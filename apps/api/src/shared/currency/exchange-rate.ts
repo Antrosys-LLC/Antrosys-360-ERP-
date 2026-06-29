@@ -1,46 +1,8 @@
 import { redis } from '../../config/redis';
+import { SUPPORTED_CURRENCIES } from './currency-constants';
 
-export const SUPPORTED_CURRENCIES = [
-  'USD',
-  'EUR',
-  'GBP',
-  'PKR',
-  'AED',
-  'SAR',
-  'JPY',
-  'CNY',
-  'INR',
-  'CAD',
-  'AUD',
-  'CHF',
-  'SGD',
-  'HKD',
-  'KRW',
-  'BRL',
-  'MXN',
-  'ZAR',
-  'SEK',
-  'NOK',
-  'DKK',
-  'PLN',
-  'TRY',
-  'THB',
-  'MYR',
-  'IDR',
-  'PHP',
-  'VND',
-  'EGP',
-  'NGN',
-  'KES',
-  'QAR',
-  'KWD',
-  'BHD',
-  'OMR',
-] as const;
-
-export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
-
-export const DEFAULT_CURRENCY: SupportedCurrency = 'USD';
+export { SUPPORTED_CURRENCIES, DEFAULT_CURRENCY } from './currency-constants';
+export type { SupportedCurrency } from './currency-constants';
 
 const CACHE_KEY = 'exchange-rates:USD';
 const CACHE_TTL_SECONDS = 3600;

@@ -152,6 +152,10 @@ enum HrLetterType {
   OTHER
 }
 
+enum PayslipStatus {
+  PROCESSING
+  PAID
+} 
 enum AttendanceStatus {
   PRESENT
   ABSENT
@@ -261,6 +265,7 @@ model Employee {
   leaveBalances          LeaveBalance[]
   announcements          Announcement[]
   skills                 EmployeeSkill[]
+  payslips               EmployeePayslip[]
   jobApplications        JobApplication[]
   onboarding             OnboardingRecord?
   hrLetters              HrLetter[]
@@ -290,6 +295,25 @@ model EmployeeSkill {
 
   @@index([employeeId])
   @@map("employee_skills")
+}
+
+model EmployeePayslip {
+  id               String        @id @default(cuid())
+  employeeId       String
+  employee         Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  periodMonth      DateTime      @db.Date
+  grossAmount      Decimal       @db.Decimal(14, 2)
+  deductionsAmount Decimal       @default(0) @db.Decimal(14, 2)
+  taxAmount        Decimal       @default(0) @db.Decimal(14, 2)
+  netAmount        Decimal       @db.Decimal(14, 2)
+  currencyCode     String        @default("PKR") @db.VarChar(3)
+  status           PayslipStatus @default(PROCESSING)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@unique([employeeId, periodMonth])
+  @@index([employeeId])
+  @@map("employee_payslips")
 }
 
 model AuditLog {
