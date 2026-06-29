@@ -582,12 +582,18 @@ export async function downloadPayslip(userId: string, payslipId: string) {
   const pdfBuffer = await buildPayslipPdf({
     employeeName: `${employee.firstName} ${employee.lastName}`,
     employeeCode: employee.employeeCode,
+    department: employee.department?.replace(/_/g, ' ') ?? null,
+    designation: employee.designation,
     periodLabel: payslip.periodLabel,
-    currencyCode: payslip.currencyCode,
+    grossAmount: Number(payslip.grossPay),
     grossPay: Number(payslip.grossPay),
-    netPay: Number(payslip.netPay),
-    taxAmount: Number(payslip.taxAmount),
+    deductionsAmount: Number(payslip.deductionsTotal),
     deductionsTotal: Number(payslip.deductionsTotal),
+    taxAmount: Number(payslip.taxAmount),
+    netAmount: Number(payslip.netPay),
+    netPay: Number(payslip.netPay),
+    currencyCode: payslip.currencyCode,
+    status: payslip.status,
     generatedAt: new Date(),
   });
 

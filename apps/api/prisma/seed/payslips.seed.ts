@@ -1,8 +1,19 @@
 import { PrismaClient, PayslipStatus } from '@prisma/client';
 import { APP_DEFAULT_CURRENCY } from '../../src/shared/currency/currency-constants';
 
-function periodMonth(year: number, month: number): Date {
+function periodStart(year: number, month: number): Date {
   return new Date(Date.UTC(year, month - 1, 1));
+}
+
+function periodEnd(year: number, month: number): Date {
+  return new Date(Date.UTC(year, month, 0));
+}
+
+function periodLabel(year: number, month: number): string {
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+  });
 }
 
 interface PayslipSeedRow {
@@ -48,32 +59,43 @@ export async function seedPayslipsData(prisma: PrismaClient) {
     }
 
     const net = row.gross - row.deductions - row.tax;
-    const monthDate = periodMonth(row.year, row.month);
+    const start = periodStart(row.year, row.month);
+    const end = periodEnd(row.year, row.month);
+    const label = periodLabel(row.year, row.month);
+    const netPayRatioPct = row.gross > 0 ? Math.round((net / row.gross) * 100) : 0;
 
     await prisma.employeePayslip.upsert({
       where: {
-        employeeId_periodMonth: {
+        employeeId_periodStart: {
           employeeId: employee.id,
-          periodMonth: monthDate,
+          periodStart: start,
         },
       },
       update: {
-        grossAmount: row.gross,
-        deductionsAmount: row.deductions,
+        periodEnd: end,
+        periodLabel: label,
+        grossPay: row.gross,
+        deductionsTotal: row.deductions,
         taxAmount: row.tax,
-        netAmount: net,
+        netPay: net,
+        netPayRatioPct,
         currencyCode: row.currencyCode ?? APP_DEFAULT_CURRENCY,
         status: row.status,
+        paidAt: row.status === 'PAID' ? end : null,
       },
       create: {
         employeeId: employee.id,
-        periodMonth: monthDate,
-        grossAmount: row.gross,
-        deductionsAmount: row.deductions,
+        periodStart: start,
+        periodEnd: end,
+        periodLabel: label,
+        grossPay: row.gross,
+        deductionsTotal: row.deductions,
         taxAmount: row.tax,
-        netAmount: net,
+        netPay: net,
+        netPayRatioPct,
         currencyCode: row.currencyCode ?? APP_DEFAULT_CURRENCY,
         status: row.status,
+        paidAt: row.status === 'PAID' ? end : null,
       },
     });
   }
