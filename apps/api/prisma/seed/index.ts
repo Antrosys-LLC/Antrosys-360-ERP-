@@ -206,7 +206,12 @@ async function main() {
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
 
-  const attendanceData = [
+  const attendanceData: {
+    email: string;
+    checkIn: string | null;
+    status: 'PRESENT' | 'ABSENT' | 'LATE' | 'LEAVE';
+    hours: number;
+  }[] = [
     { email: 'sara.javed@antrosys.com', checkIn: '08:45', status: 'PRESENT', hours: 4.2 },
     { email: 'omar.mirza@antrosys.com', checkIn: '09:02', status: 'PRESENT', hours: 3.9 },
     { email: 'bilal.hassan@antrosys.com', checkIn: null, status: 'ABSENT', hours: 0 },
@@ -240,12 +245,17 @@ async function main() {
   }
 
   console.log('✈️ Seeding leave requests...');
-  const leaveData = [
-    { email: 'sara.javed@antrosys.com', type: 'Sick Leave', duration: 1, reason: 'Flu & headache' },
-    { email: 'fawad.khan@antrosys.com', type: 'Annual Leave', duration: 3, reason: 'Family trip' },
-    { email: 'omar.mirza@antrosys.com', type: 'Casual Leave', duration: 1, reason: 'Personal errand' },
-    { email: 'maria.raza@antrosys.com', type: 'Maternity Leave', duration: 90, reason: 'Maternity leave starts' },
-    { email: 'nadia.qureshi@antrosys.com', type: 'Annual Leave', duration: 5, reason: 'Travel plan' },
+  const leaveData: {
+    email: string;
+    type: 'SICK' | 'ANNUAL' | 'CASUAL' | 'MATERNITY';
+    duration: number;
+    reason: string;
+  }[] = [
+    { email: 'sara.javed@antrosys.com', type: 'SICK', duration: 1, reason: 'Flu & headache' },
+    { email: 'fawad.khan@antrosys.com', type: 'ANNUAL', duration: 3, reason: 'Family trip' },
+    { email: 'omar.mirza@antrosys.com', type: 'CASUAL', duration: 1, reason: 'Personal errand' },
+    { email: 'maria.raza@antrosys.com', type: 'MATERNITY', duration: 90, reason: 'Maternity leave starts' },
+    { email: 'nadia.qureshi@antrosys.com', type: 'ANNUAL', duration: 5, reason: 'Travel plan' },
   ];
 
   for (const item of leaveData) {
@@ -330,6 +340,9 @@ async function main() {
   await seedBizIntelData(prisma);
   const { seedHrData } = await import('./hr.seed');
   await seedHrData();
+
+  const { seedEmployeeDashboardData } = await import('./employee_dashboard.seed');
+  await seedEmployeeDashboardData();
 
   console.log('\n🎉 Seed completed successfully!');
 }
