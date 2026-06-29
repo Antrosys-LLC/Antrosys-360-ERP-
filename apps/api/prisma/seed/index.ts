@@ -206,7 +206,12 @@ async function main() {
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
 
-  const attendanceData = [
+  const attendanceData: {
+    email: string;
+    checkIn: string | null;
+    status: 'PRESENT' | 'ABSENT' | 'LATE' | 'LEAVE';
+    hours: number;
+  }[] = [
     { email: 'sara.javed@antrosys.com', checkIn: '08:45', status: 'PRESENT', hours: 4.2 },
     { email: 'omar.mirza@antrosys.com', checkIn: '09:02', status: 'PRESENT', hours: 3.9 },
     { email: 'bilal.hassan@antrosys.com', checkIn: null, status: 'ABSENT', hours: 0 },
@@ -240,11 +245,16 @@ async function main() {
   }
 
   console.log('✈️ Seeding leave requests...');
-  const leaveData = [
+  const leaveData: {
+    email: string;
+    type: LeaveType;
+    duration: number;
+    reason: string;
+  }[] = [
     { email: 'sara.javed@antrosys.com', type: LeaveType.SICK, duration: 1, reason: 'Flu & headache' },
     { email: 'fawad.khan@antrosys.com', type: LeaveType.ANNUAL, duration: 3, reason: 'Family trip' },
     { email: 'omar.mirza@antrosys.com', type: LeaveType.CASUAL, duration: 1, reason: 'Personal errand' },
-    { email: 'maria.raza@antrosys.com', type: LeaveType.UNPAID, duration: 90, reason: 'Maternity leave starts' },
+    { email: 'maria.raza@antrosys.com', type: LeaveType.MATERNITY, duration: 90, reason: 'Maternity leave starts' },
     { email: 'nadia.qureshi@antrosys.com', type: LeaveType.ANNUAL, duration: 5, reason: 'Travel plan' },
   ];
 
@@ -329,8 +339,15 @@ async function main() {
   await seedBizIntelData(prisma);
   const { seedHrData } = await import('./hr.seed');
   await seedHrData();
+
   const { seedLeaveData } = await import('./leave.seed');
   await seedLeaveData();
+
+  const { seedLedgerData } = await import('./ledger.seed');
+  await seedLedgerData(prisma);
+
+  const { seedEmployeeDashboardData } = await import('./employee_dashboard.seed');
+  await seedEmployeeDashboardData();
 
   console.log('\n🎉 Seed completed successfully!');
 }

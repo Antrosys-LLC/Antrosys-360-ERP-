@@ -1,6 +1,14 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, AttendanceStatus, LeaveRequestStatus } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { PostAnnouncementInput } from './manager.schema';
+
+function mapOverrideStatus(status: string): AttendanceStatus {
+  if (status === 'ON LEAVE') return AttendanceStatus.LEAVE;
+  if (status === 'PRESENT') return AttendanceStatus.PRESENT;
+  if (status === 'ABSENT') return AttendanceStatus.ABSENT;
+  if (status === 'LATE') return AttendanceStatus.LATE;
+  return AttendanceStatus.ABSENT;
+}
 
 export async function getDashboardData(userId: string, userRole: string) {
   // 1. Get logged-in user's employee record
@@ -395,15 +403,16 @@ export async function overrideAttendance(targetEmployeeId: string, status: strin
   return prisma.$transaction(async (tx) => {
     let result;
 
-    const checkInTime = status === 'PRESENT' || status === 'LATE' ? new Date() : null;
-    const checkOutTime = status === 'ABSENT' || status === 'LEAVE' ? null : null;
-    const workingHours = status === 'PRESENT' ? 8.0 : status === 'LATE' ? 6.5 : 0;
+    const attendanceStatus = mapOverrideStatus(status);
+    const checkInTime = attendanceStatus === AttendanceStatus.PRESENT || attendanceStatus === AttendanceStatus.LATE ? new Date() : null;
+    const checkOutTime = attendanceStatus === AttendanceStatus.ABSENT || attendanceStatus === AttendanceStatus.LEAVE ? null : null;
+    const workingHours = attendanceStatus === AttendanceStatus.PRESENT ? 8.0 : attendanceStatus === AttendanceStatus.LATE ? 6.5 : 0;
 
     if (existingAttendance) {
       result = await tx.attendance.update({
         where: { id: existingAttendance.id },
         data: {
-          status,
+          status: attendanceStatus,
           checkIn: checkInTime,
           checkOut: checkOutTime,
           hours: workingHours,
@@ -414,7 +423,7 @@ export async function overrideAttendance(targetEmployeeId: string, status: strin
         data: {
           employeeId: targetEmployeeId,
           date: today,
-          status,
+          status: attendanceStatus,
           checkIn: checkInTime,
           checkOut: checkOutTime,
           hours: workingHours,

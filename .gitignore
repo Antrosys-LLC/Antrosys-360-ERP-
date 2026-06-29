@@ -34,5 +34,5 @@ pnpm-debug.log*
 *.tsbuildinfo
 dist/
 
-#turbo
+# turbo
 .turbo/

@@ -115,3 +115,36 @@ export function formatPercentChange(current: number, previous: number): string {
   const sign = pct >= 0 ? '+' : '';
   return `${sign}${pct.toFixed(1)}%`;
 }
+
+/** Convert a USD amount into a target currency using live rates (USD base). */
+export async function convertFromUsd(amountUsd: number, targetCurrency: string): Promise<number> {
+  const code = targetCurrency.toUpperCase();
+  if (code === 'USD') return amountUsd;
+
+  const rates = await getUsdExchangeRates();
+  const unitsPerUsd = rates[code];
+  if (!unitsPerUsd) return amountUsd;
+
+  return amountUsd * unitsPerUsd;
+}
+
+const CURRENCY_DISPLAY: Record<string, { prefix: string; suffix?: string }> = {
+  USD: { prefix: '$' },
+  EUR: { prefix: '€' },
+  GBP: { prefix: '£' },
+  PKR: { prefix: 'PKR ' },
+  AED: { prefix: 'AED ' },
+  SAR: { prefix: 'SAR ' },
+  JPY: { prefix: '¥' },
+  INR: { prefix: '₹' },
+};
+
+export function formatCurrency(amount: number, currencyCode: string): string {
+  const code = currencyCode.toUpperCase();
+  const display = CURRENCY_DISPLAY[code] ?? { prefix: `${code} ` };
+  const formatted = Math.abs(amount).toLocaleString('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: code === 'JPY' ? 0 : 2,
+  });
+  return `${display.prefix}${formatted}${display.suffix ?? ''}`;
+}

@@ -28,11 +28,11 @@ export async function seedLeaveData() {
   // Create Leave Balances for Sara Javed (matches mock UI)
   await prisma.leaveBalance.createMany({
     data: [
-      { employeeId: saraEmp.id, year: currentYear, type: LeaveType.ANNUAL, totalDays: 20, takenDays: 8 }, // 12 remaining
-      { employeeId: saraEmp.id, year: currentYear, type: LeaveType.SICK, totalDays: 10, takenDays: 2 }, // 8 remaining
-      { employeeId: saraEmp.id, year: currentYear, type: LeaveType.CASUAL, totalDays: 6, takenDays: 3 }, // 3 remaining
-      { employeeId: saraEmp.id, year: currentYear, type: LeaveType.WFH, totalDays: 20, takenDays: 6 }, // 14 remaining
-      { employeeId: saraEmp.id, year: currentYear, type: LeaveType.UNPAID, totalDays: 0, takenDays: 0 },
+      { employeeId: saraEmp.id, year: currentYear, leaveType: LeaveType.ANNUAL, allocatedDays: 20, usedDays: 8, pendingDays: 0 }, // 12 remaining
+      { employeeId: saraEmp.id, year: currentYear, leaveType: LeaveType.SICK, allocatedDays: 10, usedDays: 2, pendingDays: 0 }, // 8 remaining
+      { employeeId: saraEmp.id, year: currentYear, leaveType: LeaveType.CASUAL, allocatedDays: 6, usedDays: 3, pendingDays: 0 }, // 3 remaining
+      { employeeId: saraEmp.id, year: currentYear, leaveType: LeaveType.WFH, allocatedDays: 20, usedDays: 6, pendingDays: 0 }, // 14 remaining
+      { employeeId: saraEmp.id, year: currentYear, leaveType: LeaveType.UNPAID, allocatedDays: 0, usedDays: 0, pendingDays: 0 },
     ],
   });
 

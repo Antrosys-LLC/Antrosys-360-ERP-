@@ -1,4 +1,14 @@
 import { FastifyInstance } from 'fastify';
+import { z } from 'zod';
+import { getWorkScheduleConfig, updateWorkSchedule } from '../employee/EmployeeDashboard/employee_dashboard.service';
+
+const workScheduleBodySchema = z.object({
+  standardHoursPerDay: z.number().min(1).max(24).optional(),
+  halfDayThresholdHours: z.number().min(0.5).max(12).optional(),
+  overtimeEnabled: z.boolean().optional(),
+  lateAfterHour: z.number().int().min(0).max(23).optional(),
+  lateAfterMinute: z.number().int().min(0).max(59).optional(),
+});
 
 export async function adminRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.verifyJwt);
@@ -6,5 +16,48 @@ export async function adminRoutes(fastify: FastifyInstance) {
   fastify.get('/', {
     preHandler: [fastify.requirePermission('admin:read')],
     handler: async () => ({ module: 'admin', status: 'wip' }),
+  });
+
+  fastify.get('/work-schedule', {
+    preHandler: [fastify.requirePermission('admin:read')],
+    handler: async (_request, reply) => {
+      const config = await getWorkScheduleConfig();
+      return reply.code(200).send({
+        status: 'success',
+        data: {
+          standardHoursPerDay: Number(config.standardHoursPerDay),
+          halfDayThresholdHours: Number(config.halfDayThresholdHours),
+          overtimeEnabled: config.overtimeEnabled,
+          lateAfterHour: config.lateAfterHour,
+          lateAfterMinute: config.lateAfterMinute,
+        },
+      });
+    },
+  });
+
+  fastify.patch('/work-schedule', {
+    preHandler: [fastify.requirePermission('admin:write')],
+    handler: async (request, reply) => {
+      if (!request.user?.id) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
+
+      const parsed = workScheduleBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: 'Validation failed', details: parsed.error.flatten() });
+      }
+
+      const config = await updateWorkSchedule(request.user.id, parsed.data);
+      return reply.code(200).send({
+        status: 'success',
+        data: {
+          standardHoursPerDay: Number(config.standardHoursPerDay),
+          halfDayThresholdHours: Number(config.halfDayThresholdHours),
+          overtimeEnabled: config.overtimeEnabled,
+          lateAfterHour: config.lateAfterHour,
+          lateAfterMinute: config.lateAfterMinute,
+        },
+      });
+    },
   });
 }

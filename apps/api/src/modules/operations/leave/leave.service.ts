@@ -1,4 +1,4 @@
-import { LeaveType, LeaveStatus, Prisma } from '@prisma/client';
+import { LeaveType, LeaveRequestStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../../config/database';
 import type {
   CreateLeaveRequestBody,
@@ -31,6 +31,8 @@ const DEFAULT_QUOTA: Record<LeaveType, number> = {
   CASUAL: 6,
   WFH: 20,
   UNPAID: 0,
+  MATERNITY: 90,
+  OTHER: 0,
 };
 
 // ─── Leave Balances ────────────────────────────────────────────────────────
@@ -49,26 +51,31 @@ export async function getMyLeaveBalances(userId: string) {
   // Upsert ensures balances exist on first access
   const upserts = types.map((type) =>
     prisma.leaveBalance.upsert({
-      where: { employeeId_year_type: { employeeId: employee.id, year, type } },
+      where: { employeeId_leaveType_year: { employeeId: employee.id, leaveType: type, year } },
       update: {},
       create: {
         employeeId: employee.id,
         year,
-        type,
-        totalDays: DEFAULT_QUOTA[type],
-        takenDays: 0,
+        leaveType: type,
+        allocatedDays: DEFAULT_QUOTA[type],
+        usedDays: 0,
+        pendingDays: 0,
       },
     }),
   );
 
   const balances = await Promise.all(upserts);
 
-  return balances.map((b) => ({
-    type: b.type,
-    totalDays: b.totalDays,
-    takenDays: b.takenDays,
-    remainingDays: Math.max(0, b.totalDays - b.takenDays),
-  }));
+  return balances.map((b) => {
+    const totalDays = Number(b.allocatedDays);
+    const takenDays = Number(b.usedDays);
+    return {
+      type: b.leaveType,
+      totalDays,
+      takenDays,
+      remainingDays: Math.max(0, totalDays - takenDays),
+    };
+  });
 }
 
 // ─── Leave Requests ────────────────────────────────────────────────────────
@@ -190,7 +197,7 @@ export async function updateLeaveStatus(
     const updated = await tx.leaveRequest.update({
       where: { id: leaveId },
       data: {
-        status: body.status as LeaveStatus,
+        status: body.status as LeaveRequestStatus,
         approvedById: approverEmployee.id,
         declineNote: body.declineNote,
       },
@@ -205,21 +212,22 @@ export async function updateLeaveStatus(
       const year = existing.startDate.getFullYear();
       await tx.leaveBalance.upsert({
         where: {
-          employeeId_year_type: {
+          employeeId_leaveType_year: {
             employeeId: existing.employeeId,
+            leaveType: existing.type,
             year,
-            type: existing.type,
           },
         },
         update: {
-          takenDays: { increment: existing.durationDays },
+          usedDays: { increment: existing.durationDays },
         },
         create: {
           employeeId: existing.employeeId,
           year,
-          type: existing.type,
-          totalDays: DEFAULT_QUOTA[existing.type],
-          takenDays: existing.durationDays,
+          leaveType: existing.type,
+          allocatedDays: DEFAULT_QUOTA[existing.type],
+          usedDays: existing.durationDays,
+          pendingDays: 0,
         },
       });
     }
