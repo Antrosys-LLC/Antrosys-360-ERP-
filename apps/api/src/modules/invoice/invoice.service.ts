@@ -111,6 +111,7 @@ export async function listInvoices(query: ListInvoicesQuery) {
       orderBy: { createdAt: 'desc' },
       include: {
         client: true,
+        project: true,
         lineItems: {
           orderBy: { sortOrder: 'asc' },
         },
@@ -135,6 +136,7 @@ export async function getInvoiceById(invoiceId: string) {
     where: { id: invoiceId },
     include: {
       client: true,
+      project: true,
       lineItems: {
         orderBy: { sortOrder: 'asc' },
       },
@@ -151,6 +153,7 @@ export async function createInvoice(payload: CreateInvoiceBody, userId: string) 
       data: {
         invoiceNumber: payload.invoiceNumber,
         clientId: payload.clientId,
+        projectId: payload.projectId,
         status: 'DRAFT',
         invoiceDate: payload.invoiceDate,
         dueDate: payload.dueDate,
@@ -189,6 +192,7 @@ export async function createInvoice(payload: CreateInvoiceBody, userId: string) 
       },
       include: {
         client: true,
+        project: true,
         lineItems: { orderBy: { sortOrder: 'asc' } },
       },
     });
@@ -288,6 +292,7 @@ export async function updateInvoice(invoiceId: string, payload: UpdateInvoiceBod
       },
       include: {
         client: true,
+        project: true,
         lineItems: { orderBy: { sortOrder: 'asc' } },
       },
     });
@@ -339,6 +344,7 @@ export async function sendInvoice(invoiceId: string, userId: string) {
       data: { status: 'SENT' },
       include: {
         client: true,
+        project: true,
         lineItems: { orderBy: { sortOrder: 'asc' } },
       },
     });

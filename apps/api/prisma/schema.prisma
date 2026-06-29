@@ -311,7 +311,13 @@ model Client {
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
   invoices       Invoice[]
-  documents      Document[]           @relation("ClientDocuments")
+  documents      Document[]          @relation("ClientDocuments")
+  statuses       ClientStatus[]
+  renewals       ClientRenewal[]
+  activities     ClientActivity[]
+  projects       ClientProject[]
+  tasks          ClientTask[]
+  timelineEvents ClientTimelineEvent[]
 
   @@index([pipelineStage])
   @@index([isAtRisk])
@@ -319,11 +325,112 @@ model Client {
   @@map("clients")
 }
 
+model ClientStatus {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  status    String   // ACTIVE, PROSPECT, PROPOSAL, NEGOTIATION, AT_RISK, INACTIVE
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([clientId])
+  @@index([createdAt])
+  @@map("client_statuses")
+}
+
+model ClientRenewal {
+  id          String    @id @default(cuid())
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  dueAt       DateTime
+  completedAt DateTime?
+  amount      Decimal?  @db.Decimal(14, 2)
+  status      String    @default("PENDING") // PENDING, COMPLETED, CANCELLED
+  note        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([clientId])
+  @@index([dueAt])
+  @@index([status])
+  @@map("client_renewals")
+}
+
+model ClientActivity {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  type        String   // NOTE, CALL, EMAIL, MEETING, TASK, PROJECT, STATUS_CHANGE, RENEWAL
+  title       String
+  description String?
+  createdAt   DateTime @default(now())
+
+  @@index([clientId])
+  @@index([createdAt])
+  @@map("client_activities")
+}
+
+model ClientProject {
+  id          String    @id @default(cuid())
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  status      String    @default("PLANNING") // PLANNING, ACTIVE, ON_HOLD, COMPLETED, CANCELLED
+  startDate   DateTime?
+  endDate     DateTime?
+  budget      Decimal?  @db.Decimal(14, 2)
+  invoices    Invoice[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([clientId])
+  @@index([status])
+  @@map("client_projects")
+}
+
+model ClientTask {
+  id          String    @id @default(cuid())
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  dueAt       DateTime?
+  completedAt DateTime?
+  priority    String    @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  status      String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, CANCELLED
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([clientId])
+  @@index([dueAt])
+  @@index([status])
+  @@map("client_tasks")
+}
+
+model ClientTimelineEvent {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  eventType   String   // CREATED, STATUS_CHANGED, RENEWAL_DUE, PROJECT_STARTED, PROJECT_COMPLETED, TASK_COMPLETED, ACTIVITY, NOTE_ADDED
+  title       String
+  description String?
+  eventDate   DateTime @default(now())
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([clientId])
+  @@index([eventDate])
+  @@map("client_timeline_events")
+}
+
 model Invoice {
   id                String            @id @default(cuid())
   invoiceNumber     String            @unique
   clientId          String
   client            Client            @relation(fields: [clientId], references: [id])
+  projectId         String?
+  project           ClientProject?    @relation(fields: [projectId], references: [id])
   status            InvoiceStatus     @default(DRAFT)
   invoiceDate       DateTime
   dueDate           DateTime
@@ -346,6 +453,7 @@ model Invoice {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
+  @@index([projectId])
   @@index([status])
   @@index([invoiceDate])
   @@index([dueDate])
