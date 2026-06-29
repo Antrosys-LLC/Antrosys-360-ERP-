@@ -210,6 +210,30 @@ export async function getDashboardData(userId: string, userRole: string) {
     unknown: weeklyMood?.unknown || 1,
   };
 
+  // 11. Calculate Team Schedule stats
+  const totalTakenLeaves = approvedTeamLeaves.length;
+  let onLeaveTodayCount = 0;
+  const todayTime = today.getTime();
+  
+  for (const leave of approvedTeamLeaves) {
+    const start = new Date(leave.startDate).getTime();
+    const end = new Date(leave.endDate).getTime();
+    if (todayTime >= start && todayTime <= end) {
+      onLeaveTodayCount++;
+    }
+  }
+
+  const attendancePercentage = totalEmployees > 0 
+    ? Math.round((presentCount / totalEmployees) * 100) 
+    : 0;
+
+  const teamSchedule = {
+    pending: leavesPendingCount,
+    totalTaken: totalTakenLeaves,
+    attendance: attendancePercentage,
+    onLeaveToday: onLeaveTodayCount,
+  };
+
   return {
     metrics: {
       presentCount,
@@ -231,6 +255,7 @@ export async function getDashboardData(userId: string, userRole: string) {
     },
     announcements: formattedAnnouncements,
     moodPulse,
+    teamSchedule,
   };
 }
 

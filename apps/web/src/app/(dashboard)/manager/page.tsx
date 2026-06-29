@@ -124,6 +124,12 @@ interface DashboardData {
     stressed: number;
     unknown: number;
   };
+  teamSchedule?: {
+    pending: number;
+    totalTaken: number;
+    attendance: number;
+    onLeaveToday: number;
+  };
 }
 
 // ============================================================================
@@ -498,7 +504,7 @@ export default function ManagerDashboard() {
     );
   }
 
-  const { metrics, attendance, leaves, kpis, announcements, moodPulse } = data;
+  const { metrics, attendance, leaves, kpis, announcements, moodPulse, teamSchedule } = data;
 
   return (
     <div className="space-y-6">
@@ -744,19 +750,19 @@ export default function ManagerDashboard() {
             
             <div className="grid grid-cols-4 gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
               <div>
-                <div className="font-bold text-xs text-foreground">5</div>
+                <div className="font-bold text-xs text-foreground">{teamSchedule?.pending ?? 0}</div>
                 <div className="text-[10px] text-muted-foreground mt-0.5">Pending</div>
               </div>
               <div>
-                <div className="font-bold text-xs text-foreground">12</div>
+                <div className="font-bold text-xs text-foreground">{teamSchedule?.totalTaken ?? 0}</div>
                 <div className="text-[10px] text-muted-foreground mt-0.5 whitespace-nowrap">Total Taken</div>
               </div>
               <div>
-                <div className="font-bold text-xs text-emerald-600">94%</div>
+                <div className="font-bold text-xs text-emerald-600">{teamSchedule?.attendance ?? 0}%</div>
                 <div className="text-[10px] text-muted-foreground mt-0.5">Attendance</div>
               </div>
               <div>
-                <div className="font-bold text-xs text-foreground">2</div>
+                <div className="font-bold text-xs text-foreground">{teamSchedule?.onLeaveToday ?? 0}</div>
                 <div className="text-[10px] text-muted-foreground mt-0.5 whitespace-nowrap">On Leave Today</div>
               </div>
             </div>
