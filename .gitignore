@@ -33,6 +33,5 @@ pnpm-debug.log*
 # typescript
 *.tsbuildinfo
 dist/
-
-# turbo
-.turbo/
+.turbo
+apps/web/.turbo

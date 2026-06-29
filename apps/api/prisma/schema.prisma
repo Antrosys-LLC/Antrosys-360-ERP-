@@ -208,6 +208,8 @@ model User {
   onboardingCreated        OnboardingRecord[] @relation("OnboardingCreated")
   hrLettersGenerated       HrLetter[]         @relation("HrLettersGenerated")
   uploadedDocuments        Document[]         @relation("DocumentUploadedBy")
+  assignedTasks            EmployeeTask[]     @relation("TaskAssignments")
+  sentMessages             Message[]          @relation("SentMessages")
   workScheduleUpdates      WorkScheduleConfig[] @relation("WorkScheduleUpdatedBy")
   ledgerEntriesCreated     LedgerEntry[]      @relation("LedgerEntriesCreated")
 
@@ -266,6 +268,9 @@ model Employee {
   team                   Team?            @relation("TeamMembers", fields: [teamId], references: [id])
   managedTeam            Team?            @relation("TeamManager")
   documents             Document[]           @relation("EmployeeDocuments")
+  teams                 EmployeeTeam[]
+  tasks                 EmployeeTask[]
+  receivedMessages      Message[]            @relation("ReceivedMessages")
   payslips               EmployeePayslip[]
 
   @@index([department])
@@ -953,6 +958,64 @@ model Notification {
   @@index([userId])
   @@index([isRead])
   @@map("notifications")
+}
+
+model Team {
+  id          String         @id @default(cuid())
+  name        String
+  description String?
+  department  Department?
+  members     EmployeeTeam[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([department])
+  @@map("teams")
+}
+
+model EmployeeTeam {
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  teamId     String
+  team       Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, teamId])
+  @@map("employee_teams")
+}
+
+model EmployeeTask {
+  id           String    @id @default(cuid())
+  employeeId   String
+  employee     Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  title        String
+  description  String?
+  dueAt        DateTime?
+  completedAt  DateTime?
+  status       String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED
+  assignedById String?
+  assignedBy   User?     @relation("TaskAssignments", fields: [assignedById], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([employeeId])
+  @@index([status])
+  @@map("employee_tasks")
+}
+
+model Message {
+  id          String    @id @default(cuid())
+  senderId    String
+  sender      User      @relation("SentMessages", fields: [senderId], references: [id])
+  recipientId String
+  recipient   Employee  @relation("ReceivedMessages", fields: [recipientId], references: [id])
+  subject     String
+  body        String
+  isRead      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  @@index([recipientId, isRead])
+  @@index([senderId])
+  @@map("messages")
 }
 
 // =========================================================================

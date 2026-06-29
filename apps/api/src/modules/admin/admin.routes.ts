@@ -1,4 +1,12 @@
 import { FastifyInstance } from 'fastify';
+import {
+  listUsersHandler,
+  getUserHandler,
+  createUserHandler,
+  updateUserHandler,
+  deleteUserHandler,
+  listAuditLogsHandler,
+} from './admin.controller';
 import { z } from 'zod';
 import { getWorkScheduleConfig, updateWorkSchedule } from '../employee/EmployeeDashboard/employee_dashboard.service';
 
@@ -15,7 +23,37 @@ export async function adminRoutes(fastify: FastifyInstance) {
 
   fastify.get('/', {
     preHandler: [fastify.requirePermission('admin:read')],
-    handler: async () => ({ module: 'admin', status: 'wip' }),
+    handler: async () => ({ module: 'admin', status: 'active' }),
+  });
+
+  fastify.get('/users', {
+    preHandler: [fastify.requirePermission('admin:read')],
+    handler: listUsersHandler,
+  });
+
+  fastify.get('/users/:id', {
+    preHandler: [fastify.requirePermission('admin:read')],
+    handler: getUserHandler,
+  });
+
+  fastify.post('/users', {
+    preHandler: [fastify.requirePermission('admin:write')],
+    handler: createUserHandler,
+  });
+
+  fastify.put('/users/:id', {
+    preHandler: [fastify.requirePermission('admin:write')],
+    handler: updateUserHandler,
+  });
+
+  fastify.delete('/users/:id', {
+    preHandler: [fastify.requirePermission('admin:write')],
+    handler: deleteUserHandler,
+  });
+
+  fastify.get('/audit-logs', {
+    preHandler: [fastify.requirePermission('audit:read')],
+    handler: listAuditLogsHandler,
   });
 
   fastify.get('/work-schedule', {
