@@ -1,11 +1,15 @@
 import { Department, EmploymentStatus, Gender, PayslipStatus } from '@prisma/client';
 import { prisma } from '../../config/database';
+import { enumOptions } from '../../shared/enum-labels';
 import type {
   ListEmployeesQuery,
   UpdatePersonalBody,
+  UpdateEmploymentBody,
   UpsertSkillBody,
   EmployeePayslipsQuery,
+  ManagerOptionsQuery,
 } from './employees.schema';
+import { validateEmploymentDates } from '../../shared/validation/employment-dates';
 import { APP_DEFAULT_CURRENCY } from '../../shared/currency/currency-constants';
 import { formatCurrencyAmount, formatCurrencyCompact } from '../../shared/currency/format-currency';
 import { buildPayslipPdf } from '../../shared/pdf/payslip-pdf';
@@ -98,7 +102,7 @@ export async function getEmployeeById(id: string) {
     where: { id },
     include: {
       user: {
-        select: { email: true, role: true, isActive: true },
+        select: { email: true, role: true, isActive: true, lastLoginAt: true },
       },
       manager: {
         select: { id: true, firstName: true, lastName: true },
@@ -125,33 +129,174 @@ export async function updateEmployee(id: string, data: UpdatePersonalBody) {
   if (data.dateOfBirth) {
     updateData.dateOfBirth = new Date(data.dateOfBirth);
   }
-  if (data.department) {
-    const department = normalizeDepartment(data.department);
-    if (department) updateData.department = department;
-    else delete updateData.department;
-  }
   if (data.gender) {
     const gender = normalizeGender(data.gender);
     if (gender) updateData.gender = gender;
     else delete updateData.gender;
-  }
-  if (data.employmentStatus) {
-    const employmentStatus = normalizeEmploymentStatus(data.employmentStatus);
-    if (employmentStatus) updateData.employmentStatus = employmentStatus;
-    else delete updateData.employmentStatus;
   }
 
   const updated = await prisma.employee.update({
     where: { id },
     data: updateData,
     include: {
-      user: { select: { email: true, role: true, isActive: true } },
+      user: { select: { email: true, role: true, isActive: true, lastLoginAt: true } },
       manager: { select: { id: true, firstName: true, lastName: true } },
       skills: { orderBy: { createdAt: 'asc' } },
     },
   });
 
   return updated;
+}
+
+export async function updateEmployeeEmployment(id: string, data: UpdateEmploymentBody) {
+  if (data.managerId === id) {
+    throw new Error('An employee cannot be their own line manager');
+  }
+
+  const existing = await prisma.employee.findUnique({
+    where: { id },
+    select: { joiningDate: true, probationEnd: true },
+  });
+
+  if (!existing) {
+    return null;
+  }
+
+  if (data.managerId) {
+    const manager = await prisma.employee.findFirst({
+      where: { id: data.managerId, isActive: true },
+    });
+    if (!manager) {
+      throw new Error('Selected line manager was not found');
+    }
+  }
+
+  const effectiveJoiningDate =
+    data.joiningDate !== undefined
+      ? data.joiningDate
+        ? new Date(data.joiningDate)
+        : null
+      : existing.joiningDate;
+  const effectiveProbationEnd =
+    data.probationEnd !== undefined
+      ? data.probationEnd
+        ? new Date(data.probationEnd)
+        : null
+      : existing.probationEnd;
+
+  const dateValidationError = validateEmploymentDates(effectiveJoiningDate, effectiveProbationEnd);
+  if (dateValidationError) {
+    throw new Error(dateValidationError);
+  }
+
+  const updateData: Record<string, unknown> = {};
+
+  if (data.designation !== undefined) updateData.designation = data.designation;
+  if (data.grade !== undefined) updateData.grade = data.grade;
+  if (data.location !== undefined) updateData.location = data.location;
+  if (data.employeeType !== undefined) updateData.employeeType = data.employeeType;
+  if (data.contractType !== undefined) updateData.contractType = data.contractType;
+  if (data.managerId !== undefined) updateData.managerId = data.managerId;
+
+  if (data.department !== undefined) {
+    if (data.department === null || data.department === '') {
+      updateData.department = null;
+    } else {
+      const department = normalizeDepartment(data.department);
+      if (!department) {
+        throw new Error('Invalid department value');
+      }
+      updateData.department = department;
+    }
+  }
+
+  if (data.employmentStatus !== undefined) {
+    if (data.employmentStatus === null || data.employmentStatus === '') {
+      // employmentStatus is required in the schema; ignore empty clears
+    } else {
+      const employmentStatus = normalizeEmploymentStatus(data.employmentStatus);
+      if (!employmentStatus) {
+        throw new Error('Invalid employment status value');
+      }
+      updateData.employmentStatus = employmentStatus;
+    }
+  }
+
+  if (data.joiningDate) {
+    updateData.joiningDate = new Date(data.joiningDate);
+  } else if (data.joiningDate === null) {
+    updateData.joiningDate = null;
+  }
+
+  if (data.probationEnd) {
+    updateData.probationEnd = new Date(data.probationEnd);
+  } else if (data.probationEnd === null) {
+    updateData.probationEnd = null;
+  }
+
+  const updated = await prisma.employee.update({
+    where: { id },
+    data: updateData,
+    include: {
+      user: { select: { email: true, role: true, isActive: true, lastLoginAt: true } },
+      manager: { select: { id: true, firstName: true, lastName: true } },
+      skills: { orderBy: { createdAt: 'asc' } },
+    },
+  });
+
+  return updated;
+}
+
+export async function listManagerOptions(query: ManagerOptionsQuery) {
+  const employees = await prisma.employee.findMany({
+    where: {
+      isActive: true,
+      ...(query.excludeId ? { id: { not: query.excludeId } } : {}),
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      designation: true,
+      department: true,
+    },
+    orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+  });
+
+  return employees.map((employee) => ({
+    id: employee.id,
+    name: `${employee.firstName} ${employee.lastName}`,
+    designation: employee.designation,
+    department: employee.department,
+  }));
+}
+
+export async function getEmploymentFieldOptions() {
+  const [contractTypeRows, employeeTypeRows] = await Promise.all([
+    prisma.employee.findMany({
+      where: { contractType: { not: null } },
+      select: { contractType: true },
+      distinct: ['contractType'],
+      orderBy: { contractType: 'asc' },
+    }),
+    prisma.employee.findMany({
+      where: { employeeType: { not: null } },
+      select: { employeeType: true },
+      distinct: ['employeeType'],
+      orderBy: { employeeType: 'asc' },
+    }),
+  ]);
+
+  return {
+    departments: enumOptions(Object.values(Department)),
+    employmentStatuses: enumOptions(Object.values(EmploymentStatus)),
+    contractTypes: contractTypeRows
+      .map((row) => row.contractType)
+      .filter((value): value is string => Boolean(value?.trim())),
+    employeeTypes: employeeTypeRows
+      .map((row) => row.employeeType)
+      .filter((value): value is string => Boolean(value?.trim())),
+  };
 }
 
 // ============================================================================

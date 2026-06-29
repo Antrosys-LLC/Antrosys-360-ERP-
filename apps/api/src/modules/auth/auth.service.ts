@@ -44,6 +44,13 @@ export async function validateCredentials(email: string, password: string) {
   return user;
 }
 
+export async function recordLastLogin(userId: string) {
+  await prisma.user.update({
+    where: { id: userId },
+    data: { lastLoginAt: new Date() },
+  });
+}
+
 export async function generateTokenPair(userId: string, role: string) {
   const accessToken = jwt.sign({ id: userId, role }, env.JWT_SECRET, {
     expiresIn: '15m',

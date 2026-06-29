@@ -21,21 +21,79 @@ import { useAuthStore } from '@/stores/auth.store';
 
 type ProfileLoadError = 'missing_id' | 'not_found' | 'forbidden' | 'network';
 
-// ============================================================================
-// CENTRALIZED DATA STORES
-// ============================================================================
+const MIN_EMPLOYEE_AGE = 15;
 
-// The mock data for the Personal tab has been replaced with dynamic backend state.
-const officeAccessData = {
-  details: [
-    { label: "Location", value: "Islamabad HQ" },
-    { label: "Shift", value: "General (09:00 - 18:00)" },
-    { label: "Work Mode", value: "Hybrid" },
-    { label: "System Access", value: "ESS (Standard)" },
-    { label: "Last Login", value: "Today, 08:45 AM" }
-  ],
-  activeModules: ["ESS", "Attendance", "Leave", "Payslips", "Documents"]
-};
+const selectFieldClassName =
+  'w-full bg-background border border-input rounded-md px-3 py-2 text-sm appearance-none focus:ring-1 focus:ring-ring outline-none';
+
+function getMaxDateOfBirth(): string {
+  const latest = new Date();
+  latest.setFullYear(latest.getFullYear() - MIN_EMPLOYEE_AGE);
+  return toDateInputValue(latest);
+}
+
+function isValidEmployeeDateOfBirth(value: string): boolean {
+  if (!value) return true;
+
+  const dob = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(dob.getTime())) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  dob.setHours(0, 0, 0, 0);
+
+  if (dob >= today) return false;
+
+  const youngestAllowed = new Date(today);
+  youngestAllowed.setFullYear(youngestAllowed.getFullYear() - MIN_EMPLOYEE_AGE);
+
+  return dob <= youngestAllowed;
+}
+
+function isValidJoiningDate(value: string): boolean {
+  if (!value) return true;
+
+  const joinDay = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(joinDay.getTime())) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  joinDay.setHours(0, 0, 0, 0);
+
+  return joinDay <= today;
+}
+
+function isProbationEndAfterJoinDate(joinDate: string, probationEnd: string): boolean {
+  if (!joinDate || !probationEnd) return true;
+
+  const joinDay = new Date(`${joinDate}T00:00:00`);
+  const probationDay = new Date(`${probationEnd}T00:00:00`);
+  if (Number.isNaN(joinDay.getTime()) || Number.isNaN(probationDay.getTime())) return false;
+
+  joinDay.setHours(0, 0, 0, 0);
+  probationDay.setHours(0, 0, 0, 0);
+
+  return probationDay > joinDay;
+}
+
+function getMaxJoinDate(): string {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getMinProbationEndDate(joinDate: string): string {
+  if (!joinDate) return '';
+  const parsed = new Date(`${joinDate}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return '';
+  parsed.setDate(parsed.getDate() + 1);
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 const attendanceCalendarWeeks = [
   [null, null, null, null, { status: 'P', label: 'Present' }, { status: 'HO', label: 'Holiday' }, { status: 'HO', label: 'Holiday' }],
@@ -66,7 +124,13 @@ const profileSchema = z.object({
   firstName: z.string().min(1, 'First name is required'),
   lastName: z.string().min(1, 'Last name is required'),
   preferredName: z.string().nullable().optional(),
-  dateOfBirth: z.string().nullable().optional(),
+  dateOfBirth: z
+    .string()
+    .nullable()
+    .optional()
+    .refine((value) => !value || isValidEmployeeDateOfBirth(value), {
+      message: `Date of birth must be in the past and the employee must be at least ${MIN_EMPLOYEE_AGE} years old`,
+    }),
   gender: z.string().nullable().optional(),
   nationality: z.string().nullable().optional(),
   cnic: z.string().nullable().optional(),
@@ -77,14 +141,59 @@ const profileSchema = z.object({
   emergencyContactRelation: z.string().nullable().optional(),
   emergencyContactPhone: z.string().nullable().optional(),
   homeAddress: z.string().nullable().optional(),
-  department: z.string().nullable().optional(),
-  designation: z.string().nullable().optional(),
-  grade: z.string().nullable().optional(),
-  location: z.string().nullable().optional(),
-  employeeType: z.string().nullable().optional(),
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
+
+const employmentSchema = z
+  .object({
+    department: z.string().nullable().optional(),
+    designation: z.string().nullable().optional(),
+    grade: z.string().nullable().optional(),
+    location: z.string().nullable().optional(),
+    employeeType: z.string().nullable().optional(),
+    contractType: z.string().nullable().optional(),
+    employmentStatus: z.string().min(1, 'Employment status is required'),
+    joiningDate: z
+      .string()
+      .nullable()
+      .optional()
+      .refine((value) => !value || isValidJoiningDate(value), {
+        message: 'Join date cannot be in the future',
+      }),
+    probationEnd: z.string().nullable().optional(),
+    managerId: z.string().nullable().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.joiningDate && data.probationEnd && !isProbationEndAfterJoinDate(data.joiningDate, data.probationEnd)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['probationEnd'],
+        message: 'Probation end must be after join date',
+      });
+    }
+  });
+
+type EmploymentFormValues = z.infer<typeof employmentSchema>;
+
+interface EnumOption {
+  value: string;
+  label: string;
+}
+
+interface EmploymentFieldOptions {
+  departments: EnumOption[];
+  employmentStatuses: EnumOption[];
+  contractTypes: string[];
+  employeeTypes: string[];
+}
+
+interface ManagerOption {
+  id: string;
+  name: string;
+  designation: string | null;
+  department: string | null;
+}
 
 const skillSchema = z.object({
   skillName: z.string().min(1, 'Skill name is required'),
@@ -152,11 +261,6 @@ function employeeToProfileFormValues(employee: {
   emergencyContactRelation?: string | null;
   emergencyContactPhone?: string | null;
   homeAddress?: string | null;
-  department?: string | null;
-  designation?: string | null;
-  grade?: string | null;
-  location?: string | null;
-  employeeType?: string | null;
 }): ProfileFormValues {
   return {
     firstName: employee.firstName || '',
@@ -173,11 +277,32 @@ function employeeToProfileFormValues(employee: {
     emergencyContactRelation: employee.emergencyContactRelation || '',
     emergencyContactPhone: employee.emergencyContactPhone || '',
     homeAddress: employee.homeAddress || '',
+  };
+}
+
+function employeeToEmploymentFormValues(employee: {
+  department?: string | null;
+  designation?: string | null;
+  grade?: string | null;
+  location?: string | null;
+  employeeType?: string | null;
+  contractType?: string | null;
+  employmentStatus?: string | null;
+  joiningDate?: string | Date | null;
+  probationEnd?: string | Date | null;
+  managerId?: string | null;
+}): EmploymentFormValues {
+  return {
     department: employee.department || '',
     designation: employee.designation || '',
     grade: employee.grade || '',
     location: employee.location || '',
     employeeType: employee.employeeType || '',
+    contractType: employee.contractType || '',
+    employmentStatus: employee.employmentStatus || 'ACTIVE',
+    joiningDate: toDateInputValue(employee.joiningDate),
+    probationEnd: toDateInputValue(employee.probationEnd),
+    managerId: employee.managerId || '',
   };
 }
 
@@ -186,6 +311,18 @@ function buildProfilePayload(values: ProfileFormValues) {
     Object.entries(values).map(([key, value]) => {
       if (value === '') return [key, null];
       if (key === 'dateOfBirth') return [key, toApiDateValue(value as string)];
+      return [key, value];
+    }),
+  );
+}
+
+function buildEmploymentPayload(values: EmploymentFormValues) {
+  return Object.fromEntries(
+    Object.entries(values).map(([key, value]) => {
+      if (value === '') return [key, null];
+      if (key === 'joiningDate' || key === 'probationEnd') {
+        return [key, toApiDateValue(value as string)];
+      }
       return [key, value];
     }),
   );
@@ -243,8 +380,11 @@ function EmployeeDashboardContent() {
   
   // Modals state
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  const [isEditEmploymentOpen, setIsEditEmploymentOpen] = useState(false);
   const [isSkillsManagerOpen, setIsSkillsManagerOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [employmentSubmitting, setEmploymentSubmitting] = useState(false);
+  const [employmentOptionsLoading, setEmploymentOptionsLoading] = useState(false);
   const [skillSubmitting, setSkillSubmitting] = useState(false);
 
   // Forms
@@ -254,9 +394,20 @@ function EmployeeDashboardContent() {
       firstName: '', lastName: '', preferredName: '', dateOfBirth: '', gender: '',
       nationality: '', cnic: '', personalEmail: '', personalPhone: '', phone: '',
       emergencyContactName: '', emergencyContactRelation: '', emergencyContactPhone: '',
-      homeAddress: '', department: '', designation: '', grade: '', location: '', employeeType: ''
+      homeAddress: '',
     }
   });
+
+  const employmentForm = useForm<EmploymentFormValues>({
+    resolver: zodResolver(employmentSchema),
+    defaultValues: {
+      department: '', designation: '', grade: '', location: '',
+      employeeType: '', contractType: '', employmentStatus: 'ACTIVE',
+      joiningDate: '', probationEnd: '', managerId: '',
+    },
+  });
+
+  const watchedJoiningDate = employmentForm.watch('joiningDate');
 
   const skillForm = useForm<SkillFormValues>({
     resolver: zodResolver(skillSchema),
@@ -281,6 +432,14 @@ function EmployeeDashboardContent() {
     label: string; value: string; isLink: boolean; verified?: boolean;
   }[] | null>(null);
 
+  const [officeAccess, setOfficeAccess] = useState<{
+    details: { label: string; value: string }[];
+    activeModules: string[];
+  } | null>(null);
+
+  const [employmentFieldOptions, setEmploymentFieldOptions] = useState<EmploymentFieldOptions | null>(null);
+  const [managerOptions, setManagerOptions] = useState<ManagerOption[]>([]);
+
   const [skillsData, setSkillsData] = useState<{
     tags: string[]; progress: { skill: string; percentage: number }[];
   } | null>(null);
@@ -288,6 +447,7 @@ function EmployeeDashboardContent() {
   // Raw skills for CRUD in the Skills Manager dialog
   const [rawSkills, setRawSkills] = useState<{ id: string; skillName: string; percentage: number | null }[]>([]);
   const profileFormDefaultsRef = useRef<ProfileFormValues | null>(null);
+  const employmentFormDefaultsRef = useRef<EmploymentFormValues | null>(null);
 
   const [payslipsYear, setPayslipsYear] = useState(new Date().getFullYear());
   const [payslipsData, setPayslipsData] = useState<PayslipsApiData | null>(null);
@@ -369,14 +529,17 @@ function EmployeeDashboardContent() {
       setEmployeeHeaderData(data.headerData);
       setPersonalInformation(data.personalInformation);
       setEmploymentSnapshot(data.employmentSnapshot);
+      setOfficeAccess(data.officeAccess ?? null);
       setSkillsData(data.skillsData);
       setRawSkills(data.skills || []);
       profileFormDefaultsRef.current = employeeToProfileFormValues(data.employee);
+      employmentFormDefaultsRef.current = employeeToEmploymentFormValues(data.employee);
     } catch (error) {
       console.error('Failed to load employee profile:', error);
       setEmployeeHeaderData(null);
       setPersonalInformation(null);
       setEmploymentSnapshot(null);
+      setOfficeAccess(null);
       setSkillsData(null);
       setRawSkills([]);
 
@@ -438,6 +601,34 @@ function EmployeeDashboardContent() {
     setIsEditProfileOpen(true);
   };
 
+  const openEditEmployment = async () => {
+    if (!idParam) return;
+
+    try {
+      setEmploymentOptionsLoading(true);
+      const { default: apiClient } = await import('@/lib/api-client');
+      const [optionsRes, managersRes] = await Promise.all([
+        apiClient.get('/employees/employment-options'),
+        apiClient.get('/employees/manager-options', { params: { excludeId: idParam } }),
+      ]);
+      setEmploymentFieldOptions(optionsRes.data.data as EmploymentFieldOptions);
+      setManagerOptions(managersRes.data.data as ManagerOption[]);
+      if (employmentFormDefaultsRef.current) {
+        employmentForm.reset(employmentFormDefaultsRef.current);
+      }
+      setIsEditEmploymentOpen(true);
+    } catch (error) {
+      console.error('Failed to load employment editor options', error);
+      toast({
+        variant: 'destructive',
+        title: 'Could not open employment editor',
+        description: 'Failed to load employment field options. Please try again.',
+      });
+    } finally {
+      setEmploymentOptionsLoading(false);
+    }
+  };
+
   const onProfileSubmit = async (values: ProfileFormValues) => {
     if (!idParam) {
       toast({
@@ -469,6 +660,47 @@ function EmployeeDashboardContent() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const onEmploymentSubmit = async (values: EmploymentFormValues) => {
+    if (!idParam) {
+      toast({
+        variant: 'destructive',
+        title: 'Save failed',
+        description: 'Employee ID is missing from the page URL.',
+      });
+      return;
+    }
+
+    try {
+      setEmploymentSubmitting(true);
+      const { default: apiClient } = await import('@/lib/api-client');
+      await apiClient.put(`/employees/${idParam}/employment`, buildEmploymentPayload(values));
+      await fetchEmployeeData({ silent: true });
+      setIsEditEmploymentOpen(false);
+      toast({ title: 'Employment updated', description: 'Employment details were saved successfully.' });
+    } catch (error) {
+      console.error('Failed to update employment', error);
+      let description = 'Could not save employment details. Please try again.';
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 403) {
+          description = 'You do not have permission to edit employment details.';
+        } else if (error.response?.data?.error) {
+          description = String(error.response.data.error);
+        }
+      }
+      toast({ variant: 'destructive', title: 'Save failed', description });
+    } finally {
+      setEmploymentSubmitting(false);
+    }
+  };
+
+  const onEmploymentSubmitError = () => {
+    toast({
+      variant: 'destructive',
+      title: 'Please fix the form errors',
+      description: 'Check the highlighted fields and try again.',
+    });
   };
 
   const onProfileSubmitError = () => {
@@ -611,12 +843,21 @@ function EmployeeDashboardContent() {
 
           <div className="flex items-center gap-2.5">
             {canEditProfile && (
+              <>
               <button 
                 onClick={openEditProfile}
                 className="px-4 py-2 border border-border text-xs font-bold text-foreground bg-card hover:bg-muted/50 rounded-[var(--radius)] transition-colors shadow-sm"
               >
                 Edit profile
               </button>
+              <button
+                onClick={openEditEmployment}
+                disabled={employmentOptionsLoading}
+                className="px-4 py-2 border border-border text-xs font-bold text-foreground bg-card hover:bg-muted/50 rounded-[var(--radius)] transition-colors shadow-sm disabled:opacity-50"
+              >
+                {employmentOptionsLoading ? 'Loading…' : 'Edit employment'}
+              </button>
+              </>
             )}
             <button
               onClick={() => {
@@ -1162,7 +1403,20 @@ fill="none"
                   <thead>
                     <tr className="border-b border-border bg-transparent">
                       <th colSpan={2} className="px-6 py-4 text-base font-bold text-foreground tracking-tight">
-                        Employment snapshot
+                        <div className="flex items-center justify-between gap-3">
+                          <span>Employment snapshot</span>
+                          {canEditProfile && (
+                            <button
+                              type="button"
+                              onClick={openEditEmployment}
+                              disabled={employmentOptionsLoading}
+                              className="text-muted-foreground/70 hover:text-foreground p-1 transition-colors border border-border rounded bg-muted/20 disabled:opacity-50"
+                              aria-label="Edit employment"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </th>
                     </tr>
                   </thead>
@@ -1190,7 +1444,7 @@ fill="none"
                 <h2 className="text-lg font-bold text-foreground tracking-tight">Office & access</h2>
                 
                 <div className="space-y-3.5">
-                  {officeAccessData.details.map((detail, idx) => (
+                  {officeAccess?.details.map((detail, idx) => (
                     <div key={idx} className="flex justify-between items-center text-xs pb-2 border-b last:border-0 border-dashed border-border/70">
                       <span className="font-medium text-muted-foreground tracking-tight">{detail.label}</span>
                       <span className="font-bold text-foreground tracking-tight">{detail.value}</span>
@@ -1201,7 +1455,7 @@ fill="none"
                 <div className="space-y-2 pt-2">
                   <span className="block text-xs font-bold text-muted-foreground tracking-tight">Active Modules</span>
                   <div className="flex flex-wrap gap-1.5">
-                    {officeAccessData.activeModules.map((mod, idx) => (
+                    {officeAccess?.activeModules.map((mod, idx) => (
                       <span 
                         key={idx} 
                         className={`px-2 py-0.5 border rounded text-[10px] font-bold tracking-wider ${
@@ -1256,7 +1510,15 @@ fill="none"
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Date of Birth</Label>
-                    <Input type="date" {...profileForm.register('dateOfBirth')} className="text-sm" />
+                    <Input
+                      type="date"
+                      max={getMaxDateOfBirth()}
+                      {...profileForm.register('dateOfBirth')}
+                      className="text-sm"
+                    />
+                    {profileForm.formState.errors.dateOfBirth && (
+                      <p className="text-xs text-red-500">{profileForm.formState.errors.dateOfBirth.message}</p>
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Gender</Label>
@@ -1316,37 +1578,140 @@ fill="none"
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <h3 className="text-sm font-bold text-foreground tracking-tight border-b pb-2">Employment</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Department</Label>
-                    <Input {...profileForm.register('department')} className="text-sm" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Designation</Label>
-                    <Input {...profileForm.register('designation')} className="text-sm" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Grade</Label>
-                    <Input {...profileForm.register('grade')} className="text-sm" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Location</Label>
-                    <Input {...profileForm.register('location')} className="text-sm" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Employment Type</Label>
-                    <Input {...profileForm.register('employeeType')} className="text-sm" />
-                  </div>
-                </div>
-              </div>
-
               <div className="pt-6 pb-8 border-t flex justify-end gap-3">
                 <Button type="button" variant="outline" onClick={() => setIsEditProfileOpen(false)}>Cancel</Button>
                 <Button type="submit" disabled={isSubmitting} className="bg-[#7B6AE6] hover:bg-[#6959cf] text-white font-bold">
                   {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                   Save Changes
+                </Button>
+              </div>
+            </form>
+          </SheetContent>
+        </Sheet>
+
+        <Sheet open={isEditEmploymentOpen} onOpenChange={setIsEditEmploymentOpen}>
+          <SheetContent className="overflow-y-auto w-full sm:max-w-xl">
+            <SheetHeader className="mb-6">
+              <SheetTitle>Edit Employment Details</SheetTitle>
+            </SheetHeader>
+            <form onSubmit={employmentForm.handleSubmit(onEmploymentSubmit, onEmploymentSubmitError)} className="space-y-6">
+              <div className="rounded-md border border-border bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
+                Employee ID is assigned by the system and cannot be changed here. You can update the line manager and other employment fields below.
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold text-foreground tracking-tight border-b pb-2">Role & organization</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Department</Label>
+                    <select {...employmentForm.register('department')} className={selectFieldClassName}>
+                      <option value="">Unassigned</option>
+                      {employmentFieldOptions?.departments.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Designation</Label>
+                    <Input {...employmentForm.register('designation')} className="text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Grade</Label>
+                    <Input {...employmentForm.register('grade')} className="text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Location</Label>
+                    <Input {...employmentForm.register('location')} className="text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Employment Status</Label>
+                    <select {...employmentForm.register('employmentStatus')} className={selectFieldClassName}>
+                      {employmentFieldOptions?.employmentStatuses.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                    {employmentForm.formState.errors.employmentStatus && (
+                      <p className="text-xs text-red-500">{employmentForm.formState.errors.employmentStatus.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Work Mode</Label>
+                    <Input
+                      {...employmentForm.register('employeeType')}
+                      list="employee-type-options"
+                      className="text-sm"
+                      placeholder="e.g. Hybrid, Remote, Onsite"
+                    />
+                    <datalist id="employee-type-options">
+                      {employmentFieldOptions?.employeeTypes.map((value) => (
+                        <option key={value} value={value} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div className="space-y-1.5 col-span-2">
+                    <Label className="text-xs">Contract Type</Label>
+                    <Input
+                      {...employmentForm.register('contractType')}
+                      list="contract-type-options"
+                      className="text-sm"
+                      placeholder="e.g. Permanent, Contract"
+                    />
+                    <datalist id="contract-type-options">
+                      {employmentFieldOptions?.contractTypes.map((value) => (
+                        <option key={value} value={value} />
+                      ))}
+                    </datalist>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold text-foreground tracking-tight border-b pb-2">Dates & reporting</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Join Date</Label>
+                    <Input
+                      type="date"
+                      max={getMaxJoinDate()}
+                      {...employmentForm.register('joiningDate')}
+                      className="text-sm"
+                    />
+                    {employmentForm.formState.errors.joiningDate && (
+                      <p className="text-xs text-red-500">{employmentForm.formState.errors.joiningDate.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Probation End</Label>
+                    <Input
+                      type="date"
+                      min={watchedJoiningDate ? getMinProbationEndDate(watchedJoiningDate) : undefined}
+                      {...employmentForm.register('probationEnd')}
+                      className="text-sm"
+                    />
+                    {employmentForm.formState.errors.probationEnd && (
+                      <p className="text-xs text-red-500">{employmentForm.formState.errors.probationEnd.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5 col-span-2">
+                    <Label className="text-xs">Line Manager</Label>
+                    <select {...employmentForm.register('managerId')} className={selectFieldClassName}>
+                      <option value="">No line manager</option>
+                      {managerOptions.map((manager) => (
+                        <option key={manager.id} value={manager.id}>
+                          {manager.name}
+                          {manager.designation ? ` · ${manager.designation}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-6 pb-8 border-t flex justify-end gap-3">
+                <Button type="button" variant="outline" onClick={() => setIsEditEmploymentOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={employmentSubmitting} className="bg-[#7B6AE6] hover:bg-[#6959cf] text-white font-bold">
+                  {employmentSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                  Save Employment
                 </Button>
               </div>
             </form>

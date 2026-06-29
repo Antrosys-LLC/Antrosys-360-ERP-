@@ -24,6 +24,7 @@ export async function loginHandler(request: FastifyRequest, reply: FastifyReply)
   }
 
   const tokens = await authService.generateTokenPair(user.id, user.role);
+  await authService.recordLastLogin(user.id);
   return reply.code(200).send({
     mfaRequired: false,
     ...tokens,
