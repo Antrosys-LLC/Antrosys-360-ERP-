@@ -34,3 +34,4 @@ pnpm-debug.log*
 *.tsbuildinfo
 dist/
 .turbo
+apps/web/.turbo
