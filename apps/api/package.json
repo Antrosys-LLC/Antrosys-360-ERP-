@@ -9,7 +9,7 @@
     "lint": "tsc --noEmit",
     "db:migrate": "prisma migrate dev --name schema_update",
     "db:seed": "prisma db seed",
-    "db:reset": "prisma migrate reset"
+    "db:reset": "prisma migrate reset --force"
   },
   "dependencies": {
     "@antrosys/types": "workspace:*",
