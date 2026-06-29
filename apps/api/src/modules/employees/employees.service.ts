@@ -1,6 +1,14 @@
-import { Department, EmploymentStatus, Gender } from '@prisma/client';
+import { Department, EmploymentStatus, Gender, PayslipStatus } from '@prisma/client';
 import { prisma } from '../../config/database';
-import type { ListEmployeesQuery, UpdatePersonalBody, UpsertSkillBody } from './employees.schema';
+import type {
+  ListEmployeesQuery,
+  UpdatePersonalBody,
+  UpsertSkillBody,
+  EmployeePayslipsQuery,
+} from './employees.schema';
+import { APP_DEFAULT_CURRENCY } from '../../shared/currency/currency-constants';
+import { formatCurrencyAmount, formatCurrencyCompact } from '../../shared/currency/format-currency';
+import { buildPayslipPdf } from '../../shared/pdf/payslip-pdf';
 
 const DEPARTMENT_ALIASES: Record<string, Department> = {
   engineering: 'ENGINEERING',
@@ -186,4 +194,136 @@ export async function deleteSkill(employeeId: string, skillId: string) {
 
   await prisma.employeeSkill.delete({ where: { id: skillId } });
   return skill;
+}
+
+// ============================================================================
+// PAYSLIPS – list by year
+// ============================================================================
+
+const PAYSLIP_STATUS_LABEL: Record<PayslipStatus, string> = {
+  PROCESSING: 'Processing',
+  PAID: 'Paid',
+  CANCELLED: 'Cancelled',
+};
+
+const PAYSLIP_STATUS_COLOR: Record<PayslipStatus, string> = {
+  PROCESSING: 'bg-amber-50 text-amber-700 border-amber-100',
+  PAID: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+  CANCELLED: 'bg-rose-50 text-rose-500 border-rose-100',
+};
+
+function payslipPeriodLabel(date: Date): string {
+  return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
+
+export async function getEmployeePayslips(employeeId: string, query: EmployeePayslipsQuery) {
+  const employee = await prisma.employee.findUnique({
+    where: { id: employeeId },
+    select: { id: true },
+  });
+  if (!employee) return null;
+
+  const allPayslips = await prisma.employeePayslip.findMany({
+    where: { employeeId, status: { not: 'CANCELLED' } },
+    select: { periodMonth: true, currencyCode: true },
+    orderBy: { periodMonth: 'desc' },
+  });
+
+  const availableYears = [
+    ...new Set(allPayslips.map((p) => new Date(p.periodMonth).getUTCFullYear())),
+  ].sort((a, b) => b - a);
+
+  const selectedYear =
+    availableYears.length > 0 && !availableYears.includes(query.year)
+      ? availableYears[0]
+      : query.year;
+
+  const yearStart = new Date(Date.UTC(selectedYear, 0, 1));
+  const yearEnd = new Date(Date.UTC(selectedYear, 11, 31, 23, 59, 59, 999));
+
+  const payslips = await prisma.employeePayslip.findMany({
+    where: {
+      employeeId,
+      periodMonth: { gte: yearStart, lte: yearEnd },
+      status: { not: 'CANCELLED' },
+    },
+    orderBy: { periodMonth: 'desc' },
+  });
+
+  const currencyCode = payslips[0]?.currencyCode ?? APP_DEFAULT_CURRENCY;
+
+  let ytdGross = 0;
+  let ytdDeductions = 0;
+  let ytdNet = 0;
+  for (const p of payslips) {
+    ytdGross += Number(p.grossAmount);
+    ytdDeductions += Number(p.deductionsAmount);
+    ytdNet += Number(p.netAmount);
+  }
+
+  return {
+    availableYears: availableYears.length > 0 ? availableYears : [selectedYear],
+    selectedYear,
+    currencyCode,
+    rows: payslips.map((p) => ({
+      id: p.id,
+      month: payslipPeriodLabel(new Date(p.periodMonth)),
+      gross: formatCurrencyAmount(Number(p.grossAmount), p.currencyCode),
+      deductions: formatCurrencyAmount(Number(p.deductionsAmount), p.currencyCode),
+      tax: formatCurrencyAmount(Number(p.taxAmount), p.currencyCode),
+      net: formatCurrencyAmount(Number(p.netAmount), p.currencyCode),
+      status: PAYSLIP_STATUS_LABEL[p.status],
+      color: PAYSLIP_STATUS_COLOR[p.status],
+      downloadable: true,
+    })),
+    ytd: {
+      gross: formatCurrencyCompact(ytdGross, currencyCode),
+      deductions: formatCurrencyCompact(ytdDeductions, currencyCode),
+      net: formatCurrencyCompact(ytdNet, currencyCode),
+    },
+  };
+}
+
+// ============================================================================
+// PAYSLIPS – download PDF
+// ============================================================================
+
+export async function downloadEmployeePayslip(employeeId: string, payslipId: string) {
+  const payslip = await prisma.employeePayslip.findFirst({
+    where: { id: payslipId, employeeId },
+    include: {
+      employee: {
+        select: {
+          firstName: true,
+          lastName: true,
+          employeeCode: true,
+          department: true,
+          designation: true,
+        },
+      },
+    },
+  });
+
+  if (!payslip) return null;
+
+  const employeeName = `${payslip.employee.firstName} ${payslip.employee.lastName}`;
+  const periodLabel = payslipPeriodLabel(new Date(payslip.periodMonth));
+  const filename = `payslip-${payslip.employee.employeeCode ?? employeeId}-${periodLabel.replace(/\s+/g, '-')}.pdf`;
+
+  const buffer = await buildPayslipPdf({
+    employeeName,
+    employeeCode: payslip.employee.employeeCode,
+    department: payslip.employee.department?.replace(/_/g, ' ') ?? null,
+    designation: payslip.employee.designation,
+    periodLabel,
+    grossAmount: Number(payslip.grossAmount),
+    deductionsAmount: Number(payslip.deductionsAmount),
+    taxAmount: Number(payslip.taxAmount),
+    netAmount: Number(payslip.netAmount),
+    currencyCode: payslip.currencyCode,
+    status: PAYSLIP_STATUS_LABEL[payslip.status],
+    generatedAt: new Date(),
+  });
+
+  return { buffer, filename };
 }

@@ -54,15 +54,6 @@ const attendanceLogsTable = [
   { date: "14 May 2026", day: "Thu", checkIn: "08:55 AM", checkOut: "05:05 PM", total: "8.1 hrs", ot: "-", status: "Present", color: "bg-purple-50 text-[#7B6AE6] border-purple-100" }
 ];
 
-const payslipsData = [
-  { month: "May 2026", gross: "PKR 350,000", deductions: "PKR 15,000", tax: "PKR 25,000", net: "PKR 310,000", status: "Processing", color: "bg-amber-50 text-amber-700 border-amber-100" },
-  { month: "Apr 2026", gross: "PKR 350,000", deductions: "PKR 15,000", tax: "PKR 25,000", net: "PKR 310,000", status: "Paid", color: "bg-emerald-50 text-emerald-700 border-emerald-100" },
-  { month: "Mar 2026", gross: "PKR 350,000", deductions: "PKR 15,000", tax: "PKR 25,000", net: "PKR 310,000", status: "Paid", color: "bg-emerald-50 text-emerald-700 border-emerald-100" },
-  { month: "Feb 2026", gross: "PKR 350,000", deductions: "PKR 15,000", tax: "PKR 25,000", net: "PKR 310,000", status: "Paid", color: "bg-emerald-50 text-emerald-700 border-emerald-100" },
-  { month: "Jan 2026", gross: "PKR 350,000", deductions: "PKR 15,000", tax: "PKR 25,000", net: "PKR 310,000", status: "Paid", color: "bg-emerald-50 text-emerald-700 border-emerald-100" },
-  { month: "Dec 2025", gross: "PKR 310,000", deductions: "PKR 12,000", tax: "PKR 20,000", net: "PKR 278,000", status: "Paid", color: "bg-emerald-50 text-emerald-700 border-emerald-100" }
-];
-
 // ============================================================================
 // FORM SCHEMAS
 // ============================================================================
@@ -97,6 +88,32 @@ const skillSchema = z.object({
 });
 
 type SkillFormValues = z.infer<typeof skillSchema>;
+
+interface PayslipRow {
+  id: string;
+  month: string;
+  gross: string;
+  deductions: string;
+  tax: string;
+  net: string;
+  status: string;
+  color: string;
+  downloadable: boolean;
+}
+
+interface PayslipsApiData {
+  availableYears: number[];
+  selectedYear: number;
+  currencyCode: string;
+  rows: PayslipRow[];
+  ytd: { gross: string; deductions: string; net: string };
+}
+
+const MAX_VISIBLE_PAYSLIPS = 8;
+/** Matches thead `py-3` row height for scroll cap calculation */
+const PAYSLIP_TABLE_HEADER_PX = 41;
+/** Matches tbody `py-3.5` row height for scroll cap calculation */
+const PAYSLIP_TABLE_ROW_PX = 44;
 
 function toDateInputValue(date: string | Date | null | undefined): string {
   if (!date) return '';
@@ -228,6 +245,66 @@ function EmployeeDashboardContent() {
   const [rawSkills, setRawSkills] = useState<{ id: string; skillName: string; percentage: number | null }[]>([]);
   const profileFormDefaultsRef = useRef<ProfileFormValues | null>(null);
 
+  const [payslipsYear, setPayslipsYear] = useState(new Date().getFullYear());
+  const [payslipsData, setPayslipsData] = useState<PayslipsApiData | null>(null);
+  const [payslipsLoading, setPayslipsLoading] = useState(false);
+  const [downloadingPayslipId, setDownloadingPayslipId] = useState<string | null>(null);
+
+  const fetchPayslips = useCallback(async (year: number) => {
+    if (!idParam) return;
+
+    try {
+      setPayslipsLoading(true);
+      const { default: apiClient } = await import('@/lib/api-client');
+      const response = await apiClient.get(`/employees/${idParam}/payslips`, { params: { year } });
+      const data = response.data.data as PayslipsApiData;
+      setPayslipsData(data);
+      setPayslipsYear(data.selectedYear);
+    } catch (error) {
+      console.error('Failed to load payslips:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Failed to load payslips',
+        description: 'Could not fetch payslip history. Please try again.',
+      });
+    } finally {
+      setPayslipsLoading(false);
+    }
+  }, [idParam, toast]);
+
+  const handlePayslipDownload = async (payslipId: string) => {
+    if (!idParam) return;
+
+    try {
+      setDownloadingPayslipId(payslipId);
+      const { default: apiClient } = await import('@/lib/api-client');
+      const response = await apiClient.get(
+        `/employees/${idParam}/payslips/${payslipId}/download`,
+        { responseType: 'blob' },
+      );
+      const disposition = response.headers['content-disposition'] as string | undefined;
+      const filenameMatch = disposition?.match(/filename="([^"]+)"/);
+      const filename = filenameMatch?.[1] ?? `payslip-${payslipId}.pdf`;
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to download payslip:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Download failed',
+        description: 'Could not download the payslip. Please try again.',
+      });
+    } finally {
+      setDownloadingPayslipId(null);
+    }
+  };
+
   const fetchEmployeeData = useCallback(async (options?: { silent?: boolean }) => {
     if (!idParam) {
       setIsLoading(false);
@@ -270,6 +347,19 @@ function EmployeeDashboardContent() {
   useEffect(() => {
     fetchEmployeeData();
   }, [fetchEmployeeData]);
+
+  useEffect(() => {
+    if (activeTab === 'Payslips' && idParam) {
+      fetchPayslips(payslipsYear);
+    }
+    // Refetch only when opening the tab or switching employees
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, idParam]);
+
+  const handlePayslipsYearChange = (year: number) => {
+    setPayslipsYear(year);
+    fetchPayslips(year);
+  };
 
   const openEditProfile = () => {
     if (profileFormDefaultsRef.current) {
@@ -389,6 +479,11 @@ function EmployeeDashboardContent() {
     { name: "Leave history" },
     { name: "Attendance logs" }
   ];
+
+  const payslipRowCount = payslipsData?.rows.length ?? 0;
+  const payslipTableScrollable = payslipRowCount > MAX_VISIBLE_PAYSLIPS;
+  const payslipTableMaxHeight =
+    PAYSLIP_TABLE_HEADER_PX + PAYSLIP_TABLE_ROW_PX * MAX_VISIBLE_PAYSLIPS;
 
   return (
     <div className="bg-[#f8f9fa] text-foreground min-h-screen">
@@ -630,67 +725,102 @@ fill="none"
         {activeTab === "Payslips" && (
           <div className="bg-white text-card-foreground border border-border rounded-[var(--radius)] overflow-hidden shadow-sm flex flex-col">
             
-            {/* Header Block */}
             <div className="p-6 pb-4 flex justify-between items-center">
-              <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight">Payslips · 2026</h2>
+              <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight">
+                Payslips · {payslipsData?.selectedYear ?? payslipsYear}
+              </h2>
               <div className="relative">
-                <select className="appearance-none bg-white border border-border rounded-[var(--radius)] pl-3 pr-8 py-1.5 text-xs font-semibold text-foreground shadow-sm focus:outline-none cursor-pointer">
-                  <option>2026</option>
+                <select
+                  value={payslipsYear}
+                  onChange={(e) => handlePayslipsYearChange(Number(e.target.value))}
+                  disabled={payslipsLoading || !payslipsData?.availableYears.length}
+                  className="appearance-none bg-white border border-border rounded-[var(--radius)] pl-3 pr-8 py-1.5 text-xs font-semibold text-foreground shadow-sm focus:outline-none cursor-pointer disabled:opacity-50"
+                >
+                  {(payslipsData?.availableYears ?? [payslipsYear]).map((year) => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
                 </select>
                 <ChevronDown className="w-3.5 h-3.5 text-muted-foreground absolute right-2.5 top-2.5 pointer-events-none" />
               </div>
             </div>
 
-            {/* Table */}
-            <div className="overflow-x-auto w-full">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-t border-b border-border text-muted-foreground font-semibold bg-white">
-                    <th className="px-6 py-3 font-semibold text-left">Month</th>
-                    <th className="px-6 py-3 font-semibold text-right">Gross</th>
-                    <th className="px-6 py-3 font-semibold text-right">Deductions</th>
-                    <th className="px-6 py-3 font-semibold text-right">Tax</th>
-                    <th className="px-6 py-3 font-semibold text-right">Net pay</th>
-                    <th className="px-6 py-3 font-semibold text-left">Status</th>
-                    <th className="px-6 py-3 font-semibold text-left">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {payslipsData.map((row, idx) => (
-                    <tr key={idx} className="border-b last:border-0 border-border bg-white hover:bg-muted/10 transition-colors">
-                      <td className="px-6 py-3.5 font-medium text-foreground">{row.month}</td>
-                      <td className="px-6 py-3.5 text-right font-medium text-muted-foreground">{row.gross}</td>
-                      <td className="px-6 py-3.5 text-right font-medium text-muted-foreground">{row.deductions}</td>
-                      <td className="px-6 py-3.5 text-right font-medium text-muted-foreground">{row.tax}</td>
-                      <td className="px-6 py-3.5 text-right font-bold text-foreground">{row.net}</td>
-                      <td className="px-6 py-3.5">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${row.color}`}>
-                          {row.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-3.5">
-                        <button className="inline-flex items-center gap-1.5 text-[#7B6AE6] hover:underline font-bold text-xs">
-                          <Download className="w-3.5 h-3.5" /> Download
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {payslipsLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="w-8 h-8 text-primary animate-spin" />
+              </div>
+            ) : (
+              <>
+                <div
+                  className={`overflow-x-auto w-full ${payslipTableScrollable ? 'overflow-y-auto custom-scrollbar' : ''}`}
+                  style={payslipTableScrollable ? { maxHeight: payslipTableMaxHeight } : undefined}
+                >
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className={`border-t border-b border-border text-muted-foreground font-semibold bg-white ${payslipTableScrollable ? 'sticky top-0 z-10' : ''}`}>
+                        <th className="px-6 py-3 font-semibold text-left">Month</th>
+                        <th className="px-6 py-3 font-semibold text-right">Gross</th>
+                        <th className="px-6 py-3 font-semibold text-right">Deductions</th>
+                        <th className="px-6 py-3 font-semibold text-right">Tax</th>
+                        <th className="px-6 py-3 font-semibold text-right">Net pay</th>
+                        <th className="px-6 py-3 font-semibold text-left">Status</th>
+                        <th className="px-6 py-3 font-semibold text-left">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {payslipsData?.rows.length ? (
+                        payslipsData.rows.map((row) => (
+                          <tr key={row.id} className="border-b last:border-0 border-border bg-white hover:bg-muted/10 transition-colors">
+                            <td className="px-6 py-3.5 font-medium text-foreground">{row.month}</td>
+                            <td className="px-6 py-3.5 text-right font-medium text-muted-foreground">{row.gross}</td>
+                            <td className="px-6 py-3.5 text-right font-medium text-muted-foreground">{row.deductions}</td>
+                            <td className="px-6 py-3.5 text-right font-medium text-muted-foreground">{row.tax}</td>
+                            <td className="px-6 py-3.5 text-right font-bold text-foreground">{row.net}</td>
+                            <td className="px-6 py-3.5">
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${row.color}`}>
+                                {row.status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-3.5">
+                              <button
+                                type="button"
+                                onClick={() => handlePayslipDownload(row.id)}
+                                disabled={!row.downloadable || downloadingPayslipId === row.id}
+                                className="inline-flex items-center gap-1.5 text-[#7B6AE6] hover:underline font-bold text-xs disabled:opacity-50 disabled:no-underline"
+                              >
+                                {downloadingPayslipId === row.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Download className="w-3.5 h-3.5" />
+                                )}
+                                Download
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={7} className="px-6 py-12 text-center text-sm text-muted-foreground">
+                            No payslips found for {payslipsData?.selectedYear ?? payslipsYear}.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
 
-            {/* Footer YTD Summary Capsules */}
-            <div className="p-6 pt-4 pb-6 flex flex-wrap gap-2.5">
-              <div className="px-3.5 py-1.5 border border-border/70 rounded-full text-xs font-semibold text-foreground bg-[#f8f9fa] shadow-sm">
-                YTD gross: PKR 1.66M
-              </div>
-              <div className="px-3.5 py-1.5 border border-border/70 rounded-full text-xs font-semibold text-foreground bg-[#f8f9fa] shadow-sm">
-                YTD deductions: PKR 186K
-              </div>
-              <div className="px-3.5 py-1.5 border border-border/70 rounded-full text-xs font-semibold text-foreground bg-[#f8f9fa] shadow-sm">
-                YTD net: PKR 1.39M
-              </div>
-            </div>
+                <div className="p-6 pt-4 pb-6 flex flex-wrap gap-2.5">
+                  <div className="px-3.5 py-1.5 border border-border/70 rounded-full text-xs font-semibold text-foreground bg-[#f8f9fa] shadow-sm">
+                    YTD gross: {payslipsData?.ytd.gross ?? '—'}
+                  </div>
+                  <div className="px-3.5 py-1.5 border border-border/70 rounded-full text-xs font-semibold text-foreground bg-[#f8f9fa] shadow-sm">
+                    YTD deductions: {payslipsData?.ytd.deductions ?? '—'}
+                  </div>
+                  <div className="px-3.5 py-1.5 border border-border/70 rounded-full text-xs font-semibold text-foreground bg-[#f8f9fa] shadow-sm">
+                    YTD net: {payslipsData?.ytd.net ?? '—'}
+                  </div>
+                </div>
+              </>
+            )}
 
           </div>
         )}

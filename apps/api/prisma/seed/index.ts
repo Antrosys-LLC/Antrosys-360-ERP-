@@ -174,18 +174,22 @@ async function main() {
   });
 
   if (mainManager && subManager) {
-    const managerTeam = await prisma.team.create({
-      data: {
+    const managerTeam = await prisma.team.upsert({
+      where: { managerId: mainManager.id },
+      update: { name: 'Operations Main Team' },
+      create: {
         name: 'Operations Main Team',
         managerId: mainManager.id,
-      }
+      },
     });
 
-    const subManagerTeam = await prisma.team.create({
-      data: {
+    const subManagerTeam = await prisma.team.upsert({
+      where: { managerId: subManager.id },
+      update: { name: 'Engineering Sub Team' },
+      create: {
         name: 'Engineering Sub Team',
         managerId: subManager.id,
-      }
+      },
     });
 
     await prisma.employee.update({
@@ -346,6 +350,9 @@ async function main() {
   await seedHrData();
   const { seedLedgerData } = await import('./ledger.seed');
   await seedLedgerData(prisma);
+
+  const { seedPayslipsData } = await import('./payslips.seed');
+  await seedPayslipsData(prisma);
 
   console.log('\n🎉 Seed completed successfully!');
 }

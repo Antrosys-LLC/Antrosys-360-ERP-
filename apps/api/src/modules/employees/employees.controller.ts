@@ -5,6 +5,8 @@ import {
   updatePersonalBodySchema,
   upsertSkillBodySchema,
   deleteSkillParamsSchema,
+  employeePayslipsQuerySchema,
+  employeePayslipParamsSchema,
 } from './employees.schema';
 import * as employeesService from './employees.service';
 
@@ -290,4 +292,52 @@ export async function deleteSkillHandler(request: FastifyRequest, reply: Fastify
   }
 
   return reply.code(200).send({ status: 'success', data: { deleted: true } });
+}
+
+// ============================================================================
+// GET /employees/:id/payslips – List payslips for a year
+// ============================================================================
+
+export async function getEmployeePayslipsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const paramsParsed = employeeParamsSchema.safeParse(request.params);
+  if (!paramsParsed.success) {
+    return reply.code(400).send({ error: 'Validation failed', details: paramsParsed.error.flatten() });
+  }
+
+  const queryParsed = employeePayslipsQuerySchema.safeParse(request.query);
+  if (!queryParsed.success) {
+    return reply.code(400).send({ error: 'Validation failed', details: queryParsed.error.flatten() });
+  }
+
+  const result = await employeesService.getEmployeePayslips(paramsParsed.data.id, queryParsed.data);
+  if (!result) {
+    return reply.code(404).send({ error: 'Employee not found' });
+  }
+
+  return reply.code(200).send({ status: 'success', data: result });
+}
+
+// ============================================================================
+// GET /employees/:id/payslips/:payslipId/download – Download payslip PDF
+// ============================================================================
+
+export async function downloadEmployeePayslipHandler(request: FastifyRequest, reply: FastifyReply) {
+  const paramsParsed = employeePayslipParamsSchema.safeParse(request.params);
+  if (!paramsParsed.success) {
+    return reply.code(400).send({ error: 'Validation failed', details: paramsParsed.error.flatten() });
+  }
+
+  const result = await employeesService.downloadEmployeePayslip(
+    paramsParsed.data.id,
+    paramsParsed.data.payslipId,
+  );
+
+  if (!result) {
+    return reply.code(404).send({ error: 'Payslip not found' });
+  }
+
+  return reply
+    .header('Content-Type', 'application/pdf')
+    .header('Content-Disposition', `attachment; filename="${result.filename}"`)
+    .send(result.buffer);
 }
