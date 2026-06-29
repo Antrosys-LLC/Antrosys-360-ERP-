@@ -152,6 +152,32 @@ enum HrLetterType {
   OTHER
 }
 
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  LEAVE
+  HALF_DAY
+}
+
+enum LeaveType {
+  ANNUAL
+  SICK
+  CASUAL
+  MATERNITY
+  OTHER
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+enum LedgerEntryType {
+  DEBIT
+  CREDIT
+}
+
 model User {
   id                       String             @id @default(cuid())
   email                    String             @unique
@@ -178,6 +204,8 @@ model User {
   onboardingCreated        OnboardingRecord[] @relation("OnboardingCreated")
   hrLettersGenerated       HrLetter[]         @relation("HrLettersGenerated")
   uploadedDocuments        Document[]         @relation("DocumentUploadedBy")
+  workScheduleUpdates      WorkScheduleConfig[] @relation("WorkScheduleUpdatedBy")
+  ledgerEntriesCreated     LedgerEntry[]      @relation("LedgerEntriesCreated")
 
   @@map("users")
 }
@@ -230,6 +258,8 @@ model Employee {
   onboarding             OnboardingRecord?
   hrLetters              HrLetter[]
   documents             Document[]           @relation("EmployeeDocuments")
+  leaveBalances          LeaveBalance[]
+  payslips               EmployeePayslip[]
 
   @@index([department])
   @@index([employmentStatus])
@@ -498,17 +528,19 @@ model SystemServiceHealth {
 }
 
 model Attendance {
-  id         String    @id @default(cuid())
-  employeeId String
-  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  date       DateTime  @db.Date
-  checkIn    DateTime?
-  checkOut   DateTime?
-  status     String // "PRESENT", "ABSENT", "LATE", "LEAVE"
-  hours      Decimal?  @db.Decimal(4, 2)
-  isFlagged  Boolean   @default(false)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id              String           @id @default(cuid())
+  employeeId      String
+  employee        Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date            DateTime         @db.Date
+  checkIn         DateTime?
+  checkOut        DateTime?
+  checkInLocation String?
+  status          AttendanceStatus @default(ABSENT)
+  hours           Decimal?         @db.Decimal(4, 2)
+  overtimeHours   Decimal?         @db.Decimal(4, 2)
+  isFlagged       Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   @@unique([employeeId, date])
   @@index([employeeId])
@@ -517,23 +549,92 @@ model Attendance {
 }
 
 model LeaveRequest {
-  id           String    @id @default(cuid())
+  id           String             @id @default(cuid())
   employeeId   String
-  employee     Employee  @relation("EmployeeLeaves", fields: [employeeId], references: [id], onDelete: Cascade)
-  type         String // "SICK", "ANNUAL", "CASUAL", "MATERNITY"
-  startDate    DateTime
-  endDate      DateTime
+  employee     Employee           @relation("EmployeeLeaves", fields: [employeeId], references: [id], onDelete: Cascade)
+  type         LeaveType
+  startDate    DateTime           @db.Date
+  endDate      DateTime           @db.Date
   durationDays Int
-  status       String // "PENDING", "APPROVED", "REJECTED"
+  status       LeaveRequestStatus @default(PENDING)
   reason       String?
   approvedById String?
-  approvedBy   Employee? @relation("ApprovedLeaves", fields: [approvedById], references: [id])
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  approvedBy   Employee?          @relation("ApprovedLeaves", fields: [approvedById], references: [id])
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
 
   @@index([employeeId])
   @@index([status])
   @@map("leave_requests")
+}
+
+model LeaveBalance {
+  id            String    @id @default(cuid())
+  employeeId    String
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType     LeaveType
+  year          Int
+  allocatedDays Decimal   @db.Decimal(5, 1)
+  usedDays      Decimal   @default(0) @db.Decimal(5, 1)
+  pendingDays   Decimal   @default(0) @db.Decimal(5, 1)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([employeeId, leaveType, year])
+  @@index([employeeId, year])
+  @@map("leave_balances")
+}
+
+model EmployeePayslip {
+  id              String    @id @default(cuid())
+  employeeId      String
+  employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  payrollId       String?
+  periodStart     DateTime  @db.Date
+  periodEnd       DateTime  @db.Date
+  periodLabel     String
+  currencyCode    String    @default("USD") @db.VarChar(3)
+  grossPay        Decimal   @db.Decimal(14, 2)
+  netPay          Decimal   @db.Decimal(14, 2)
+  taxAmount       Decimal   @default(0) @db.Decimal(14, 2)
+  deductionsTotal Decimal   @default(0) @db.Decimal(14, 2)
+  netPayRatioPct  Int       @default(78)
+  documentUrl     String?
+  paidAt          DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([employeeId, periodStart])
+  @@map("employee_payslips")
+}
+
+model CompanyHoliday {
+  id         String    @id @default(cuid())
+  title      String
+  date       DateTime  @db.Date
+  endDate    DateTime? @db.Date
+  location   String?
+  isNational Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([date])
+  @@map("company_holidays")
+}
+
+model WorkScheduleConfig {
+  id                    String   @id @default("default")
+  standardHoursPerDay   Decimal  @default(8) @db.Decimal(4, 2)
+  halfDayThresholdHours Decimal  @default(4) @db.Decimal(4, 2)
+  overtimeEnabled       Boolean  @default(true)
+  lateAfterHour         Int      @default(9)
+  lateAfterMinute       Int      @default(0)
+  updatedByUserId       String?
+  updatedBy             User?    @relation("WorkScheduleUpdatedBy", fields: [updatedByUserId], references: [id])
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("work_schedule_config")
 }
 
 model JobRequisition {
@@ -668,15 +769,17 @@ model HrLetter {
 }
 
 model Announcement {
-  id        String   @id @default(cuid())
-  title     String
-  content   String
-  authorId  String
-  author    Employee @relation(fields: [authorId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String      @id @default(cuid())
+  title      String
+  content    String
+  authorId   String
+  author     Employee    @relation(fields: [authorId], references: [id])
+  department Department?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
 
   @@index([authorId])
+  @@index([department])
   @@map("announcements")
 }
 
@@ -839,3 +942,70 @@ model BIExecution {
   @@map("bi_executions")
 }
 
+// =========================================================================
+// Ledger & Budget Module
+// =========================================================================
+
+model LedgerAccount {
+  id           String        @id @default(cuid())
+  code         String        @unique  // "1000", "2000", "4000", "6100", etc.
+  name         String                 // "Assets", "Revenue", "Payroll", etc.
+  description  String?
+  sortOrder    Int           @default(0)
+  /// Set only on expense/budget accounts — enables Budget vs Actual computation
+  budgetAmount Decimal?      @db.Decimal(14, 2)
+  currencyCode String        @default("PKR") @db.VarChar(3)
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  entries      LedgerEntry[] @relation("AccountEntries")
+
+  @@index([code])
+  @@map("ledger_accounts")
+}
+
+model LedgerEntry {
+  id              String          @id @default(cuid())
+  date            DateTime        @db.Date
+  ref             String          @db.VarChar(64)   // e.g. "INV-1042", "EXP-401"
+  description     String
+  entryType       LedgerEntryType
+  amount          Decimal         @db.Decimal(14, 2)
+  accountId       String
+  account         LedgerAccount   @relation("AccountEntries", fields: [accountId], references: [id])
+  isVoided        Boolean         @default(false)
+  hasFlag         Boolean         @default(false)   // marks for reconciliation
+  currencyCode    String          @default("PKR") @db.VarChar(3)
+  voidedAt        DateTime?
+  voidedByUserId  String?
+  createdByUserId String
+  createdBy       User            @relation("LedgerEntriesCreated", fields: [createdByUserId], references: [id])
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([date])
+  @@index([accountId])
+  @@index([isVoided])
+  @@index([hasFlag])
+  @@map("ledger_entries")
+}
+
+/// Stores the opening balance and balance-sheet snapshot for a named period.
+/// Totals (credits, debits, closing balance) are derived at query-time from LedgerEntry.
+model LedgerPeriodSummary {
+  id                 String   @id @default(cuid())
+  periodLabel        String   @unique  // e.g. "may-2026", "q2-2026"
+  periodStart        DateTime @db.Date
+  periodEnd          DateTime @db.Date
+  openingBalance     Decimal  @db.Decimal(14, 2)
+  currencyCode       String   @default("PKR") @db.VarChar(3)
+  /// Accounting equation snapshot (balance sheet values)
+  assetsTotal        Decimal  @default(0) @db.Decimal(14, 2)
+  liabilitiesTotal   Decimal  @default(0) @db.Decimal(14, 2)
+  equityTotal        Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([periodStart])
+  @@map("ledger_period_summaries")
+}

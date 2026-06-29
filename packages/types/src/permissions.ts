@@ -135,10 +135,13 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   ],
 
   [Role.EMPLOYEE]: [
+    'attendance:read',
     'attendance:write',
     'leave:read',
     'leave:write',
     'documents:read',
+    'announcements:read',
+    'payroll:read',
   ],
 };
 
