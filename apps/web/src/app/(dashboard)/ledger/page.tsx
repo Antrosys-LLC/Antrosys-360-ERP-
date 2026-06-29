@@ -15,7 +15,6 @@ import {
   voidLedgerEntry,
   type BudgetTrackerItem,
   type BudgetVsActualItem,
-  type ChartOfAccountItem,
   type LedgerEntryItem,
   type LedgerSummary,
   type MonthlyTrendItem,

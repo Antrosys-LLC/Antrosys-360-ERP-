@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "leave_requests" ALTER COLUMN "endDate" SET DATA TYPE DATE,
+ALTER COLUMN "startDate" SET DATA TYPE DATE;
