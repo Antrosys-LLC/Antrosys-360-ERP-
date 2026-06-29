@@ -6,6 +6,7 @@ import {
   postAnnouncementHandler,
   toggleFlagHandler,
   updateLeaveStatusHandler,
+  generateTeamReportHandler,
 } from './manager.controller';
 
 export async function managerRoutes(fastify: FastifyInstance) {
@@ -46,5 +47,11 @@ export async function managerRoutes(fastify: FastifyInstance) {
   fastify.post('/attendance/:employeeId/flag', {
     preHandler: [fastify.requirePermission('attendance:write')],
     handler: toggleFlagHandler,
+  });
+
+  // GET generate team report CSV
+  fastify.get('/report', {
+    preHandler: [fastify.requirePermission('attendance:read')], // Adjust permission as necessary
+    handler: generateTeamReportHandler,
   });
 }

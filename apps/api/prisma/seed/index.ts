@@ -1,4 +1,4 @@
-import { PrismaClient, Role, Department, Gender, EmploymentStatus } from '@prisma/client';
+import { PrismaClient, Role, Department, Gender, EmploymentStatus, LeaveType } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import process from 'process';
 
@@ -165,7 +165,7 @@ async function main() {
     }
   }
 
-  console.log('🔗 Connecting management hierarchy...');
+  console.log('🔗 Connecting management hierarchy and teams...');
   const mainManager = await prisma.employee.findFirst({
     where: { user: { email: 'manager@antrosys.com' } },
   });
@@ -174,9 +174,23 @@ async function main() {
   });
 
   if (mainManager && subManager) {
+    const managerTeam = await prisma.team.create({
+      data: {
+        name: 'Operations Main Team',
+        managerId: mainManager.id,
+      }
+    });
+
+    const subManagerTeam = await prisma.team.create({
+      data: {
+        name: 'Engineering Sub Team',
+        managerId: subManager.id,
+      }
+    });
+
     await prisma.employee.update({
       where: { id: subManager.id },
-      data: { managerId: mainManager.id },
+      data: { managerId: mainManager.id, teamId: managerTeam.id },
     });
 
     const subManagerReports = ['sara.javed@antrosys.com', 'fawad.khan@antrosys.com', 'bilal.hassan@antrosys.com', 'hina.baig@antrosys.com'];
@@ -185,7 +199,7 @@ async function main() {
       if (emp) {
         await prisma.employee.update({
           where: { id: emp.id },
-          data: { managerId: subManager.id },
+          data: { managerId: subManager.id, teamId: subManagerTeam.id },
         });
       }
     }
@@ -196,7 +210,7 @@ async function main() {
       if (emp) {
         await prisma.employee.update({
           where: { id: emp.id },
-          data: { managerId: mainManager.id },
+          data: { managerId: mainManager.id, teamId: managerTeam.id },
         });
       }
     }
@@ -206,7 +220,12 @@ async function main() {
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
 
-  const attendanceData = [
+  const attendanceData: {
+    email: string;
+    checkIn: string | null;
+    status: 'PRESENT' | 'ABSENT' | 'LATE' | 'LEAVE';
+    hours: number;
+  }[] = [
     { email: 'sara.javed@antrosys.com', checkIn: '08:45', status: 'PRESENT', hours: 4.2 },
     { email: 'omar.mirza@antrosys.com', checkIn: '09:02', status: 'PRESENT', hours: 3.9 },
     { email: 'bilal.hassan@antrosys.com', checkIn: null, status: 'ABSENT', hours: 0 },
@@ -240,12 +259,17 @@ async function main() {
   }
 
   console.log('✈️ Seeding leave requests...');
-  const leaveData = [
-    { email: 'sara.javed@antrosys.com', type: 'Sick Leave', duration: 1, reason: 'Flu & headache' },
-    { email: 'fawad.khan@antrosys.com', type: 'Annual Leave', duration: 3, reason: 'Family trip' },
-    { email: 'omar.mirza@antrosys.com', type: 'Casual Leave', duration: 1, reason: 'Personal errand' },
-    { email: 'maria.raza@antrosys.com', type: 'Maternity Leave', duration: 90, reason: 'Maternity leave starts' },
-    { email: 'nadia.qureshi@antrosys.com', type: 'Annual Leave', duration: 5, reason: 'Travel plan' },
+  const leaveData: {
+    email: string;
+    type: LeaveType;
+    duration: number;
+    reason: string;
+  }[] = [
+    { email: 'sara.javed@antrosys.com', type: LeaveType.SICK, duration: 1, reason: 'Flu & headache' },
+    { email: 'fawad.khan@antrosys.com', type: LeaveType.ANNUAL, duration: 3, reason: 'Family trip' },
+    { email: 'omar.mirza@antrosys.com', type: LeaveType.CASUAL, duration: 1, reason: 'Personal errand' },
+    { email: 'maria.raza@antrosys.com', type: LeaveType.MATERNITY, duration: 90, reason: 'Maternity leave starts' },
+    { email: 'nadia.qureshi@antrosys.com', type: LeaveType.ANNUAL, duration: 5, reason: 'Travel plan' },
   ];
 
   for (const item of leaveData) {
@@ -260,6 +284,7 @@ async function main() {
           durationDays: item.duration,
           status: 'PENDING',
           reason: item.reason,
+          attachmentUrl: item.attachmentUrl,
         },
       });
     }
@@ -325,11 +350,19 @@ async function main() {
 
   const { seedRecruitData } = await import('./recruit.seed');
   await seedRecruitData();
-  // 8. Seed BI specific data
   const { seedBizIntelData } = await import('./biz_intel.seed');
   await seedBizIntelData(prisma);
   const { seedHrData } = await import('./hr.seed');
   await seedHrData();
+
+  const { seedLeaveData } = await import('./leave.seed');
+  await seedLeaveData();
+
+  const { seedLedgerData } = await import('./ledger.seed');
+  await seedLedgerData(prisma);
+
+  const { seedEmployeeDashboardData } = await import('./employee_dashboard.seed');
+  await seedEmployeeDashboardData();
 
   console.log('\n🎉 Seed completed successfully!');
 }

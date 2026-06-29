@@ -192,3 +192,24 @@ export async function toggleFlagHandler(request: FastifyRequest, reply: FastifyR
     });
   }
 }
+
+export async function generateTeamReportHandler(request: FastifyRequest, reply: FastifyReply) {
+  if (!request.user?.id) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+
+  try {
+    const csvData = await managerService.generateKpiReportCsv(request.user.id, request.user.role);
+    
+    return reply
+      .code(200)
+      .header('Content-Type', 'text/csv')
+      .header('Content-Disposition', 'attachment; filename="team_report.csv"')
+      .send(csvData);
+  } catch (error) {
+    return reply.code(500).send({
+      error: error instanceof Error ? error.message : 'Failed to generate report',
+    });
+  }
+}
+
