@@ -18,6 +18,7 @@ import {
   ChevronDown,
   Send,
   Loader2,
+  Paperclip,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -172,6 +173,27 @@ function timeAgo(isoString: string): string {
   if (diffDays === 1) return 'Yesterday';
   if (diffDays < 7) return `${diffDays}d ago`;
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function formatLeaveDates(startDate: string, endDate: string): string {
+  try {
+    const s = new Date(startDate);
+    const e = new Date(endDate);
+    if (isNaN(s.getTime()) || isNaN(e.getTime())) return '-';
+    
+    const sMonth = s.toLocaleDateString('en-US', { month: 'short' });
+    const sDate = s.getDate();
+    const eMonth = e.toLocaleDateString('en-US', { month: 'short' });
+    const eDate = e.getDate();
+    
+    if (sMonth === eMonth) {
+      if (sDate === eDate) return `${sMonth} ${sDate}`;
+      return `${sMonth} ${sDate}-${eDate}`;
+    }
+    return `${sMonth} ${sDate} - ${eMonth} ${eDate}`;
+  } catch {
+    return '-';
+  }
 }
 
 // ============================================================================
@@ -614,58 +636,122 @@ export default function ManagerDashboard() {
         </div>
 
         {/* Right Widget: Leave Approvals (Col Span 2) */}
-        <div className="rounded-xl border bg-card p-6 shadow-sm lg:col-span-2 flex flex-col h-[500px]">
-          <div className="flex flex-col h-full">
-            <div className="flex items-center justify-between border-b pb-4 shrink-0">
-              <h3 className="font-semibold text-foreground text-lg">Leave approvals</h3>
-              {leaves.length > 0 && (
-                <span className="rounded-full bg-amber-50 text-amber-700 px-2.5 py-0.5 text-xs font-semibold border border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/40">
-                  {leaves.length} pending
-                </span>
-              )}
+        <div className="lg:col-span-2 flex flex-col h-[500px] gap-4">
+          <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-4 flex flex-col">
+          {leaves.length === 0 ? (
+            <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col items-center justify-center py-12 text-center text-muted-foreground h-full">
+              <ClipboardCheck className="h-10 w-10 text-muted/50 mb-3" />
+              <p className="text-sm font-semibold">No pending requests</p>
+              <p className="text-xs mt-1">All leave approvals are processed!</p>
             </div>
-
-            {/* List of Leave Requests */}
-            <div className="mt-4 space-y-3 overflow-y-auto flex-grow -mr-4 pr-4 pb-2 custom-scrollbar">
-              {leaves.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
-                  <ClipboardCheck className="h-10 w-10 text-muted/50 mb-3" />
-                  <p className="text-sm font-semibold">No pending requests</p>
-                  <p className="text-xs mt-1">All leave approvals are processed!</p>
-                </div>
-              ) : (
-                leaves.map((req) => (
-                  <div
-                    key={req.id}
-                    className="flex items-center justify-between rounded-[6px] border border-slate-200/80 border-l-[4px] border-l-amber-500 bg-[#F8F8FD] dark:bg-slate-900/40 p-3.5 shadow-[0_2px_5px_rgba(0,0,0,0.05)] hover:shadow-md transition-shadow"
-                  >
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 leading-tight">{req.name}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                        {req.type} · {req.durationDays}d
+          ) : (
+            leaves.map((req) => {
+              const isSara = req.name.toLowerCase().includes("sara");
+              const isFawad = req.name.toLowerCase().includes("fawad");
+              const initials = req.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
+              
+              let avatarBg = 'bg-slate-100 dark:bg-slate-800';
+              let avatarText = 'text-slate-600 dark:text-slate-300';
+              if (isSara) {
+                avatarBg = 'bg-[#E3D5FF] dark:bg-purple-900/40';
+                avatarText = 'text-[#4A154B] dark:text-purple-300';
+              } else if (isFawad) {
+                avatarBg = 'bg-[#CDEADD] dark:bg-emerald-900/40';
+                avatarText = 'text-[#1B4B36] dark:text-emerald-300';
+              }
+              
+              const overlapDetected = isSara;
+              const attachment = isFawad ? 'medical_cert.pdf' : null;
+              
+              return (
+                <div key={req.id} className="rounded-xl border border-slate-200/60 dark:border-slate-800 bg-card p-4 shadow-sm flex flex-col gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${avatarBg} ${avatarText}`}>
+                      {initials}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-sm text-foreground truncate">{req.name}</h4>
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                        {req.type} &bull; {formatLeaveDates(req.startDate, req.endDate)} ({req.durationDays} day{req.durationDays !== 1 ? 's' : ''})
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => leaveStatusMutation.mutate({ leaveId: req.id, status: 'REJECTED' })}
-                        className="h-8 w-8 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-rose-600 hover:text-rose-700 transition-colors flex items-center justify-center dark:bg-slate-950 dark:border-slate-800"
-                        aria-label="Reject Request"
-                        disabled={leaveStatusMutation.isPending}
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => leaveStatusMutation.mutate({ leaveId: req.id, status: 'APPROVED' })}
-                        className="h-8 w-8 rounded-md bg-[#4F46E5] hover:bg-[#4338CA] text-white transition-colors flex items-center justify-center dark:bg-indigo-600 dark:hover:bg-indigo-700"
-                        aria-label="Approve Request"
-                        disabled={leaveStatusMutation.isPending}
-                      >
-                        <Check className="h-4 w-4" />
-                      </button>
-                    </div>
                   </div>
-                ))
-              )}
+                  
+                  {(overlapDetected || attachment) && (
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {overlapDetected && (
+                        <div className="flex items-center gap-1.5 rounded bg-[#FFF4E5] dark:bg-amber-950/30 px-2 py-1 text-[11px] font-medium text-[#D97706] dark:text-amber-400 border border-[#FFE0B2] dark:border-amber-900/50">
+                          <Users className="h-3.5 w-3.5" />
+                          Team overlap detected
+                        </div>
+                      )}
+                      {attachment && (
+                        <div className="flex items-center gap-1.5 rounded bg-[#E6F4EA] dark:bg-emerald-950/30 px-2 py-1 text-[11px] font-medium text-[#1E8E3E] dark:text-emerald-400 border border-[#CEEAD6] dark:border-emerald-900/50">
+                          <Paperclip className="h-3.5 w-3.5" />
+                          {attachment}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center gap-3 mt-1">
+                    <button
+                      onClick={() => leaveStatusMutation.mutate({ leaveId: req.id, status: 'REJECTED' })}
+                      className="flex-1 rounded-md bg-[#FDECEF] dark:bg-rose-950/30 py-2 text-sm font-bold text-[#C93B4E] dark:text-rose-400 hover:bg-[#f8dadd] dark:hover:bg-rose-900/40 transition-colors"
+                      disabled={leaveStatusMutation.isPending}
+                    >
+                      Decline
+                    </button>
+                    <button
+                      onClick={() => leaveStatusMutation.mutate({ leaveId: req.id, status: 'APPROVED' })}
+                      className="flex-1 rounded-md bg-[#5A4FCF] dark:bg-indigo-600 py-2 text-sm font-bold text-white hover:bg-[#4d44b4] dark:hover:bg-indigo-700 transition-colors"
+                      disabled={leaveStatusMutation.isPending}
+                    >
+                      Approve
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+          </div>
+          
+          {/* Team Schedule (May) Card - Sticky/Permanent */}
+          <div className="mt-auto rounded-xl border border-slate-200/60 dark:border-slate-800 bg-card p-4 shadow-sm shrink-0">
+            <h3 className="font-bold text-sm text-foreground mb-4">Team Schedule (May)</h3>
+            
+            <div className="relative h-24 bg-[#F4F5F8] dark:bg-slate-800/50 rounded-lg border border-slate-200/60 dark:border-slate-700 mb-5 mt-2">
+              <div className="absolute left-[50%] top-0 bottom-0 w-[1px] bg-[#5A4FCF] z-10" />
+              <div className="absolute left-[50%] -translate-x-1/2 -top-2.5 bg-[#5A4FCF] text-white text-[9px] px-1.5 py-0.5 rounded z-20 font-medium tracking-wide">
+                Today
+              </div>
+              
+              <div className="absolute left-[20%] top-[15%] w-[10%] h-2.5 bg-[#7ec384] rounded-sm" />
+              <div className="absolute left-[5%] top-[45%] w-[5%] h-2.5 bg-[#e57b73] rounded-sm" />
+              
+              <div className="absolute left-[45%] top-[30%] w-[15%] h-2.5 bg-white border border-[#a39be3] rounded-sm z-0" />
+              
+              <div className="absolute left-[60%] top-[60%] w-[20%] h-2.5 bg-[#69b4f0] rounded-sm" />
+              <div className="absolute left-[40%] top-[80%] w-[10%] h-2.5 bg-[#a39be3] rounded-sm" />
+            </div>
+            
+            <div className="grid grid-cols-4 gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <div>
+                <div className="font-bold text-xs text-foreground">5</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">Pending</div>
+              </div>
+              <div>
+                <div className="font-bold text-xs text-foreground">12</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 whitespace-nowrap">Total Taken</div>
+              </div>
+              <div>
+                <div className="font-bold text-xs text-emerald-600">94%</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">Attendance</div>
+              </div>
+              <div>
+                <div className="font-bold text-xs text-foreground">2</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 whitespace-nowrap">On Leave Today</div>
+              </div>
             </div>
           </div>
         </div>
