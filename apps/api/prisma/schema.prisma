@@ -173,6 +173,9 @@ enum LeaveRequestStatus {
   APPROVED
   REJECTED
   CANCELLED
+enum LedgerEntryType {
+  DEBIT
+  CREDIT
 }
 
 model User {
@@ -201,6 +204,7 @@ model User {
   onboardingCreated        OnboardingRecord[] @relation("OnboardingCreated")
   hrLettersGenerated       HrLetter[]         @relation("HrLettersGenerated")
   workScheduleUpdates      WorkScheduleConfig[] @relation("WorkScheduleUpdatedBy")
+  ledgerEntriesCreated     LedgerEntry[]      @relation("LedgerEntriesCreated")
 
   @@map("users")
 }
@@ -883,3 +887,70 @@ model BIExecution {
   @@map("bi_executions")
 }
 
+// =========================================================================
+// Ledger & Budget Module
+// =========================================================================
+
+model LedgerAccount {
+  id           String        @id @default(cuid())
+  code         String        @unique  // "1000", "2000", "4000", "6100", etc.
+  name         String                 // "Assets", "Revenue", "Payroll", etc.
+  description  String?
+  sortOrder    Int           @default(0)
+  /// Set only on expense/budget accounts — enables Budget vs Actual computation
+  budgetAmount Decimal?      @db.Decimal(14, 2)
+  currencyCode String        @default("PKR") @db.VarChar(3)
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  entries      LedgerEntry[] @relation("AccountEntries")
+
+  @@index([code])
+  @@map("ledger_accounts")
+}
+
+model LedgerEntry {
+  id              String          @id @default(cuid())
+  date            DateTime        @db.Date
+  ref             String          @db.VarChar(64)   // e.g. "INV-1042", "EXP-401"
+  description     String
+  entryType       LedgerEntryType
+  amount          Decimal         @db.Decimal(14, 2)
+  accountId       String
+  account         LedgerAccount   @relation("AccountEntries", fields: [accountId], references: [id])
+  isVoided        Boolean         @default(false)
+  hasFlag         Boolean         @default(false)   // marks for reconciliation
+  currencyCode    String          @default("PKR") @db.VarChar(3)
+  voidedAt        DateTime?
+  voidedByUserId  String?
+  createdByUserId String
+  createdBy       User            @relation("LedgerEntriesCreated", fields: [createdByUserId], references: [id])
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([date])
+  @@index([accountId])
+  @@index([isVoided])
+  @@index([hasFlag])
+  @@map("ledger_entries")
+}
+
+/// Stores the opening balance and balance-sheet snapshot for a named period.
+/// Totals (credits, debits, closing balance) are derived at query-time from LedgerEntry.
+model LedgerPeriodSummary {
+  id                 String   @id @default(cuid())
+  periodLabel        String   @unique  // e.g. "may-2026", "q2-2026"
+  periodStart        DateTime @db.Date
+  periodEnd          DateTime @db.Date
+  openingBalance     Decimal  @db.Decimal(14, 2)
+  currencyCode       String   @default("PKR") @db.VarChar(3)
+  /// Accounting equation snapshot (balance sheet values)
+  assetsTotal        Decimal  @default(0) @db.Decimal(14, 2)
+  liabilitiesTotal   Decimal  @default(0) @db.Decimal(14, 2)
+  equityTotal        Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([periodStart])
+  @@map("ledger_period_summaries")
+}

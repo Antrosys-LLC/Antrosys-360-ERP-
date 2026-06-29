@@ -335,11 +335,12 @@ async function main() {
 
   const { seedRecruitData } = await import('./recruit.seed');
   await seedRecruitData();
-  // 8. Seed BI specific data
   const { seedBizIntelData } = await import('./biz_intel.seed');
   await seedBizIntelData(prisma);
   const { seedHrData } = await import('./hr.seed');
   await seedHrData();
+  const { seedLedgerData } = await import('./ledger.seed');
+  await seedLedgerData(prisma);
 
   const { seedEmployeeDashboardData } = await import('./employee_dashboard.seed');
   await seedEmployeeDashboardData();
