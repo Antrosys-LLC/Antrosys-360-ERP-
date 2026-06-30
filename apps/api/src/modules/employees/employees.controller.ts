@@ -12,7 +12,6 @@ import {
   managerOptionsQuerySchema,
 } from './employees.schema';
 import * as employeesService from './employees.service';
-import { getEmployeeAttendanceLogs, exportEmployeeAttendanceCsv } from './employee-attendance.service';
 import { buildOfficeAccessForEmployee } from './office-access';
 
 // ============================================================================
@@ -387,7 +386,7 @@ export async function getEmployeeAttendanceHandler(request: FastifyRequest, repl
     return reply.code(400).send({ error: 'Validation failed', details: queryParsed.error.flatten() });
   }
 
-  const result = await getEmployeeAttendanceLogs(paramsParsed.data.id, queryParsed.data);
+  const result = await employeesService.getEmployeeAttendanceLogs(paramsParsed.data.id, queryParsed.data);
   if (!result) {
     return reply.code(404).send({ error: 'Employee not found' });
   }
@@ -410,7 +409,7 @@ export async function exportEmployeeAttendanceHandler(request: FastifyRequest, r
     return reply.code(400).send({ error: 'Validation failed', details: queryParsed.error.flatten() });
   }
 
-  const result = await exportEmployeeAttendanceCsv(paramsParsed.data.id, queryParsed.data);
+  const result = await employeesService.exportEmployeeAttendanceCsv(paramsParsed.data.id, queryParsed.data);
   if (!result) {
     return reply.code(404).send({ error: 'Employee not found' });
   }
