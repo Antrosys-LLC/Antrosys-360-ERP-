@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { ChevronDown, ChevronUp, UserPlus, Users, Loader2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 
@@ -50,6 +50,23 @@ function getAvatarColor(id: string) {
   return bgColors[Math.abs(hash) % bgColors.length];
 }
 
+function formatDepartmentDisplayName(department?: string | null): string {
+  const raw = (department || 'Unassigned').replace(/ dept$/i, '').trim();
+  if (raw === 'Unassigned') return raw;
+  return raw
+    .split('_')
+    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function departmentMatchesParam(departmentName: string, param: string): boolean {
+  const normalizedParam = param.trim().replace(/ dept$/i, '').replace(/\s+/g, '_');
+  return (
+    departmentName.toLowerCase() === normalizedParam.toLowerCase()
+    || formatDepartmentDisplayName(departmentName).toLowerCase() === param.trim().toLowerCase()
+  );
+}
+
 // --- Inner Content Component (reads search params) ---
 function EmployeesContent() {
   const searchParams = useSearchParams();
@@ -58,6 +75,7 @@ function EmployeesContent() {
   const [departmentsData, setDepartmentsData] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
+  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
     async function fetchEmployees() {
@@ -98,9 +116,7 @@ function EmployeesContent() {
         // Set initial expanded section based on search param or fallback to first
         let initialExpanded: Record<string, boolean> = {};
         if (departmentParam) {
-          const matchingDept = mappedData.find(
-            (d) => d.name.toLowerCase() === departmentParam.toLowerCase()
-          );
+          const matchingDept = mappedData.find((d) => departmentMatchesParam(d.name, departmentParam));
           if (matchingDept) {
             initialExpanded = { [matchingDept.id]: true };
           }
@@ -118,6 +134,15 @@ function EmployeesContent() {
 
     fetchEmployees();
   }, [departmentParam]);
+
+  useEffect(() => {
+    if (!departmentParam || isLoading) return;
+
+    const matchingDept = departmentsData.find((d) => departmentMatchesParam(d.name, departmentParam));
+    if (!matchingDept || !expandedSections[matchingDept.id]) return;
+
+    sectionRefs.current[matchingDept.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [departmentParam, departmentsData, expandedSections, isLoading]);
 
   const toggleSection = (id: string) => {
     setExpandedSections((prev) => ({
@@ -167,6 +192,9 @@ function EmployeesContent() {
               return (
                 <div
                   key={department.id}
+                  ref={(node) => {
+                    sectionRefs.current[department.id] = node;
+                  }}
                   className="border border-border/80 rounded-xl bg-card shadow-sm overflow-hidden transition-all duration-200"
                 >
                   {/* Department Header */}
@@ -177,7 +205,7 @@ function EmployeesContent() {
                   >
                     <div className="flex items-center gap-3">
                       <h2 className="text-[17px] font-semibold text-foreground tracking-tight">
-                        {department.name}
+                        {formatDepartmentDisplayName(department.name)}
                       </h2>
                       <span className="flex h-6 min-w-[24px] items-center justify-center rounded-full bg-muted/80 px-2 text-xs font-semibold text-muted-foreground">
                         {department.employeeCount}
