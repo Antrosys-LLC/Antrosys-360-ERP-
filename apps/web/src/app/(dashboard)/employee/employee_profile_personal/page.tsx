@@ -450,6 +450,10 @@ function EmployeeDashboardContent() {
   const employmentFormDefaultsRef = useRef<EmploymentFormValues | null>(null);
 
   const [payslipsYear, setPayslipsYear] = useState(new Date().getFullYear());
+  const [payslipYearOptions, setPayslipYearOptions] = useState<number[]>(() => {
+    const currentYear = new Date().getFullYear();
+    return [currentYear, currentYear - 1, currentYear - 2];
+  });
   const [payslipsData, setPayslipsData] = useState<PayslipsApiData | null>(null);
   const [payslipsLoading, setPayslipsLoading] = useState(false);
   const [downloadingPayslipId, setDownloadingPayslipId] = useState<string | null>(null);
@@ -464,6 +468,9 @@ function EmployeeDashboardContent() {
       const data = response.data.data as PayslipsApiData;
       setPayslipsData(data);
       setPayslipsYear(data.selectedYear);
+      if (data.availableYears.length > 0) {
+        setPayslipYearOptions(data.availableYears);
+      }
     } catch (error) {
       console.error('Failed to load payslips:', error);
       toast({
@@ -1084,10 +1091,13 @@ fill="none"
                 <select
                   value={payslipsYear}
                   onChange={(e) => handlePayslipsYearChange(Number(e.target.value))}
-                  disabled={payslipsLoading || !payslipsData?.availableYears.length}
+                  disabled={payslipsLoading}
                   className="appearance-none bg-white border border-border rounded-[var(--radius)] pl-3 pr-8 py-1.5 text-xs font-semibold text-foreground shadow-sm focus:outline-none cursor-pointer disabled:opacity-50"
                 >
-                  {(payslipsData?.availableYears ?? [payslipsYear]).map((year) => (
+                  {(payslipYearOptions.includes(payslipsYear)
+                    ? payslipYearOptions
+                    : [payslipsYear, ...payslipYearOptions]
+                  ).map((year) => (
                     <option key={year} value={year}>{year}</option>
                   ))}
                 </select>

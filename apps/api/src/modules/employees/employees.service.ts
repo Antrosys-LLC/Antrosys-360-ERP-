@@ -452,7 +452,7 @@ export async function downloadEmployeePayslip(employeeId: string, payslipId: str
   if (!payslip) return null;
 
   const employeeName = `${payslip.employee.firstName} ${payslip.employee.lastName}`;
-  const periodLabel = payslip.periodLabel ?? payslipPeriodLabel(new Date(payslip.periodStart));
+  const periodLabel = payslipPeriodLabel(new Date(payslip.periodStart));
   const filename = `payslip-${payslip.employee.employeeCode ?? employeeId}-${periodLabel.replace(/\s+/g, '-')}.pdf`;
 
   const buffer = await buildPayslipPdf({
