@@ -16,6 +16,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { usePermission } from '@/hooks/usePermission';
+import { useAuthStore } from '@/stores/auth.store';
+
+type ProfileLoadError = 'missing_id' | 'not_found' | 'forbidden' | 'network';
 
 // ============================================================================
 // CENTRALIZED DATA STORES
@@ -119,7 +123,10 @@ function toDateInputValue(date: string | Date | null | undefined): string {
   if (!date) return '';
   const parsed = new Date(date);
   if (Number.isNaN(parsed.getTime())) return '';
-  return parsed.toISOString().slice(0, 10);
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function toApiDateValue(value: string | null | undefined): string | null {
@@ -184,6 +191,36 @@ function buildProfilePayload(values: ProfileFormValues) {
   );
 }
 
+function formatDepartmentLabel(department?: string | null): string {
+  if (!department) return 'Unassigned';
+  return department.replace(/ dept$/i, '');
+}
+
+function displayOrDash(value?: string | null): string {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : '—';
+}
+
+function ProfileErrorView({
+  title,
+  description,
+  backHref,
+  backLabel,
+}: {
+  title: string;
+  description: string;
+  backHref: string;
+  backLabel: string;
+}) {
+  return (
+    <div className="bg-[#f8f9fa] min-h-screen flex flex-col items-center justify-center p-6 text-center">
+      <h2 className="text-2xl font-bold mb-2">{title}</h2>
+      <p className="text-muted-foreground mb-6 max-w-md">{description}</p>
+      <Link href={backHref} className="text-primary hover:underline font-medium">{backLabel}</Link>
+    </div>
+  );
+}
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -193,9 +230,16 @@ function EmployeeDashboardContent() {
   const tabParam = searchParams.get('tab');
   const idParam = searchParams.get('id') ?? searchParams.get('employeeId');
   const { toast } = useToast();
+  const { user } = useAuthStore();
+  const canEditProfile = usePermission('hr:write');
+
+  const isManagerViewer = user?.role === 'MANAGER' || user?.role === 'SUB_MANAGER';
+  const directoryHref = isManagerViewer ? '/manager' : '/hr/employees';
+  const directoryLabel = isManagerViewer ? 'Manager dashboard' : 'Employees';
 
   const [activeTab, setActiveTab] = useState("Personal");
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<ProfileLoadError | null>(null);
   
   // Modals state
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
@@ -307,13 +351,17 @@ function EmployeeDashboardContent() {
 
   const fetchEmployeeData = useCallback(async (options?: { silent?: boolean }) => {
     if (!idParam) {
+      setLoadError('missing_id');
+      setEmployeeHeaderData(null);
       setIsLoading(false);
       return;
     }
+
     try {
       if (!options?.silent) {
         setIsLoading(true);
       }
+      setLoadError(null);
       const { default: apiClient } = await import('@/lib/api-client');
       const response = await apiClient.get(`/employees/${idParam}`);
       const data = response.data.data;
@@ -326,11 +374,33 @@ function EmployeeDashboardContent() {
       profileFormDefaultsRef.current = employeeToProfileFormValues(data.employee);
     } catch (error) {
       console.error('Failed to load employee profile:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Failed to load profile',
-        description: 'Could not fetch employee data. Please try again.',
-      });
+      setEmployeeHeaderData(null);
+      setPersonalInformation(null);
+      setEmploymentSnapshot(null);
+      setSkillsData(null);
+      setRawSkills([]);
+
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 403) {
+          setLoadError('forbidden');
+        } else if (error.response?.status === 404) {
+          setLoadError('not_found');
+        } else {
+          setLoadError('network');
+        }
+      } else {
+        setLoadError('network');
+      }
+
+      if (!options?.silent) {
+        toast({
+          variant: 'destructive',
+          title: 'Failed to load profile',
+          description: axios.isAxiosError(error) && error.response?.status === 403
+            ? 'You do not have permission to view this employee profile.'
+            : 'Could not fetch employee data. Please try again.',
+        });
+      }
     } finally {
       if (!options?.silent) {
         setIsLoading(false);
@@ -459,13 +529,47 @@ function EmployeeDashboardContent() {
     );
   }
 
-  if (!employeeHeaderData) {
+  if (loadError === 'missing_id') {
     return (
-      <div className="bg-[#f8f9fa] min-h-screen flex flex-col items-center justify-center p-6 text-center">
-        <h2 className="text-2xl font-bold mb-2">Employee not found</h2>
-        <p className="text-muted-foreground mb-6">The employee record you are looking for does not exist or has been removed.</p>
-        <Link href="/hr/employees" className="text-primary hover:underline font-medium">Return to Directory</Link>
-      </div>
+      <ProfileErrorView
+        title="Employee ID required"
+        description="Open an employee profile from the directory or manager dashboard so the page URL includes an employee id."
+        backHref={directoryHref}
+        backLabel={`Return to ${directoryLabel}`}
+      />
+    );
+  }
+
+  if (loadError === 'forbidden') {
+    return (
+      <ProfileErrorView
+        title="Access denied"
+        description="You do not have permission to view this employee profile."
+        backHref={directoryHref}
+        backLabel={`Return to ${directoryLabel}`}
+      />
+    );
+  }
+
+  if (loadError === 'not_found') {
+    return (
+      <ProfileErrorView
+        title="Employee not found"
+        description="The employee record you are looking for does not exist or has been removed."
+        backHref={directoryHref}
+        backLabel={`Return to ${directoryLabel}`}
+      />
+    );
+  }
+
+  if (loadError === 'network' || !employeeHeaderData) {
+    return (
+      <ProfileErrorView
+        title="Failed to load profile"
+        description="Could not fetch employee data. Please try again from the directory."
+        backHref={directoryHref}
+        backLabel={`Return to ${directoryLabel}`}
+      />
     );
   }
 
@@ -494,20 +598,26 @@ function EmployeeDashboardContent() {
            ========================================== */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1 pb-2 mb-6">
           <div className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
-            <Link href="/hr/employees" className="text-muted-foreground hover:text-foreground cursor-pointer">Employees</Link>
+            <Link href={directoryHref} className="text-muted-foreground hover:text-foreground cursor-pointer">{directoryLabel}</Link>
             <ChevronRight className="w-4 h-4 text-muted-foreground/60" />
-            <Link href={`/hr/employees?department=${employeeHeaderData.department?.replace(' dept', '') || 'Unassigned'}`} className="text-muted-foreground hover:text-foreground cursor-pointer">{employeeHeaderData.department?.replace(' dept', '') || 'Unassigned'}</Link>
-            <ChevronRight className="w-4 h-4 text-muted-foreground/60" />
+            {!isManagerViewer && (
+              <>
+                <Link href={`/hr/employees?department=${formatDepartmentLabel(employeeHeaderData.department)}`} className="text-muted-foreground hover:text-foreground cursor-pointer">{formatDepartmentLabel(employeeHeaderData.department)}</Link>
+                <ChevronRight className="w-4 h-4 text-muted-foreground/60" />
+              </>
+            )}
             <span className="text-foreground font-bold">{employeeHeaderData.name}</span>
           </div>
 
           <div className="flex items-center gap-2.5">
-            <button 
-              onClick={openEditProfile}
-              className="px-4 py-2 border border-border text-xs font-bold text-foreground bg-card hover:bg-muted/50 rounded-[var(--radius)] transition-colors shadow-sm"
-            >
-              Edit profile
-            </button>
+            {canEditProfile && (
+              <button 
+                onClick={openEditProfile}
+                className="px-4 py-2 border border-border text-xs font-bold text-foreground bg-card hover:bg-muted/50 rounded-[var(--radius)] transition-colors shadow-sm"
+              >
+                Edit profile
+              </button>
+            )}
             <button
               onClick={() => {
                 // Minimal PDF with "TBD" content — no external library needed
@@ -613,15 +723,15 @@ startxref
                     </tr>
                     <tr>
                       <td className="text-muted-foreground pr-6 whitespace-nowrap">Department:</td>
-                      <td className="text-foreground font-semibold">Engineering</td>
+                      <td className="text-foreground font-semibold">{displayOrDash(formatDepartmentLabel(employeeHeaderData.department))}</td>
                     </tr>
                     <tr>
                       <td className="text-muted-foreground pr-6 whitespace-nowrap">Location:</td>
-                      <td className="text-foreground font-semibold">Islamabad HQ</td>
+                      <td className="text-foreground font-semibold">{displayOrDash(employeeHeaderData.location)}</td>
                     </tr>
                     <tr>
                       <td className="text-muted-foreground pr-6 whitespace-nowrap">Contract:</td>
-                      <td className="text-foreground font-semibold">Permanent</td>
+                      <td className="text-foreground font-semibold">{displayOrDash(employeeHeaderData.contractType)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -1009,12 +1119,14 @@ fill="none"
               <section className="bg-white text-card-foreground border border-border rounded-[var(--radius)] p-6 shadow-sm space-y-5">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-bold text-foreground tracking-tight">Skills & expertise</h2>
-                  <button 
-                    onClick={() => setIsSkillsManagerOpen(true)}
-                    className="text-muted-foreground/70 hover:text-foreground p-1 transition-colors border border-border rounded bg-muted/20" aria-label="Modify Matrix"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
+                  {canEditProfile && (
+                    <button 
+                      onClick={() => setIsSkillsManagerOpen(true)}
+                      className="text-muted-foreground/70 hover:text-foreground p-1 transition-colors border border-border rounded bg-muted/20" aria-label="Modify Matrix"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap gap-1.5">
@@ -1112,6 +1224,8 @@ fill="none"
         {/* ==========================================
             MODALS & SLIDING SHEETS
            ========================================== */}
+        {canEditProfile && (
+          <>
         <Sheet open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen}>
           <SheetContent className="overflow-y-auto w-full sm:max-w-xl">
             <SheetHeader className="mb-6">
@@ -1299,6 +1413,8 @@ fill="none"
             </div>
           </DialogContent>
         </Dialog>
+          </>
+        )}
 
       </div>
     </div>
