@@ -17,7 +17,6 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { usePermission } from '@/hooks/usePermission';
-import { useAuthStore } from '@/stores/auth.store';
 
 type ProfileLoadError = 'missing_id' | 'not_found' | 'forbidden' | 'network';
 
@@ -95,26 +94,81 @@ function getMinProbationEndDate(joinDate: string): string {
   return `${year}-${month}-${day}`;
 }
 
-const attendanceCalendarWeeks = [
-  [null, null, null, null, { status: 'P', label: 'Present' }, { status: 'HO', label: 'Holiday' }, { status: 'HO', label: 'Holiday' }],
-  [{ status: 'P', label: 'Present' }, { status: 'P', label: 'Present' }, { status: 'P', label: 'Present' }, { status: 'L', label: 'Late' }, { status: 'P', label: 'Present' }, { status: 'HO', label: 'Holiday' }, { status: 'HO', label: 'Holiday' }],
-  [{ status: 'P', label: 'Present' }, { status: 'A', label: 'Absent' }, { status: 'P', label: 'Present' }, { status: 'P', label: 'Present' }, { status: 'H', label: 'Half-day' }, { status: 'HO', label: 'Holiday' }, { status: 'HO', label: 'Holiday' }],
-  [{ status: 'L', label: 'Late' }, { status: 'L', label: 'Late' }, { status: 'P', label: 'Present' }, { status: 'P', label: 'Present' }, { status: 'P', label: 'Present' }, { status: 'HO', label: 'Holiday' }, { status: 'HO', label: 'Holiday' }],
-  [{ status: 'P', label: 'Present' }, { status: 'HO', label: 'Holiday' }, { status: 'P', label: 'Present' }, { status: 'P', label: 'Present' }, { status: 'P', label: 'Present' }, { status: 'HO', label: 'Holiday' }, { status: 'HO', label: 'Holiday' }]
-];
+interface AttendanceMonthOption {
+  month: number;
+  year: number;
+  label: string;
+}
 
-const attendanceLogsTable = [
-  { date: "01 May 2026", day: "Fri", checkIn: "08:55 AM", checkOut: "05:00 PM", total: "8.1 hrs", ot: "-", status: "Present", color: "bg-purple-50 text-[#7B6AE6] border-purple-100" },
-  { date: "04 May 2026", day: "Mon", checkIn: "08:50 AM", checkOut: "06:30 PM", total: "9.6 hrs", ot: "1.6 hrs", otColor: "text-[#7B6AE6]", status: "Present", color: "bg-purple-50 text-[#7B6AE6] border-purple-100" },
-  { date: "05 May 2026", day: "Tue", checkIn: "08:58 AM", checkOut: "05:05 PM", total: "8.1 hrs", ot: "-", status: "Present", color: "bg-purple-50 text-[#7B6AE6] border-purple-100" },
-  { date: "06 May 2026", day: "Wed", checkIn: "09:00 AM", checkOut: "05:00 PM", total: "8.0 hrs", ot: "-", status: "Present", color: "bg-purple-50 text-[#7B6AE6] border-purple-100" },
-  { date: "07 May 2026", day: "Thu", checkIn: "09:35 AM", checkOut: "06:00 PM", total: "8.4 hrs", ot: "-", status: "Late", textColor: "text-amber-600", color: "bg-amber-50 text-amber-600 border-amber-100" },
-  { date: "08 May 2026", day: "Fri", checkIn: "08:50 AM", checkOut: "05:15 PM", total: "8.4 hrs", ot: "-", status: "Present", color: "bg-purple-50 text-[#7B6AE6] border-purple-100" },
-  { date: "11 May 2026", day: "Mon", checkIn: "08:55 AM", checkOut: "05:45 PM", total: "8.8 hrs", ot: "0.8 hrs", otColor: "text-[#7B6AE6]", status: "Present", color: "bg-purple-50 text-[#7B6AE6] border-purple-100" },
-  { date: "12 May 2026", day: "Tue", checkIn: "08:50 AM", checkOut: "05:00 PM", total: "8.1 hrs", ot: "-", status: "Present", color: "bg-purple-50 text-[#7B6AE6] border-purple-100" },
-  { date: "13 May 2026", day: "Wed", checkIn: "-", checkOut: "-", total: "0 hrs", ot: "-", status: "Absent", color: "bg-rose-50 text-rose-500 border-rose-100" },
-  { date: "14 May 2026", day: "Thu", checkIn: "08:55 AM", checkOut: "05:05 PM", total: "8.1 hrs", ot: "-", status: "Present", color: "bg-purple-50 text-[#7B6AE6] border-purple-100" }
-];
+interface AttendanceCalendarCell {
+  day: number | null;
+  code: string | null;
+  label: string;
+}
+
+interface AttendanceLogRow {
+  id: string;
+  date: string;
+  day: string;
+  checkIn: string;
+  checkOut: string;
+  total: string;
+  ot: string;
+  status: string;
+  color: string;
+  textColor?: string;
+}
+
+interface AttendanceLegendItem {
+  label: string;
+  count: number;
+  color: string;
+}
+
+interface AttendanceApiData {
+  selectedMonth: AttendanceMonthOption;
+  availableMonths: AttendanceMonthOption[];
+  calendar: {
+    label: string;
+    weekdays: string[];
+    weeks: AttendanceCalendarCell[][];
+    legend: AttendanceLegendItem[];
+  };
+  rows: AttendanceLogRow[];
+  summary: {
+    totalHours: string;
+    overtimeHours: string;
+    attendancePercentage: number;
+  };
+}
+
+const MAX_VISIBLE_ATTENDANCE_ROWS = 8;
+const ATTENDANCE_TABLE_HEADER_PX = 41;
+const ATTENDANCE_TABLE_ROW_PX = 44;
+
+function attendanceMonthKey(month: number, year: number): string {
+  return `${year}-${month}`;
+}
+
+function getAttendanceCodeColor(code: string | null): string {
+  switch (code) {
+    case 'P':
+      return 'bg-[#7B6AE6]/10 text-[#7B6AE6]';
+    case 'L':
+      return 'bg-amber-100/70 text-amber-800';
+    case 'A':
+      return 'bg-rose-100/60 text-rose-700';
+    case 'H':
+    case 'LV':
+      return 'bg-emerald-100/70 text-emerald-800';
+    case 'HO':
+      return 'bg-blue-50 text-blue-500';
+    case 'T':
+      return 'bg-slate-100 text-slate-600 ring-1 ring-[#7B6AE6]/30';
+    default:
+      return 'bg-muted/40 text-muted-foreground';
+  }
+}
 
 // ============================================================================
 // FORM SCHEMAS
@@ -330,7 +384,20 @@ function buildEmploymentPayload(values: EmploymentFormValues) {
 
 function formatDepartmentLabel(department?: string | null): string {
   if (!department) return 'Unassigned';
-  return department.replace(/ dept$/i, '');
+  return department.replace(/ dept$/i, '').trim();
+}
+
+function formatDepartmentDisplayName(department?: string | null): string {
+  const raw = formatDepartmentLabel(department);
+  if (raw === 'Unassigned') return raw;
+  return raw
+    .split('_')
+    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function departmentDirectoryParam(department?: string | null): string {
+  return formatDepartmentLabel(department);
 }
 
 function displayOrDash(value?: string | null): string {
@@ -367,12 +434,10 @@ function EmployeeDashboardContent() {
   const tabParam = searchParams.get('tab');
   const idParam = searchParams.get('id') ?? searchParams.get('employeeId');
   const { toast } = useToast();
-  const { user } = useAuthStore();
   const canEditProfile = usePermission('hr:write');
 
-  const isManagerViewer = user?.role === 'MANAGER' || user?.role === 'SUB_MANAGER';
-  const directoryHref = isManagerViewer ? '/manager' : '/hr/employees';
-  const directoryLabel = isManagerViewer ? 'Manager dashboard' : 'Employees';
+  const employeesDirectoryHref = '/hr/employees';
+  const employeesDirectoryLabel = 'Employees';
 
   const [activeTab, setActiveTab] = useState("Personal");
   const [isLoading, setIsLoading] = useState(true);
@@ -458,6 +523,22 @@ function EmployeeDashboardContent() {
   const [payslipsLoading, setPayslipsLoading] = useState(false);
   const [downloadingPayslipId, setDownloadingPayslipId] = useState<string | null>(null);
 
+  const now = new Date();
+  const [attendanceMonth, setAttendanceMonth] = useState({
+    month: now.getMonth() + 1,
+    year: now.getFullYear(),
+  });
+  const [attendanceMonthOptions, setAttendanceMonthOptions] = useState<AttendanceMonthOption[]>(() => [
+    {
+      month: now.getMonth() + 1,
+      year: now.getFullYear(),
+      label: now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+    },
+  ]);
+  const [attendanceData, setAttendanceData] = useState<AttendanceApiData | null>(null);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceExporting, setAttendanceExporting] = useState(false);
+
   const fetchPayslips = useCallback(async (year: number) => {
     if (!idParam) return;
 
@@ -482,6 +563,70 @@ function EmployeeDashboardContent() {
       setPayslipsLoading(false);
     }
   }, [idParam, toast]);
+
+  const fetchAttendance = useCallback(async (month: number, year: number) => {
+    if (!idParam) return;
+
+    try {
+      setAttendanceLoading(true);
+      setAttendanceData(null);
+      const { default: apiClient } = await import('@/lib/api-client');
+      const response = await apiClient.get(`/employees/${idParam}/attendance`, { params: { month, year } });
+      const data = response.data.data as AttendanceApiData;
+      setAttendanceData(data);
+      setAttendanceMonth({
+        month: data.selectedMonth.month,
+        year: data.selectedMonth.year,
+      });
+      if (data.availableMonths.length > 0) {
+        setAttendanceMonthOptions(data.availableMonths);
+      }
+    } catch (error) {
+      console.error('Failed to load attendance logs:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Failed to load attendance',
+        description: 'Could not fetch attendance logs. Please try again.',
+      });
+    } finally {
+      setAttendanceLoading(false);
+    }
+  }, [idParam, toast]);
+
+  const handleAttendanceExport = async () => {
+    if (!idParam) return;
+
+    try {
+      setAttendanceExporting(true);
+      const { default: apiClient } = await import('@/lib/api-client');
+      const response = await apiClient.get(`/employees/${idParam}/attendance/export`, {
+        params: { month: attendanceMonth.month, year: attendanceMonth.year },
+        responseType: 'blob',
+      });
+      const disposition = response.headers['content-disposition'] as string | undefined;
+      const filenameMatch = disposition?.match(/filename="([^"]+)"/);
+      const filename =
+        filenameMatch?.[1]
+        ?? `attendance-${attendanceMonth.year}-${String(attendanceMonth.month).padStart(2, '0')}.csv`;
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to export attendance:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Export failed',
+        description: 'Could not download the attendance CSV. Please try again.',
+      });
+    } finally {
+      setAttendanceExporting(false);
+    }
+  };
 
   const handlePayslipDownload = async (payslipId: string) => {
     if (!idParam) return;
@@ -596,9 +741,24 @@ function EmployeeDashboardContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, idParam]);
 
+  useEffect(() => {
+    if (activeTab === 'Attendance logs' && idParam) {
+      fetchAttendance(attendanceMonth.month, attendanceMonth.year);
+    }
+    // Refetch only when opening the tab or switching employees
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, idParam]);
+
   const handlePayslipsYearChange = (year: number) => {
     setPayslipsYear(year);
     fetchPayslips(year);
+  };
+
+  const handleAttendanceMonthChange = (monthKey: string) => {
+    const [year, month] = monthKey.split('-').map(Number);
+    if (!month || !year) return;
+    setAttendanceMonth({ month, year });
+    fetchAttendance(month, year);
   };
 
   const openEditProfile = () => {
@@ -773,8 +933,8 @@ function EmployeeDashboardContent() {
       <ProfileErrorView
         title="Employee ID required"
         description="Open an employee profile from the directory or manager dashboard so the page URL includes an employee id."
-        backHref={directoryHref}
-        backLabel={`Return to ${directoryLabel}`}
+        backHref={employeesDirectoryHref}
+        backLabel={`Return to ${employeesDirectoryLabel}`}
       />
     );
   }
@@ -784,8 +944,8 @@ function EmployeeDashboardContent() {
       <ProfileErrorView
         title="Access denied"
         description="You do not have permission to view this employee profile."
-        backHref={directoryHref}
-        backLabel={`Return to ${directoryLabel}`}
+        backHref={employeesDirectoryHref}
+        backLabel={`Return to ${employeesDirectoryLabel}`}
       />
     );
   }
@@ -795,8 +955,8 @@ function EmployeeDashboardContent() {
       <ProfileErrorView
         title="Employee not found"
         description="The employee record you are looking for does not exist or has been removed."
-        backHref={directoryHref}
-        backLabel={`Return to ${directoryLabel}`}
+        backHref={employeesDirectoryHref}
+        backLabel={`Return to ${employeesDirectoryLabel}`}
       />
     );
   }
@@ -806,8 +966,8 @@ function EmployeeDashboardContent() {
       <ProfileErrorView
         title="Failed to load profile"
         description="Could not fetch employee data. Please try again from the directory."
-        backHref={directoryHref}
-        backLabel={`Return to ${directoryLabel}`}
+        backHref={employeesDirectoryHref}
+        backLabel={`Return to ${employeesDirectoryLabel}`}
       />
     );
   }
@@ -828,6 +988,35 @@ function EmployeeDashboardContent() {
   const payslipTableMaxHeight =
     PAYSLIP_TABLE_HEADER_PX + PAYSLIP_TABLE_ROW_PX * MAX_VISIBLE_PAYSLIPS;
 
+  const attendanceRowCount = attendanceData?.rows.length ?? 0;
+  const attendanceTableScrollable = attendanceRowCount > MAX_VISIBLE_ATTENDANCE_ROWS;
+  const attendanceTableMaxHeight =
+    ATTENDANCE_TABLE_HEADER_PX + ATTENDANCE_TABLE_ROW_PX * MAX_VISIBLE_ATTENDANCE_ROWS;
+
+  const selectedAttendanceMonthKey = attendanceMonthKey(attendanceMonth.month, attendanceMonth.year);
+  const attendanceMonthSelectOptions = attendanceMonthOptions.some(
+    (option) => attendanceMonthKey(option.month, option.year) === selectedAttendanceMonthKey,
+  )
+    ? attendanceMonthOptions
+    : [
+        {
+          month: attendanceMonth.month,
+          year: attendanceMonth.year,
+          label: attendanceData?.selectedMonth.label
+            ?? new Date(attendanceMonth.year, attendanceMonth.month - 1, 1).toLocaleDateString('en-US', {
+              month: 'long',
+              year: 'numeric',
+            }),
+        },
+        ...attendanceMonthOptions,
+      ];
+
+  const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const departmentBreadcrumbLabel = formatDepartmentDisplayName(employeeHeaderData?.department);
+  const departmentBreadcrumbHref = `${employeesDirectoryHref}?department=${encodeURIComponent(
+    departmentDirectoryParam(employeeHeaderData?.department),
+  )}`;
+
   return (
     <div className="bg-[#f8f9fa] text-foreground min-h-screen">
       <div className="max-w-[1400px] mx-auto px-4 md:px-6 pb-8 pt-2">
@@ -837,14 +1026,10 @@ function EmployeeDashboardContent() {
            ========================================== */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1 pb-2 mb-6">
           <div className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
-            <Link href={directoryHref} className="text-muted-foreground hover:text-foreground cursor-pointer">{directoryLabel}</Link>
+            <Link href={employeesDirectoryHref} className="text-muted-foreground hover:text-foreground cursor-pointer">{employeesDirectoryLabel}</Link>
             <ChevronRight className="w-4 h-4 text-muted-foreground/60" />
-            {!isManagerViewer && (
-              <>
-                <Link href={`/hr/employees?department=${formatDepartmentLabel(employeeHeaderData.department)}`} className="text-muted-foreground hover:text-foreground cursor-pointer">{formatDepartmentLabel(employeeHeaderData.department)}</Link>
-                <ChevronRight className="w-4 h-4 text-muted-foreground/60" />
-              </>
-            )}
+            <Link href={departmentBreadcrumbHref} className="text-muted-foreground hover:text-foreground cursor-pointer">{departmentBreadcrumbLabel}</Link>
+            <ChevronRight className="w-4 h-4 text-muted-foreground/60" />
             <span className="text-foreground font-bold">{employeeHeaderData.name}</span>
           </div>
 
@@ -1210,126 +1395,178 @@ fill="none"
 
         {/* ATTENDANCE LOGS VIEW */}
         {activeTab === "Attendance logs" && (
-          
-          /* ==================================================================================
-             ATTENDANCE VIEW BLOCK 
-             ================================================================================== */
           <div className="space-y-6">
-            
-            {/* Main Log Sheet Card Box Component Container */}
             <div className="bg-white text-card-foreground border border-border rounded-[var(--radius)] overflow-hidden shadow-sm flex flex-col">
-              
-              {/* Top Heading Actions Header Block */}
               <div className="p-6 pb-4 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-                <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight">Attendance logs · May 2026</h2>
+                <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight">
+                  Attendance logs · {attendanceData?.selectedMonth.label ?? attendanceMonthSelectOptions.find(
+                    (option) => attendanceMonthKey(option.month, option.year) === selectedAttendanceMonthKey,
+                  )?.label ?? '—'}
+                </h2>
                 <div className="flex items-center gap-2">
                   <div className="relative">
-                    <select className="appearance-none bg-white border border-border rounded-[var(--radius)] pl-3 pr-8 py-1.5 text-xs font-semibold text-foreground shadow-sm focus:outline-none cursor-pointer">
-                      <option>May 2026</option>
+                    <select
+                      className="appearance-none bg-white border border-border rounded-[var(--radius)] pl-3 pr-8 py-1.5 text-xs font-semibold text-foreground shadow-sm focus:outline-none cursor-pointer"
+                      value={selectedAttendanceMonthKey}
+                      onChange={(e) => handleAttendanceMonthChange(e.target.value)}
+                      disabled={attendanceLoading}
+                    >
+                      {attendanceMonthSelectOptions.map((option) => (
+                        <option
+                          key={attendanceMonthKey(option.month, option.year)}
+                          value={attendanceMonthKey(option.month, option.year)}
+                        >
+                          {option.label}
+                        </option>
+                      ))}
                     </select>
                     <ChevronDown className="w-3.5 h-3.5 text-muted-foreground absolute right-2.5 top-2.5 pointer-events-none" />
                   </div>
-                  <button className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-[var(--radius)] text-xs font-bold bg-white hover:bg-muted/50 transition-colors text-foreground shadow-sm">
-                    <Download className="w-3.5 h-3.5" /> Export
+                  <button
+                    type="button"
+                    onClick={handleAttendanceExport}
+                    disabled={attendanceLoading || attendanceExporting}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-[var(--radius)] text-xs font-bold bg-white hover:bg-muted/50 transition-colors text-foreground shadow-sm disabled:opacity-50"
+                  >
+                    {attendanceExporting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Download className="w-3.5 h-3.5" />
+                    )}
+                    Export
                   </button>
                 </div>
               </div>
 
-              {/* Calendar View subdivision box */}
-              <div className="px-6 pb-6">
-                <div className="border border-border rounded-[var(--radius)] p-4 bg-white shadow-none">
-                  <div className="overflow-x-auto no-scrollbar">
-                    <div className="min-w-[700px] space-y-2">
-                      <div className="grid grid-cols-7 gap-2 text-center text-xs font-medium text-muted-foreground pb-1">
-                        <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
-                      </div>
-                      
-                      {attendanceCalendarWeeks.map((week, wIdx) => (
-                        <div key={wIdx} className="grid grid-cols-7 gap-2">
-                          {week.map((day, dIdx) => {
-                            if (!day) return <div key={dIdx} className="h-10"></div>;
-                            
-                            let baseColor = "bg-muted/40 text-muted-foreground";
-                            if (day.status === 'P') baseColor = "bg-[#7B6AE6]/10 text-[#7B6AE6]";
-                            if (day.status === 'L') baseColor = "bg-amber-100/70 text-amber-800";
-                            if (day.status === 'A') baseColor = "bg-rose-100/60 text-rose-700";
-                            if (day.status === 'H') baseColor = "bg-emerald-100/70 text-emerald-800";
-                            if (day.status === 'HO') baseColor = "bg-blue-50 text-blue-500";
+              {attendanceLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                </div>
+              ) : (
+                <>
+                  <div className="px-6 pb-6">
+                    <div className="border border-border rounded-[var(--radius)] p-4 bg-white shadow-none">
+                      <div className="overflow-x-auto no-scrollbar">
+                        <div className="min-w-[700px] space-y-2">
+                          <div className="grid grid-cols-7 gap-2 text-center text-xs font-medium text-muted-foreground pb-1">
+                            {weekdayLabels.map((label) => (
+                              <div key={label}>{label}</div>
+                            ))}
+                          </div>
 
-                            return (
-                              <div 
-                                key={dIdx} 
-                                className={`h-10 rounded-[var(--radius)] flex items-center justify-center text-xs font-bold ${baseColor}`}
-                                title={day.label}
-                              >
-                                {day.status}
-                              </div>
-                            );
-                          })}
+                          {(attendanceData?.calendar.weeks ?? []).map((week, wIdx) => (
+                            <div key={wIdx} className="grid grid-cols-7 gap-2">
+                              {week.map((cell, dIdx) => {
+                                if (!cell.day) {
+                                  return <div key={dIdx} className="h-10" />;
+                                }
+
+                                return (
+                                  <div
+                                    key={dIdx}
+                                    className={`h-10 rounded-[var(--radius)] flex flex-col items-center justify-center text-[10px] font-bold leading-tight ${getAttendanceCodeColor(cell.code)}`}
+                                    title={cell.label ? `${cell.day} — ${cell.label}` : cell.day ? String(cell.day) : undefined}
+                                  >
+                                    {cell.code ? (
+                                      <>
+                                        <span className="text-[9px] font-medium opacity-70">{cell.day}</span>
+                                        <span>{cell.code}</span>
+                                      </>
+                                    ) : cell.day ? (
+                                      <span className="text-[11px] font-medium text-muted-foreground/80">{cell.day}</span>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-4 mt-3 border-t border-border text-[11px] font-semibold text-muted-foreground">
+                        {(attendanceData?.calendar.legend ?? []).map((item) => (
+                          <div key={item.label} className="flex items-center gap-2">
+                            <span
+                              className="w-3 h-3 rounded inline-block"
+                              style={{ backgroundColor: `${item.color}33` }}
+                            />
+                            {item.label} {item.count}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Grid Label Legend */}
-                  <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-4 mt-3 border-t border-border text-[11px] font-semibold text-muted-foreground">
-                    <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-[#7B6AE6]/10 inline-block"></span>Present 12</div>
-                    <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-amber-100/70 inline-block"></span>Late 1</div>
-                    <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-rose-100/60 inline-block"></span>Absent 1</div>
-                    <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-emerald-100/70 inline-block"></span>Leaves 2</div>
-                    <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-blue-50 inline-block"></span>Holidays 1</div>
+                  <div
+                    className={`overflow-x-auto w-full ${attendanceTableScrollable ? 'overflow-y-auto custom-scrollbar' : ''}`}
+                    style={attendanceTableScrollable ? { maxHeight: attendanceTableMaxHeight } : undefined}
+                  >
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className={`border-t border-b border-border text-muted-foreground font-bold bg-white ${attendanceTableScrollable ? 'sticky top-0 z-10' : ''}`}>
+                          <th className="px-6 py-3 font-semibold">Date</th>
+                          <th className="px-6 py-3 font-semibold">Day</th>
+                          <th className="px-6 py-3 font-semibold">Check-in</th>
+                          <th className="px-6 py-3 font-semibold">Check-out</th>
+                          <th className="px-6 py-3 font-semibold">Total hrs</th>
+                          <th className="px-6 py-3 font-semibold">OT</th>
+                          <th className="px-6 py-3 font-semibold">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {attendanceData?.rows.length ? (
+                          attendanceData.rows.map((row) => (
+                            <tr
+                              key={row.id}
+                              className="border-b last:border-0 border-border bg-white hover:bg-muted/10 transition-colors"
+                            >
+                              <td className="px-6 py-3.5 font-bold text-foreground">{row.date}</td>
+                              <td className="px-6 py-3.5 font-medium text-muted-foreground">{row.day}</td>
+                              <td className={`px-6 py-3.5 font-semibold ${row.textColor || 'text-foreground'}`}>
+                                {row.checkIn}
+                              </td>
+                              <td className="px-6 py-3.5 font-semibold text-foreground">{row.checkOut}</td>
+                              <td className="px-6 py-3.5 font-bold text-foreground">{row.total}</td>
+                              <td
+                                className={`px-6 py-3.5 font-bold ${
+                                  row.ot !== '0 hrs' ? 'text-[#7B6AE6]' : 'text-muted-foreground'
+                                }`}
+                              >
+                                {row.ot}
+                              </td>
+                              <td className="px-6 py-3.5">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${row.color}`}>
+                                  {row.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={7} className="px-6 py-8 text-center text-muted-foreground">
+                              No attendance records for {attendanceData?.selectedMonth.label ?? 'this month'}.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
-                </div>
-              </div>
-
-              {/* List Table subdivision box */}
-              <div className="overflow-x-auto w-full">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-t border-b border-border text-muted-foreground font-bold bg-white">
-                      <th className="px-6 py-3 font-semibold">Date</th>
-                      <th className="px-6 py-3 font-semibold">Day</th>
-                      <th className="px-6 py-3 font-semibold">Check-in</th>
-                      <th className="px-6 py-3 font-semibold">Check-out</th>
-                      <th className="px-6 py-3 font-semibold">Total hrs</th>
-                      <th className="px-6 py-3 font-semibold">OT</th>
-                      <th className="px-6 py-3 font-semibold">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {attendanceLogsTable.map((row, idx) => (
-                      <tr key={idx} className="border-b last:border-0 border-border bg-white hover:bg-muted/10 transition-colors">
-                        <td className="px-6 py-3.5 font-bold text-foreground">{row.date}</td>
-                        <td className="px-6 py-3.5 font-medium text-muted-foreground">{row.day}</td>
-                        <td className={`px-6 py-3.5 font-semibold ${row.textColor || 'text-foreground'}`}>{row.checkIn}</td>
-                        <td className="px-6 py-3.5 font-semibold text-foreground">{row.checkOut}</td>
-                        <td className="px-6 py-3.5 font-bold text-foreground">{row.total}</td>
-                        <td className={`px-6 py-3.5 font-bold ${row.otColor || 'text-muted-foreground'}`}>{row.ot}</td>
-                        <td className="px-6 py-3.5">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${row.color}`}>
-                            {row.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
+                </>
+              )}
             </div>
 
-            {/* ================================================================
-                SEPARATED INDEPENDENT MONTHLY SUMMARY CARD
-               ================================================================ */}
             <div className="bg-white border border-border rounded-[var(--radius)] px-6 py-4 flex flex-row justify-between items-center text-xs font-bold shadow-sm">
               <span className="text-muted-foreground font-medium">
-                Monthly summary: <span className="text-foreground font-bold">156.4 hrs</span> · <span className="text-foreground font-bold">2.4 hrs OT</span> · <span className="text-foreground font-bold">94% attendance</span>
+                Monthly summary:{' '}
+                <span className="text-foreground font-bold">{attendanceData?.summary.totalHours ?? '0 hrs'}</span>
+                {' · '}
+                <span className="text-foreground font-bold">{attendanceData?.summary.overtimeHours ?? '0 hrs'} OT</span>
+                {' · '}
+                <span className="text-foreground font-bold">
+                  {attendanceData?.summary.attendancePercentage ?? '—'}% attendance
+                </span>
               </span>
-              <button className="text-[#7B6AE6] hover:underline transition-all">
-                View full log
-              </button>
             </div>
-
           </div>
         )}
 

@@ -8,6 +8,7 @@ import {
   deleteSkillParamsSchema,
   employeePayslipsQuerySchema,
   employeePayslipParamsSchema,
+  employeeAttendanceQuerySchema,
   managerOptionsQuerySchema,
 } from './employees.schema';
 import * as employeesService from './employees.service';
@@ -368,6 +369,55 @@ export async function getEmployeePayslipsHandler(request: FastifyRequest, reply:
   }
 
   return reply.code(200).send({ status: 'success', data: result });
+}
+
+// ============================================================================
+// GET /employees/:id/attendance – Monthly attendance logs for profile tab
+// ============================================================================
+
+export async function getEmployeeAttendanceHandler(request: FastifyRequest, reply: FastifyReply) {
+  const paramsParsed = employeeParamsSchema.safeParse(request.params);
+  if (!paramsParsed.success) {
+    return reply.code(400).send({ error: 'Validation failed', details: paramsParsed.error.flatten() });
+  }
+
+  const queryParsed = employeeAttendanceQuerySchema.safeParse(request.query);
+  if (!queryParsed.success) {
+    return reply.code(400).send({ error: 'Validation failed', details: queryParsed.error.flatten() });
+  }
+
+  const result = await employeesService.getEmployeeAttendanceLogs(paramsParsed.data.id, queryParsed.data);
+  if (!result) {
+    return reply.code(404).send({ error: 'Employee not found' });
+  }
+
+  return reply.code(200).send({ status: 'success', data: result });
+}
+
+// ============================================================================
+// GET /employees/:id/attendance/export – CSV export for attendance logs
+// ============================================================================
+
+export async function exportEmployeeAttendanceHandler(request: FastifyRequest, reply: FastifyReply) {
+  const paramsParsed = employeeParamsSchema.safeParse(request.params);
+  if (!paramsParsed.success) {
+    return reply.code(400).send({ error: 'Validation failed', details: paramsParsed.error.flatten() });
+  }
+
+  const queryParsed = employeeAttendanceQuerySchema.safeParse(request.query);
+  if (!queryParsed.success) {
+    return reply.code(400).send({ error: 'Validation failed', details: queryParsed.error.flatten() });
+  }
+
+  const result = await employeesService.exportEmployeeAttendanceCsv(paramsParsed.data.id, queryParsed.data);
+  if (!result) {
+    return reply.code(404).send({ error: 'Employee not found' });
+  }
+
+  return reply
+    .header('Content-Type', 'text/csv; charset=utf-8')
+    .header('Content-Disposition', `attachment; filename="${result.filename}"`)
+    .send(result.csv);
 }
 
 // ============================================================================

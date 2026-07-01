@@ -10,6 +10,8 @@ import {
   deleteSkillHandler,
   getEmployeePayslipsHandler,
   downloadEmployeePayslipHandler,
+  getEmployeeAttendanceHandler,
+  exportEmployeeAttendanceHandler,
 } from './employees.controller';
 
 export async function employeesRoutes(fastify: FastifyInstance) {
@@ -59,6 +61,18 @@ export async function employeesRoutes(fastify: FastifyInstance) {
   fastify.delete('/:id/skills/:skillId', {
     preHandler: [fastify.requirePermission('hr:write')],
     handler: deleteSkillHandler,
+  });
+
+  // CSV export for monthly attendance logs
+  fastify.get('/:id/attendance/export', {
+    preHandler: [fastify.requirePermission('hr:read')],
+    handler: exportEmployeeAttendanceHandler,
+  });
+
+  // Monthly attendance logs for employee profile
+  fastify.get('/:id/attendance', {
+    preHandler: [fastify.requirePermission('hr:read')],
+    handler: getEmployeeAttendanceHandler,
   });
 
   // List employee payslips (filterable by year)

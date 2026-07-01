@@ -3,6 +3,16 @@ import { prisma } from '../../../config/database';
 import { formatCurrency } from '../../../shared/currency/exchange-rate';
 import { buildPayslipPdf } from '../../../shared/pdf/payslip-pdf';
 import { payslipPeriodLabel } from '../../../shared/payslip/payslip-period-label';
+import {
+  buildAttendanceCalendarWeeks,
+  type AttendanceDayRecord,
+} from '../../../shared/attendance/attendance-calendar';
+import {
+  formatAttendanceHours,
+  formatAttendanceOvertime,
+  formatAttendanceTime,
+  startOfUtcDay,
+} from '../../../shared/attendance/attendance-format';
 import type { CalendarQuery, CheckInBody } from './employee_dashboard.schema';
 
 const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
@@ -24,8 +34,6 @@ const LEAVE_TYPE_ICONS: Record<LeaveType, { bg: string; iconColor: string }> = {
   MATERNITY: { bg: '#EEEDFE', iconColor: '#534AB7' },
   OTHER: { bg: '#F8F9FC', iconColor: '#888888' },
 };
-
-type DayStatus = 'present' | 'half' | 'absent' | 'holiday' | 'today' | 'none';
 
 async function writeAuditLog(
   tx: Prisma.TransactionClient,
@@ -62,17 +70,9 @@ export async function resolveEmployeeForUser(userId: string) {
   return employee;
 }
 
-function startOfUtcDay(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-}
-
 function formatTime(date: Date | null | undefined): string {
   if (!date) return '--:--';
-  return date.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  });
+  return formatAttendanceTime(date);
 }
 
 function formatDuration(hours: number): string {
@@ -130,93 +130,6 @@ function computeHoursAndOvertime(
     hours: Math.round(hours * 100) / 100,
     overtime: Math.round(overtime * 100) / 100,
     status: AttendanceStatus.PRESENT,
-  };
-}
-
-function deriveAttendanceStatus(
-  record: { status: AttendanceStatus; hours: Prisma.Decimal | null } | null,
-  halfDayThreshold: number,
-): DayStatus {
-  if (!record) return 'none';
-  const hours = record.hours ? Number(record.hours) : 0;
-  if (record.status === AttendanceStatus.HALF_DAY || (hours > 0 && hours < halfDayThreshold)) {
-    return 'half';
-  }
-  if (record.status === AttendanceStatus.ABSENT) return 'absent';
-  if (record.status === AttendanceStatus.PRESENT || record.status === AttendanceStatus.LATE) {
-    return 'present';
-  }
-  return 'none';
-}
-
-function isHoliday(date: Date, holidays: { date: Date; endDate: Date | null }[]): boolean {
-  const day = startOfUtcDay(date).getTime();
-  return holidays.some((h) => {
-    const start = startOfUtcDay(h.date).getTime();
-    const end = startOfUtcDay(h.endDate ?? h.date).getTime();
-    return day >= start && day <= end;
-  });
-}
-
-function buildCalendarWeeks(
-  month: number,
-  year: number,
-  attendanceMap: Map<number, { status: AttendanceStatus; hours: Prisma.Decimal | null }>,
-  holidays: { date: Date; endDate: Date | null }[],
-  halfDayThreshold: number,
-) {
-  const label = new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', {
-    month: 'long',
-    year: 'numeric',
-  });
-  const weekdays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-  const firstDay = new Date(Date.UTC(year, month - 1, 1));
-  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const startOffset = (firstDay.getUTCDay() + 6) % 7;
-  const today = startOfUtcDay(new Date());
-
-  const cells: { day: number | null; status: DayStatus }[] = [];
-  for (let i = 0; i < startOffset; i++) {
-    cells.push({ day: null, status: 'none' });
-  }
-
-  for (let day = 1; day <= daysInMonth; day++) {
-    const cellDate = new Date(Date.UTC(year, month - 1, day));
-    let status: DayStatus = 'none';
-
-    if (isHoliday(cellDate, holidays)) {
-      status = 'holiday';
-    } else if (cellDate.getTime() === today.getTime()) {
-      const att = attendanceMap.get(day);
-      status = att ? deriveAttendanceStatus(att, halfDayThreshold) : 'today';
-      if (status === 'none') status = 'today';
-    } else if (cellDate.getTime() < today.getTime()) {
-      const att = attendanceMap.get(day);
-      status = att ? deriveAttendanceStatus(att, halfDayThreshold) : 'absent';
-    }
-
-    cells.push({ day, status });
-  }
-
-  while (cells.length % 7 !== 0) {
-    cells.push({ day: null, status: 'none' });
-  }
-
-  const weeks: { day: number | null; status: DayStatus }[][] = [];
-  for (let i = 0; i < cells.length; i += 7) {
-    weeks.push(cells.slice(i, i + 7));
-  }
-
-  return {
-    label,
-    weekdays,
-    weeks,
-    legend: [
-      { label: 'Present', color: '#C4BDF8' },
-      { label: 'Half', color: '#86EFAC' },
-      { label: 'Absent', color: '#F8B4B4' },
-      { label: 'Holiday', color: '#FDE68A' },
-    ],
   };
 }
 
@@ -305,11 +218,11 @@ export async function getDashboard(userId: string) {
   ]);
 
   const halfDayThreshold = Number(schedule.halfDayThresholdHours);
-  const attendanceMap = new Map(
+  const attendanceMap = new Map<number, AttendanceDayRecord>(
     monthAttendance.map((a) => [new Date(a.date).getUTCDate(), { status: a.status, hours: a.hours }]),
   );
 
-  const calendarMonth = buildCalendarWeeks(
+  const calendarMonth = buildAttendanceCalendarWeeks(
     now.getUTCMonth() + 1,
     now.getUTCFullYear(),
     attendanceMap,
@@ -436,11 +349,11 @@ export async function getCalendar(userId: string, query: CalendarQuery) {
     }),
   ]);
 
-  const attendanceMap = new Map(
+  const attendanceMap = new Map<number, AttendanceDayRecord>(
     attendanceRecords.map((a) => [new Date(a.date).getUTCDate(), { status: a.status, hours: a.hours }]),
   );
 
-  return buildCalendarWeeks(
+  return buildAttendanceCalendarWeeks(
     query.month,
     query.year,
     attendanceMap,
