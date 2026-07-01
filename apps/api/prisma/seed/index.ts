@@ -288,7 +288,6 @@ async function main() {
           durationDays: item.duration,
           status: 'PENDING',
           reason: item.reason,
-          attachmentUrl: item.attachmentUrl,
         },
       });
     }

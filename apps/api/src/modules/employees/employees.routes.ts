@@ -3,6 +3,9 @@ import {
   listEmployeesHandler,
   getEmployeeHandler,
   updateEmployeeHandler,
+  updateEmployeeEmploymentHandler,
+  listManagerOptionsHandler,
+  getEmploymentFieldOptionsHandler,
   upsertSkillHandler,
   deleteSkillHandler,
   getEmployeePayslipsHandler,
@@ -19,16 +22,31 @@ export async function employeesRoutes(fastify: FastifyInstance) {
     handler: listEmployeesHandler,
   });
 
+  fastify.get('/manager-options', {
+    preHandler: [fastify.requirePermission('hr:read')],
+    handler: listManagerOptionsHandler,
+  });
+
+  fastify.get('/employment-options', {
+    preHandler: [fastify.requirePermission('hr:read')],
+    handler: getEmploymentFieldOptionsHandler,
+  });
+
   // Get single employee profile details
   fastify.get('/:id', {
     preHandler: [fastify.requirePermission('hr:read')],
     handler: getEmployeeHandler,
   });
 
-  // Update employee personal/employment data
+  // Update employee personal data
   fastify.put('/:id', {
     preHandler: [fastify.requirePermission('hr:write')],
     handler: updateEmployeeHandler,
+  });
+
+  fastify.put('/:id/employment', {
+    preHandler: [fastify.requirePermission('hr:write')],
+    handler: updateEmployeeEmploymentHandler,
   });
 
   // Add or update an employee skill

@@ -1,4 +1,23 @@
 import { z } from 'zod';
+import { dateOfBirthErrorMessage, isValidEmployeeDateOfBirth } from '../../shared/validation/date-of-birth';
+import {
+  isProbationEndAfterJoinDate,
+  isValidJoiningDate,
+  joiningDateErrorMessage,
+  probationEndErrorMessage,
+} from '../../shared/validation/employment-dates';
+
+const dateFieldSchema = z.union([
+  z.string().datetime(),
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+]);
+
+const dateOfBirthSchema = dateFieldSchema
+  .nullable()
+  .optional()
+  .refine((value) => value == null || value === '' || isValidEmployeeDateOfBirth(value), {
+    message: dateOfBirthErrorMessage(),
+  });
 
 // ============================================================================
 // PARAMS
@@ -40,13 +59,7 @@ export const updatePersonalBodySchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
   preferredName: z.string().nullable().optional(),
-  dateOfBirth: z
-    .union([
-      z.string().datetime(),
-      z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    ])
-    .nullable()
-    .optional(),
+  dateOfBirth: dateOfBirthSchema,
   gender: z.string().nullable().optional(),
   nationality: z.string().nullable().optional(),
   cnic: z.string().nullable().optional(),
@@ -58,19 +71,49 @@ export const updatePersonalBodySchema = z.object({
   emergencyContactPhone: z.string().nullable().optional(),
   homeAddress: z.string().nullable().optional(),
   socialHandle: z.string().nullable().optional(),
-  // Employment fields (HR-writable)
-  department: z.string().nullable().optional(),
-  designation: z.string().nullable().optional(),
-  grade: z.string().nullable().optional(),
-  location: z.string().nullable().optional(),
-  employeeType: z.string().nullable().optional(),
-  employmentStatus: z.string().nullable().optional(),
-  contractType: z.string().nullable().optional(),
-  performanceScore: z.number().int().min(0).max(100).nullable().optional(),
-  kpiScore: z.number().int().min(0).max(100).nullable().optional(),
 });
 
 export type UpdatePersonalBody = z.infer<typeof updatePersonalBodySchema>;
+
+const joiningDateSchema = dateFieldSchema
+  .nullable()
+  .optional()
+  .refine((value) => value == null || value === '' || isValidJoiningDate(value), {
+    message: joiningDateErrorMessage(),
+  });
+
+export const updateEmploymentBodySchema = z
+  .object({
+    department: z.string().nullable().optional(),
+    designation: z.string().nullable().optional(),
+    grade: z.string().nullable().optional(),
+    location: z.string().nullable().optional(),
+    employeeType: z.string().nullable().optional(),
+    employmentStatus: z.string().nullable().optional(),
+    contractType: z.string().nullable().optional(),
+    joiningDate: joiningDateSchema,
+    probationEnd: dateFieldSchema.nullable().optional(),
+    managerId: z.string().cuid().nullable().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.joiningDate && data.probationEnd) {
+      if (!isProbationEndAfterJoinDate(data.joiningDate, data.probationEnd)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['probationEnd'],
+          message: probationEndErrorMessage(),
+        });
+      }
+    }
+  });
+
+export type UpdateEmploymentBody = z.infer<typeof updateEmploymentBodySchema>;
+
+export const managerOptionsQuerySchema = z.object({
+  excludeId: z.string().cuid().optional(),
+});
+
+export type ManagerOptionsQuery = z.infer<typeof managerOptionsQuerySchema>;
 
 // ============================================================================
 // BODY – manage skills (add / update / remove)

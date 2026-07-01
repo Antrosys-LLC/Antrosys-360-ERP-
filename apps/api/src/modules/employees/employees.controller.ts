@@ -3,12 +3,15 @@ import {
   employeeParamsSchema,
   listEmployeesQuerySchema,
   updatePersonalBodySchema,
+  updateEmploymentBodySchema,
   upsertSkillBodySchema,
   deleteSkillParamsSchema,
   employeePayslipsQuerySchema,
   employeePayslipParamsSchema,
+  managerOptionsQuerySchema,
 } from './employees.schema';
 import * as employeesService from './employees.service';
+import { buildOfficeAccessForEmployee } from './office-access';
 
 // ============================================================================
 // GET /employees – List all employees
@@ -229,13 +232,34 @@ export async function getEmployeeHandler(request: FastifyRequest, reply: Fastify
       skillName: s.skillName,
       percentage: s.percentage,
     })),
+
+    officeAccess: await buildOfficeAccessForEmployee(employee),
   };
 
   return reply.code(200).send({ status: 'success', data });
 }
 
 // ============================================================================
-// PUT /employees/:id – Update employee personal/employment info
+// GET /employees/manager-options – Line manager picker options
+// ============================================================================
+
+export async function listManagerOptionsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const parsed = managerOptionsQuerySchema.safeParse(request.query);
+  if (!parsed.success) {
+    return reply.code(400).send({ error: 'Validation failed', details: parsed.error.flatten() });
+  }
+
+  const options = await employeesService.listManagerOptions(parsed.data);
+  return reply.code(200).send({ status: 'success', data: options });
+}
+
+export async function getEmploymentFieldOptionsHandler(_request: FastifyRequest, reply: FastifyReply) {
+  const options = await employeesService.getEmploymentFieldOptions();
+  return reply.code(200).send({ status: 'success', data: options });
+}
+
+// ============================================================================
+// PUT /employees/:id – Update employee personal info
 // ============================================================================
 
 export async function updateEmployeeHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -255,6 +279,35 @@ export async function updateEmployeeHandler(request: FastifyRequest, reply: Fast
   }
 
   return reply.code(200).send({ status: 'success', data: updated });
+}
+
+// ============================================================================
+// PUT /employees/:id/employment – Update employee employment info
+// ============================================================================
+
+export async function updateEmployeeEmploymentHandler(request: FastifyRequest, reply: FastifyReply) {
+  const paramsParsed = employeeParamsSchema.safeParse(request.params);
+  if (!paramsParsed.success) {
+    return reply.code(400).send({ error: 'Validation failed', details: paramsParsed.error.flatten() });
+  }
+
+  const bodyParsed = updateEmploymentBodySchema.safeParse(request.body);
+  if (!bodyParsed.success) {
+    return reply.code(400).send({ error: 'Validation failed', details: bodyParsed.error.flatten() });
+  }
+
+  try {
+    const updated = await employeesService.updateEmployeeEmployment(paramsParsed.data.id, bodyParsed.data);
+    if (!updated) {
+      return reply.code(404).send({ error: 'Employee not found' });
+    }
+
+    return reply.code(200).send({ status: 'success', data: updated });
+  } catch (error) {
+    return reply.code(400).send({
+      error: error instanceof Error ? error.message : 'Failed to update employment details',
+    });
+  }
 }
 
 // ============================================================================
