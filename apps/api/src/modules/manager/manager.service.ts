@@ -1,5 +1,6 @@
-import { Prisma, AttendanceStatus, LeaveRequestStatus } from '@prisma/client';
+import { AttendanceStatus } from '@prisma/client';
 import { prisma } from '../../config/database';
+import { incrementLeaveBalanceOnApproval } from '../../shared/leaveBalance/increment-leave-balance';
 import { PostAnnouncementInput } from './manager.schema';
 
 function mapOverrideStatus(status: string): AttendanceStatus {
@@ -285,6 +286,10 @@ export async function updateLeaveStatus(leaveId: string, status: 'APPROVED' | 'R
     return null;
   }
 
+  if (leave.status !== 'PENDING') {
+    throw new Error('Leave request is not pending');
+  }
+
   // Sub-manager / Manager check: can only edit leaves for direct team
   if (userRole === 'SUB_MANAGER' || userRole === 'MANAGER') {
     const managedTeam = await prisma.team.findUnique({
@@ -303,6 +308,15 @@ export async function updateLeaveStatus(leaveId: string, status: 'APPROVED' | 'R
         approvedById: status === 'APPROVED' ? employee.id : null,
       },
     });
+
+    if (status === 'APPROVED') {
+      await incrementLeaveBalanceOnApproval(tx, {
+        employeeId: leave.employeeId,
+        leaveType: leave.type,
+        startDate: leave.startDate,
+        durationDays: leave.durationDays,
+      });
+    }
 
     // Write audit log
     await tx.auditLog.create({
@@ -336,9 +350,10 @@ export async function approveAllLeaves(userId: string, userRole: string) {
     const managedTeam = await prisma.team.findUnique({
       where: { managerId: employee.id }
     });
-    if (managedTeam) {
-      targetFilter = { employee: { teamId: managedTeam.id } };
+    if (!managedTeam) {
+      throw new Error('Unauthorized: No team assigned to manage leaves');
     }
+    targetFilter = { employee: { teamId: managedTeam.id } };
   }
 
   return prisma.$transaction(async (tx) => {
@@ -364,8 +379,14 @@ export async function approveAllLeaves(userId: string, userRole: string) {
       },
     });
 
-    // Write audit logs
     for (const leave of pendingLeaves) {
+      await incrementLeaveBalanceOnApproval(tx, {
+        employeeId: leave.employeeId,
+        leaveType: leave.type,
+        startDate: leave.startDate,
+        durationDays: leave.durationDays,
+      });
+
       await tx.auditLog.create({
         data: {
           userId,

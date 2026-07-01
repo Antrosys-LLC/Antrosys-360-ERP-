@@ -1,5 +1,7 @@
 import { LeaveType, LeaveRequestStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../../config/database';
+import { DEFAULT_LEAVE_QUOTA } from '../../../shared/leaveBalance/leave-quota.constants';
+import { incrementLeaveBalanceOnApproval } from '../../../shared/leaveBalance/increment-leave-balance';
 import type {
   CreateLeaveRequestBody,
   UpdateLeaveStatusBody,
@@ -24,17 +26,6 @@ function countBusinessDays(start: Date, end: Date): number {
   return count;
 }
 
-/** Quota per leave type (days/year). Adjust as per HR policy. */
-const DEFAULT_QUOTA: Record<LeaveType, number> = {
-  ANNUAL: 20,
-  SICK: 10,
-  CASUAL: 6,
-  WFH: 20,
-  UNPAID: 0,
-  MATERNITY: 90,
-  OTHER: 0,
-};
-
 // ─── Leave Balances ────────────────────────────────────────────────────────
 
 /**
@@ -57,7 +48,7 @@ export async function getMyLeaveBalances(userId: string) {
         employeeId: employee.id,
         year,
         leaveType: type,
-        allocatedDays: DEFAULT_QUOTA[type],
+        allocatedDays: DEFAULT_LEAVE_QUOTA[type],
         usedDays: 0,
         pendingDays: 0,
       },
@@ -207,28 +198,12 @@ export async function updateLeaveStatus(
       },
     });
 
-    // Deduct from balance only on APPROVED
     if (body.status === 'APPROVED') {
-      const year = existing.startDate.getFullYear();
-      await tx.leaveBalance.upsert({
-        where: {
-          employeeId_leaveType_year: {
-            employeeId: existing.employeeId,
-            leaveType: existing.type,
-            year,
-          },
-        },
-        update: {
-          usedDays: { increment: existing.durationDays },
-        },
-        create: {
-          employeeId: existing.employeeId,
-          year,
-          leaveType: existing.type,
-          allocatedDays: DEFAULT_QUOTA[existing.type],
-          usedDays: existing.durationDays,
-          pendingDays: 0,
-        },
+      await incrementLeaveBalanceOnApproval(tx, {
+        employeeId: existing.employeeId,
+        leaveType: existing.type,
+        startDate: existing.startDate,
+        durationDays: existing.durationDays,
       });
     }
 
