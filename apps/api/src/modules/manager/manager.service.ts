@@ -2,6 +2,14 @@ import { AttendanceStatus } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { incrementLeaveBalanceOnApproval } from '../../shared/leaveBalance/increment-leave-balance';
 import { PostAnnouncementInput } from './manager.schema';
+import {
+  buildAttendanceTable,
+  buildTeamKpiReportCsv,
+  computeTeamKpis,
+  computeTeamScheduleStats,
+  getTodayUtc,
+  TeamKpiReport,
+} from './manager-team-stats';
 
 function mapOverrideStatus(status: string): AttendanceStatus {
   if (status === 'ON LEAVE') return AttendanceStatus.LEAVE;
@@ -9,6 +17,73 @@ function mapOverrideStatus(status: string): AttendanceStatus {
   if (status === 'ABSENT') return AttendanceStatus.ABSENT;
   if (status === 'LATE') return AttendanceStatus.LATE;
   return AttendanceStatus.ABSENT;
+}
+
+async function loadTeamSnapshot(teamId: string, today: Date) {
+  const team = await prisma.team.findUnique({
+    where: { id: teamId },
+    include: {
+      manager: { select: { firstName: true, lastName: true } },
+      directMembers: {
+        where: { isActive: true },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          designation: true,
+          kpiScore: true,
+          performanceScore: true,
+        },
+      },
+    },
+  });
+
+  if (!team) {
+    return null;
+  }
+
+  const teamEmployees = team.directMembers;
+  const teamEmployeeIds = teamEmployees.map((member) => member.id);
+
+  const [attendancesToday, pendingLeaves, approvedTeamLeaves] = await Promise.all([
+    prisma.attendance.findMany({
+      where: { employeeId: { in: teamEmployeeIds }, date: today },
+    }),
+    prisma.leaveRequest.findMany({
+      where: { employeeId: { in: teamEmployeeIds }, status: 'PENDING' },
+    }),
+    prisma.leaveRequest.findMany({
+      where: {
+        employeeId: { in: teamEmployeeIds },
+        status: 'APPROVED',
+        endDate: { gte: today },
+      },
+    }),
+  ]);
+
+  const attendanceTable = buildAttendanceTable(teamEmployees, attendancesToday);
+  const teamSchedule = computeTeamScheduleStats(
+    attendanceTable,
+    approvedTeamLeaves,
+    pendingLeaves.length,
+    today,
+  );
+  const kpis = computeTeamKpis(teamEmployees, teamSchedule, pendingLeaves.length);
+
+  return {
+    id: team.id,
+    name: team.name,
+    memberCount: teamEmployees.length,
+    managerName: team.manager ? `${team.manager.firstName} ${team.manager.lastName}` : null,
+    kpis,
+    teamSchedule,
+    attendanceSummary: {
+      present: teamSchedule.presentCount,
+      absent: teamSchedule.absentCount,
+      onLeave: teamSchedule.onLeaveToday,
+      total: teamEmployees.length,
+    },
+  };
 }
 
 export async function getDashboardData(userId: string, userRole: string) {
@@ -57,13 +132,9 @@ export async function getDashboardData(userId: string, userRole: string) {
   }
 
   const teamEmployeeIds = teamEmployees.map((e) => e.id);
-  const teamUserIds = teamEmployees.map((e) => e.userId);
 
-  // 3. Define start of today in UTC
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
+  const today = getTodayUtc();
 
-  // 4. Fetch today's attendance for the team
   const attendancesToday = await prisma.attendance.findMany({
     where: {
       employeeId: { in: teamEmployeeIds },
@@ -71,29 +142,18 @@ export async function getDashboardData(userId: string, userRole: string) {
     },
   });
 
-  const attendanceMap = new Map(attendancesToday.map((a) => [a.employeeId, a]));
+  const attendanceTable = buildAttendanceTable(
+    teamEmployees.map((emp) => ({
+      id: emp.id,
+      firstName: emp.firstName,
+      lastName: emp.lastName,
+      designation: emp.designation,
+      kpiScore: emp.kpiScore,
+      performanceScore: emp.performanceScore,
+    })),
+    attendancesToday,
+  );
 
-  // 5. Build team attendance table data
-  const attendanceTable = teamEmployees.map((emp) => {
-    const att = attendanceMap.get(emp.id);
-    return {
-      employeeId: emp.id,
-      name: `${emp.firstName} ${emp.lastName}`,
-      role: emp.designation || 'Staff',
-      checkIn: att?.checkIn ? att.checkIn.toISOString() : null,
-      checkOut: att?.checkOut ? att.checkOut.toISOString() : null,
-      status: att?.status || 'ABSENT',
-      hours: att?.hours ? Number(att.hours) : 0,
-      isFlagged: att?.isFlagged || false,
-    };
-  });
-
-  // 6. Calculate summary metrics
-  const totalEmployees = teamEmployees.length;
-  const presentCount = attendanceTable.filter((a) => a.status === 'PRESENT' || a.status === 'LATE').length;
-  const absentCount = totalEmployees - presentCount;
-
-  // 7. Fetch pending leave requests for the team
   const leaveRequests = await prisma.leaveRequest.findMany({
     where: {
       employeeId: { in: teamEmployeeIds },
@@ -111,16 +171,44 @@ export async function getDashboardData(userId: string, userRole: string) {
   });
 
   const leavesPendingCount = leaveRequests.length;
-  
+
   const approvedTeamLeaves = await prisma.leaveRequest.findMany({
     where: {
       employeeId: { in: teamEmployeeIds },
       status: 'APPROVED',
-      endDate: { gte: today }
-    }
+      endDate: { gte: today },
+    },
   });
-  
+
   const allTeamLeaves = [...leaveRequests, ...approvedTeamLeaves];
+
+  const teamSchedule = computeTeamScheduleStats(
+    attendanceTable,
+    approvedTeamLeaves,
+    leavesPendingCount,
+    today,
+  );
+
+  const kpis = computeTeamKpis(
+    teamEmployees.map((emp) => ({
+      kpiScore: emp.kpiScore,
+      performanceScore: emp.performanceScore,
+    })),
+    teamSchedule,
+    leavesPendingCount,
+  );
+
+  let teams: Awaited<ReturnType<typeof loadTeamSnapshot>>[] = [];
+  if (userRole === 'MANAGER') {
+    const allTeams = await prisma.team.findMany({ select: { id: true }, orderBy: { name: 'asc' } });
+    const snapshots = await Promise.all(allTeams.map((team) => loadTeamSnapshot(team.id, today)));
+    teams = snapshots.filter((snapshot): snapshot is NonNullable<typeof snapshot> => snapshot != null);
+  } else if (managedTeam) {
+    const ownTeam = await loadTeamSnapshot(managedTeam.id, today);
+    if (ownTeam) {
+      teams = [ownTeam];
+    }
+  }
 
   const formattedLeaves = leaveRequests.map((req) => {
     // Consistent avatar color hash based on name
@@ -161,30 +249,8 @@ export async function getDashboardData(userId: string, userRole: string) {
     };
   });
 
-  // 8. Fetch department KPIs
   const departmentName = employee.department || 'Operations';
-  let kpis = await prisma.departmentKpi.findUnique({
-    where: { department: departmentName },
-  });
 
-  // Fallback to default KPIs if not seeded yet
-  if (!kpis) {
-    kpis = {
-      id: 'default',
-      department: departmentName,
-      sprintVelocity: 84,
-      bugResolution: 72,
-      codeReview: 78,
-      deliveryOnTime: 91,
-      teamUtilization: 82,
-      openTickets: 64,
-      documentation: 48,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-  }
-
-  // 9. Fetch announcements (latest 50 to allow scrolling)
   const announcements = await prisma.announcement.findMany({
     take: 50,
     orderBy: { createdAt: 'desc' },
@@ -219,31 +285,14 @@ export async function getDashboardData(userId: string, userRole: string) {
     unknown: weeklyMood?.unknown || 1,
   };
 
-  // 11. Calculate Team Schedule stats
-  const totalTakenLeaves = approvedTeamLeaves.length;
-  let onLeaveTodayCount = 0;
-  const todayTime = today.getTime();
-  
-  for (const leave of approvedTeamLeaves) {
-    const start = new Date(leave.startDate).getTime();
-    const end = new Date(leave.endDate).getTime();
-    if (todayTime >= start && todayTime <= end) {
-      onLeaveTodayCount++;
-    }
-  }
-
-  const attendancePercentage = totalEmployees > 0 
-    ? Math.round((presentCount / totalEmployees) * 100) 
-    : 0;
-
-  const teamSchedule = {
-    pending: leavesPendingCount,
-    totalTaken: totalTakenLeaves,
-    attendance: attendancePercentage,
-    onLeaveToday: onLeaveTodayCount,
-  };
+  const { presentCount, absentCount } = teamSchedule;
+  const totalEmployees = teamEmployees.length;
 
   return {
+    managedTeam: managedTeam
+      ? { id: managedTeam.id, name: managedTeam.name }
+      : null,
+    teams,
     metrics: {
       presentCount,
       totalEmployees,
@@ -253,15 +302,7 @@ export async function getDashboardData(userId: string, userRole: string) {
     },
     attendance: attendanceTable,
     leaves: formattedLeaves,
-    kpis: {
-      sprintVelocity: kpis.sprintVelocity,
-      bugResolution: kpis.bugResolution,
-      codeReview: kpis.codeReview,
-      deliveryOnTime: kpis.deliveryOnTime,
-      teamUtilization: kpis.teamUtilization,
-      openTickets: kpis.openTickets,
-      documentation: kpis.documentation,
-    },
+    kpis,
     announcements: formattedAnnouncements,
     moodPulse,
     teamSchedule,
@@ -424,7 +465,7 @@ export async function postAnnouncement(userId: string, userRole: string, payload
 
     // 2. Identify scoped team users to notify
     const isSubManager = userRole === 'SUB_MANAGER';
-    let teamEmployees = [];
+    let teamEmployees: { userId: string }[] = [];
 
     if (isSubManager) {
       const managedTeam = await tx.team.findUnique({
@@ -649,7 +690,7 @@ export async function toggleFlag(targetEmployeeId: string, isFlagged: boolean, u
   });
 }
 
-export async function generateKpiReportCsv(userId: string, userRole: string) {
+export async function generateKpiReportCsv(userId: string, userRole: string, teamId?: string) {
   const employee = await prisma.employee.findUnique({
     where: { userId },
   });
@@ -658,37 +699,54 @@ export async function generateKpiReportCsv(userId: string, userRole: string) {
     throw new Error('Logged in user is not registered as an employee');
   }
 
-  const departmentName = employee.department || 'Operations';
-  let kpis = await prisma.departmentKpi.findUnique({
-    where: { department: departmentName },
-  });
+  const today = getTodayUtc();
+  const managedTeam =
+    userRole === 'MANAGER' || userRole === 'SUB_MANAGER'
+      ? await prisma.team.findUnique({ where: { managerId: employee.id } })
+      : null;
 
-  if (!kpis) {
-    kpis = {
-      id: 'default',
-      department: departmentName,
-      sprintVelocity: 84,
-      bugResolution: 72,
-      codeReview: 78,
-      deliveryOnTime: 91,
-      teamUtilization: 82,
-      openTickets: 64,
-      documentation: 48,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+  if (userRole === 'SUB_MANAGER') {
+    if (!managedTeam) {
+      throw new Error('Unauthorized: No team assigned to generate KPI report');
+    }
+    if (teamId && teamId !== managedTeam.id) {
+      throw new Error('Unauthorized: You can only download KPI reports for your team');
+    }
   }
 
-  const csvRows = [
-    ['Metric', 'Percentage'],
-    ['Sprint velocity', `${kpis.sprintVelocity}%`],
-    ['Bug resolution', `${kpis.bugResolution}%`],
-    ['Code review', `${kpis.codeReview}%`],
-    ['Delivery on time', `${kpis.deliveryOnTime}%`],
-    ['Team utilization', `${kpis.teamUtilization}%`],
-    ['Open tickets', `${kpis.openTickets}`],
-    ['Documentation', `${kpis.documentation}%`]
-  ];
+  let teamIds: string[] = [];
+  if (teamId) {
+    teamIds = [teamId];
+  } else if (userRole === 'MANAGER') {
+    const allTeams = await prisma.team.findMany({ select: { id: true }, orderBy: { name: 'asc' } });
+    teamIds = allTeams.map((team) => team.id);
+  } else if (managedTeam) {
+    teamIds = [managedTeam.id];
+  } else {
+    throw new Error('No team available for KPI report generation');
+  }
 
-  return csvRows.map(row => row.join(',')).join('\n');
+  const snapshots = await Promise.all(teamIds.map((id) => loadTeamSnapshot(id, today)));
+  const reports: TeamKpiReport[] = snapshots
+    .filter((snapshot): snapshot is NonNullable<typeof snapshot> => snapshot != null)
+    .map((snapshot) => ({
+      teamId: snapshot.id,
+      teamName: snapshot.name,
+      memberCount: snapshot.memberCount,
+      managerName: snapshot.managerName,
+      schedule: snapshot.teamSchedule,
+      kpis: snapshot.kpis,
+    }));
+
+  if (reports.length === 0) {
+    throw new Error('No team data available for KPI report generation');
+  }
+
+  return {
+    csv: buildTeamKpiReportCsv(reports),
+    filename:
+      reports.length === 1
+        ? `team-kpi-${reports[0].teamName.replace(/\s+/g, '-').toLowerCase()}.csv`
+        : 'all-teams-kpi-report.csv',
+  };
 }
