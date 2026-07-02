@@ -37,6 +37,21 @@ enum PayrollStatus {
   REJECTED
 }
 
+enum PayrollLifecycleStep {
+  DATA_COLLECTION
+  REVIEW_VERIFY
+  PAYROLL_RUN
+  CFO_APPROVAL
+  DISBURSEMENT
+}
+
+enum PayrollLineStatus {
+  PENDING
+  PROCESSING
+  ON_HOLD
+  VERIFIED
+}
+
 enum ApprovalTaskStatus {
   PENDING
   ACCEPTED
@@ -268,6 +283,8 @@ model Employee {
   announcements          Announcement[]
   skills                 EmployeeSkill[]
   payslips               EmployeePayslip[]
+  compensation           EmployeeCompensation?
+  payrollLineItems       PayrollLineItem[]
   jobApplications        JobApplication[]
   onboarding             OnboardingRecord?
   hrLetters              HrLetter[]
@@ -501,27 +518,77 @@ model InvoiceLineItem {
 }
 
 model Payroll {
-  id                String        @id @default(cuid())
-  batchNumber       String        @unique
-  periodStart       DateTime      @db.Date
-  periodEnd         DateTime      @db.Date
-  totalGross        Decimal       @db.Decimal(14, 2)
-  totalNet          Decimal       @db.Decimal(14, 2)
-  taxWithheld       Decimal       @default(0) @db.Decimal(14, 2)
-  employeeCount     Int
-  status            PayrollStatus @default(DRAFT)
-  submittedByUserId String?
-  submittedBy       User?         @relation("PayrollSubmitted", fields: [submittedByUserId], references: [id])
-  approvedByUserId  String?
-  approvedBy        User?         @relation("PayrollApproved", fields: [approvedByUserId], references: [id])
-  approvedAt        DateTime?
-  paidAt            DateTime?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  id                  String               @id @default(cuid())
+  batchNumber         String               @unique
+  periodStart         DateTime             @db.Date
+  periodEnd           DateTime             @db.Date
+  totalGross          Decimal              @db.Decimal(14, 2)
+  totalNet            Decimal              @db.Decimal(14, 2)
+  totalDeductions     Decimal              @default(0) @db.Decimal(14, 2)
+  taxWithheld         Decimal              @default(0) @db.Decimal(14, 2)
+  employerLiability   Decimal              @default(0) @db.Decimal(14, 2)
+  employeeCount       Int
+  currencyCode        String               @default("PKR") @db.VarChar(3)
+  lifecycleStep       PayrollLifecycleStep @default(DATA_COLLECTION)
+  payslipConfig       Json?
+  generationProgress  Int                  @default(0)
+  status              PayrollStatus        @default(DRAFT)
+  submittedByUserId   String?
+  submittedBy         User?                @relation("PayrollSubmitted", fields: [submittedByUserId], references: [id])
+  approvedByUserId    String?
+  approvedBy          User?                @relation("PayrollApproved", fields: [approvedByUserId], references: [id])
+  approvedAt          DateTime?
+  paidAt              DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  lineItems           PayrollLineItem[]
+  payslips            EmployeePayslip[]
 
   @@index([status])
   @@index([periodStart, periodEnd])
   @@map("payrolls")
+}
+
+model EmployeeCompensation {
+  id             String   @id @default(cuid())
+  employeeId     String   @unique
+  employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  baseSalary     Decimal  @db.Decimal(14, 2)
+  allowances     Decimal  @default(0) @db.Decimal(14, 2)
+  currencyCode   String   @default("PKR") @db.VarChar(3)
+  effectiveFrom  DateTime @db.Date
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("employee_compensations")
+}
+
+model PayrollLineItem {
+  id              String            @id @default(cuid())
+  payrollId       String
+  payroll         Payroll           @relation(fields: [payrollId], references: [id], onDelete: Cascade)
+  employeeId      String
+  employee        Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  baseSalary      Decimal           @db.Decimal(14, 2)
+  allowances      Decimal           @default(0) @db.Decimal(14, 2)
+  overtime        Decimal           @default(0) @db.Decimal(14, 2)
+  bonuses         Decimal           @default(0) @db.Decimal(14, 2)
+  grossPay        Decimal           @db.Decimal(14, 2)
+  incomeTax       Decimal           @default(0) @db.Decimal(14, 2)
+  providentFund   Decimal           @default(0) @db.Decimal(14, 2)
+  healthInsurance Decimal           @default(0) @db.Decimal(14, 2)
+  deductionsTotal Decimal           @db.Decimal(14, 2)
+  taxAmount       Decimal           @default(0) @db.Decimal(14, 2)
+  netPay          Decimal           @db.Decimal(14, 2)
+  status          PayrollLineStatus @default(PENDING)
+  holdReason      String?
+  payslipId       String?           @unique
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@unique([payrollId, employeeId])
+  @@index([payrollId, status])
+  @@map("payroll_line_items")
 }
 
 model DailyCashflow {
@@ -719,6 +786,7 @@ model EmployeePayslip {
   employeeId      String
   employee        Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   payrollId       String?
+  payroll         Payroll?      @relation(fields: [payrollId], references: [id], onDelete: SetNull)
   periodStart     DateTime      @db.Date
   periodEnd       DateTime      @db.Date
   periodLabel     String
