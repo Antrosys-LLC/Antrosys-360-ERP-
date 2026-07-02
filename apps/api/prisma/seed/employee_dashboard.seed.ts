@@ -111,23 +111,6 @@ export async function seedEmployeeDashboardData() {
     },
   });
 
-  await prisma.employeePayslip.deleteMany({ where: { employeeId: sara.id } });
-  await prisma.employeePayslip.create({
-    data: {
-      employeeId: sara.id,
-      periodStart: utcDate(year, 4, 1),
-      periodEnd: utcDate(year, 4, 30),
-      periodLabel: 'April 2026 payslip',
-      currencyCode: 'PKR',
-      grossPay: 365000,
-      netPay: 285000,
-      taxAmount: 52000,
-      deductionsTotal: 28000,
-      netPayRatioPct: 78,
-      paidAt: utcDate(year, 5, 1),
-    },
-  });
-
   await prisma.companyHoliday.deleteMany({});
   await prisma.companyHoliday.createMany({
     data: [
