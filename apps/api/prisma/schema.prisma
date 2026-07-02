@@ -76,6 +76,14 @@ enum ClientPipelineStage {
   AT_RISK
 }
 
+enum ClientSalesStage {
+  INITIAL_CONTACT
+  PROPOSAL
+  NEGOTIATION
+  CONTRACT_REVIEW
+  CLOSED_WON
+}
+
 enum OperatingCostCategory {
   OPERATIONS
   SOFTWARE
@@ -316,13 +324,20 @@ model AuditLog {
 
 model Client {
   id             String              @id @default(cuid())
+  clientCode     String?             @unique
   name           String
   email          String?
   phone          String?
+  industry       String?
+  tier           String?
   pipelineStage  ClientPipelineStage @default(PROSPECT)
+  salesStage     ClientSalesStage?
   monthlyRevenue Decimal?            @db.Decimal(14, 2)
   annualRevenue  Decimal?            @db.Decimal(14, 2)
-  currencyCode   String              @default("USD") @db.VarChar(3)
+  lifetimeValue  Decimal?            @db.Decimal(14, 2)
+  currencyCode   String              @default("PKR") @db.VarChar(3)
+  healthScore    Int                 @default(75)
+  healthMetrics  Json?
   renewalDueAt   DateTime?
   isAtRisk       Boolean             @default(false)
   isActive       Boolean             @default(true)
@@ -335,12 +350,30 @@ model Client {
   activities     ClientActivity[]
   projects       ClientProject[]
   tasks          ClientTask[]
+  contacts       ClientContact[]
   timelineEvents ClientTimelineEvent[]
 
   @@index([pipelineStage])
+  @@index([salesStage])
   @@index([isAtRisk])
   @@index([renewalDueAt])
   @@map("clients")
+}
+
+model ClientContact {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name      String
+  email     String?
+  phone     String?
+  role      String?
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  @@map("client_contacts")
 }
 
 model ClientStatus {

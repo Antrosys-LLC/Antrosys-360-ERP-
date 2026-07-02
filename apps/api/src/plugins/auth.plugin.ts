@@ -30,8 +30,8 @@ async function authPluginFn(fastify: FastifyInstance) {
         role: payload.role,
         permissions,
       };
-    } catch (err) {
-      reply.code(401).send({ error: 'Unauthorized' });
+    } catch {
+      return reply.code(401).send({ error: 'Unauthorized' });
     }
   });
 }

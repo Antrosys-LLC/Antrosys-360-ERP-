@@ -4,7 +4,6 @@ import {
   listClientsQuerySchema,
   createClientBodySchema,
   updateClientBodySchema,
-  createStatusBodySchema,
   createRenewalBodySchema,
   updateRenewalBodySchema,
   createActivityBodySchema,
@@ -13,6 +12,9 @@ import {
   createTaskBodySchema,
   updateTaskBodySchema,
   listTimelineQuerySchema,
+  createContactBodySchema,
+  updateContactBodySchema,
+  updateSalesStageBodySchema,
 } from './clients.schema';
 import * as clientsService from './clients.service';
 
@@ -41,8 +43,17 @@ export async function createClientHandler(request: FastifyRequest, reply: Fastif
   const parsed = createClientBodySchema.safeParse(request.body);
   if (!parsed.success) return validationError(reply, parsed.error.flatten());
   if (!request.user?.id) return reply.code(401).send({ error: 'Unauthorized' });
-  const client = await clientsService.createClient(parsed.data, request.user.id);
-  return reply.code(201).send({ status: 'success', data: client });
+  try {
+    const client = await clientsService.createClient(parsed.data, request.user.id);
+    return reply.code(201).send({ status: 'success', data: client });
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code;
+    if (code === 'P2002') {
+      return reply.code(409).send({ error: 'A client with this code already exists' });
+    }
+    request.log.error({ err }, 'Failed to create client');
+    return reply.code(500).send({ error: 'Failed to create client' });
+  }
 }
 
 export async function updateClientHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -202,4 +213,96 @@ export async function listTimelineHandler(request: FastifyRequest, reply: Fastif
 export async function getSummaryHandler(_request: FastifyRequest, reply: FastifyReply) {
   const summary = await clientsService.getSummary();
   return reply.code(200).send({ status: 'success', data: summary });
+}
+
+export async function getSalesPipelineHandler(_request: FastifyRequest, reply: FastifyReply) {
+  const pipeline = await clientsService.getSalesPipeline();
+  return reply.code(200).send({ status: 'success', data: pipeline });
+}
+
+export async function getRecentTimelineHandler(request: FastifyRequest, reply: FastifyReply) {
+  const limit = Number((request.query as { limit?: string }).limit) || 10;
+  const timeline = await clientsService.getRecentTimeline(limit);
+  return reply.code(200).send({ status: 'success', data: timeline });
+}
+
+export async function getUpcomingTasksHandler(request: FastifyRequest, reply: FastifyReply) {
+  const limit = Number((request.query as { limit?: string }).limit) || 10;
+  const tasks = await clientsService.getUpcomingTasks(limit);
+  return reply.code(200).send({ status: 'success', data: tasks });
+}
+
+export async function getAlertsHandler(_request: FastifyRequest, reply: FastifyReply) {
+  const alerts = await clientsService.getAlerts();
+  return reply.code(200).send({ status: 'success', data: alerts });
+}
+
+export async function exportClientsHandler(_request: FastifyRequest, reply: FastifyReply) {
+  const csv = await clientsService.exportClients();
+  return reply
+    .header('Content-Type', 'text/csv')
+    .header('Content-Disposition', 'attachment; filename="clients-export.csv"')
+    .code(200)
+    .send(csv);
+}
+
+export async function importClientsHandler(request: FastifyRequest, reply: FastifyReply) {
+  if (!request.user?.id) return reply.code(401).send({ error: 'Unauthorized' });
+  const body = request.body as { csv?: string };
+  if (!body?.csv) return reply.code(400).send({ error: 'CSV content required' });
+  const result = await clientsService.importClients(body.csv, request.user.id);
+  return reply.code(200).send({ status: 'success', data: result });
+}
+
+export async function updateSalesStageHandler(request: FastifyRequest, reply: FastifyReply) {
+  const paramsParsed = clientParamsSchema.safeParse(request.params);
+  if (!paramsParsed.success) return validationError(reply, paramsParsed.error.flatten());
+  const bodyParsed = updateSalesStageBodySchema.safeParse(request.body);
+  if (!bodyParsed.success) return validationError(reply, bodyParsed.error.flatten());
+  if (!request.user?.id) return reply.code(401).send({ error: 'Unauthorized' });
+  const updated = await clientsService.updateClientSalesStage(
+    paramsParsed.data.clientId,
+    bodyParsed.data.salesStage,
+    request.user.id,
+  );
+  return reply.code(200).send({ status: 'success', data: updated });
+}
+
+// ─── Contacts ──────────────────────────────────────────────────────────────
+
+export async function listContactsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const parsed = clientParamsSchema.safeParse(request.params);
+  if (!parsed.success) return validationError(reply, parsed.error.flatten());
+  const contacts = await clientsService.listContacts(parsed.data.clientId);
+  return reply.code(200).send({ status: 'success', data: contacts });
+}
+
+export async function createContactHandler(request: FastifyRequest, reply: FastifyReply) {
+  const paramsParsed = clientParamsSchema.safeParse(request.params);
+  if (!paramsParsed.success) return validationError(reply, paramsParsed.error.flatten());
+  const bodyParsed = createContactBodySchema.safeParse(request.body);
+  if (!bodyParsed.success) return validationError(reply, bodyParsed.error.flatten());
+  if (!request.user?.id) return reply.code(401).send({ error: 'Unauthorized' });
+  const contact = await clientsService.createContact(paramsParsed.data.clientId, bodyParsed.data, request.user.id);
+  return reply.code(201).send({ status: 'success', data: contact });
+}
+
+export async function updateContactHandler(request: FastifyRequest, reply: FastifyReply) {
+  const paramsParsed = clientParamsSchema.safeParse(request.params);
+  if (!paramsParsed.success) return validationError(reply, paramsParsed.error.flatten());
+  const bodyParsed = updateContactBodySchema.safeParse(request.body);
+  if (!bodyParsed.success) return validationError(reply, bodyParsed.error.flatten());
+  if (!request.user?.id) return reply.code(401).send({ error: 'Unauthorized' });
+  const { contactId, clientId } = request.params as { contactId: string; clientId: string };
+  const updated = await clientsService.updateContact(contactId, clientId, bodyParsed.data, request.user.id);
+  return reply.code(200).send({ status: 'success', data: updated });
+}
+
+export async function deleteContactHandler(request: FastifyRequest, reply: FastifyReply) {
+  const paramsParsed = clientParamsSchema.safeParse(request.params);
+  if (!paramsParsed.success) return validationError(reply, paramsParsed.error.flatten());
+  if (!request.user?.id) return reply.code(401).send({ error: 'Unauthorized' });
+  const { contactId, clientId } = request.params as { contactId: string; clientId: string };
+  await clientsService.deleteContact(contactId, clientId, request.user.id);
+  return reply.code(200).send({ status: 'success', data: { deleted: true } });
 }
