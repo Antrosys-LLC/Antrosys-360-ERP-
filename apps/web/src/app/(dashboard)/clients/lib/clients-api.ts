@@ -8,6 +8,19 @@ export interface ClientSummary {
   totalMonthlyRevenue: number | null;
   upcomingRenewals: number;
   prospectPipeline: number;
+  lifecycleDistribution: { active: number; prospect: number; atRisk: number };
+  atRiskClientNames: string[];
+}
+
+export interface ClientContact {
+  id: string;
+  clientId: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  role: string | null;
+  isPrimary: boolean;
+  createdAt: string;
 }
 
 export interface ClientStatus {
@@ -71,21 +84,64 @@ export interface ClientTimelineEvent {
   metadata: unknown;
 }
 
+export interface GlobalTimelineEvent {
+  id: string;
+  clientId: string;
+  clientName: string;
+  eventType: string;
+  title: string;
+  description: string | null;
+  eventDate: string;
+}
+
+export interface GlobalTask {
+  id: string;
+  clientId: string;
+  clientName: string;
+  title: string;
+  priority: string;
+  status: string;
+  dueAt: string | null;
+  completedAt: string | null;
+}
+
+export interface SalesPipelineCard {
+  id: string;
+  name: string;
+  annualRevenue: number | null;
+  currencyCode: string;
+}
+
+export type SalesPipeline = Record<string, SalesPipelineCard[]>;
+
+export interface ClientAlerts {
+  message: string | null;
+  clients: { name: string; healthScore: number; renewalDueAt: string | null }[];
+}
+
 export interface Client {
   id: string;
+  clientCode: string | null;
   name: string;
   email: string | null;
   phone: string | null;
+  industry: string | null;
+  tier: string | null;
   pipelineStage: string;
+  salesStage: string | null;
   monthlyRevenue: number | null;
   annualRevenue: number | null;
+  lifetimeValue: number | null;
   currencyCode: string;
+  healthScore: number;
+  healthMetrics: unknown;
   renewalDueAt: string | null;
   isAtRisk: boolean;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
-  _count: { projects: number; tasks: number; invoices: number };
+  _count: { projects: number; tasks: number; invoices: number; contacts: number };
+  contacts?: ClientContact[];
   statuses?: ClientStatus[];
   renewals?: ClientRenewal[];
   activities?: ClientActivity[];
@@ -100,10 +156,45 @@ export interface PaginatedResult<T> {
   pagination: { page: number; limit: number; total: number; totalPages: number };
 }
 
-// ── Summary ──────────────────────────────────────────────────────────────
+// ── Summary & Dashboard ──────────────────────────────────────────────────
 
 export async function fetchSummary(): Promise<ClientSummary> {
   const { data } = await apiClient.get('/clients/summary');
+  return data.data;
+}
+
+export async function fetchSalesPipeline(): Promise<SalesPipeline> {
+  const { data } = await apiClient.get('/clients/pipeline');
+  return data.data;
+}
+
+export async function fetchRecentTimeline(limit = 10): Promise<GlobalTimelineEvent[]> {
+  const { data } = await apiClient.get('/clients/recent-timeline', { params: { limit } });
+  return data.data;
+}
+
+export async function fetchUpcomingTasks(limit = 10): Promise<GlobalTask[]> {
+  const { data } = await apiClient.get('/clients/upcoming-tasks', { params: { limit } });
+  return data.data;
+}
+
+export async function fetchAlerts(): Promise<ClientAlerts> {
+  const { data } = await apiClient.get('/clients/alerts');
+  return data.data;
+}
+
+export async function exportClients(): Promise<Blob> {
+  const { data } = await apiClient.get('/clients/export', { responseType: 'blob' });
+  return data;
+}
+
+export async function importClients(csv: string): Promise<{ imported: number }> {
+  const { data } = await apiClient.post('/clients/import', { csv });
+  return data.data;
+}
+
+export async function updateSalesStage(clientId: string, salesStage: string): Promise<Client> {
+  const { data } = await apiClient.patch(`/clients/${clientId}/sales-stage`, { salesStage });
   return data.data;
 }
 
@@ -128,9 +219,13 @@ export async function fetchClient(clientId: string): Promise<Client> {
 
 export async function createClient(payload: {
   name: string;
+  clientCode?: string | null;
   email?: string | null;
   phone?: string | null;
+  industry?: string | null;
+  tier?: string | null;
   pipelineStage?: string;
+  salesStage?: string | null;
   monthlyRevenue?: number | null;
   annualRevenue?: number | null;
   currencyCode?: string;
@@ -144,15 +239,21 @@ export async function createClient(payload: {
 
 export async function updateClient(clientId: string, payload: Partial<{
   name: string;
+  clientCode: string | null;
   email: string | null;
   phone: string | null;
+  industry: string | null;
+  tier: string | null;
   pipelineStage: string;
+  salesStage: string | null;
   monthlyRevenue: number | null;
   annualRevenue: number | null;
   currencyCode: string;
   renewalDueAt: string | null;
   isAtRisk: boolean;
   isActive: boolean;
+  healthScore: number;
+  lifetimeValue: number | null;
 }>): Promise<Client> {
   const { data } = await apiClient.patch(`/clients/${clientId}`, payload);
   return data.data;
@@ -160,6 +261,39 @@ export async function updateClient(clientId: string, payload: Partial<{
 
 export async function deleteClient(clientId: string): Promise<void> {
   await apiClient.delete(`/clients/${clientId}`);
+}
+
+// ── Contacts ───────────────────────────────────────────────────────────────
+
+export async function fetchContacts(clientId: string): Promise<ClientContact[]> {
+  const { data } = await apiClient.get(`/clients/${clientId}/contacts`);
+  return data.data;
+}
+
+export async function createContact(clientId: string, payload: {
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  role?: string | null;
+  isPrimary?: boolean;
+}): Promise<ClientContact> {
+  const { data } = await apiClient.post(`/clients/${clientId}/contacts`, payload);
+  return data.data;
+}
+
+export async function updateContact(clientId: string, contactId: string, payload: Partial<{
+  name: string;
+  email: string | null;
+  phone: string | null;
+  role: string | null;
+  isPrimary: boolean;
+}>): Promise<ClientContact> {
+  const { data } = await apiClient.patch(`/clients/${clientId}/contacts/${contactId}`, payload);
+  return data.data;
+}
+
+export async function deleteContact(clientId: string, contactId: string): Promise<void> {
+  await apiClient.delete(`/clients/${clientId}/contacts/${contactId}`);
 }
 
 // ── Invoice ──────────────────────────────────────────────────────────────

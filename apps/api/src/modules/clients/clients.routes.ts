@@ -20,6 +20,17 @@ import {
   updateTaskHandler,
   listTimelineHandler,
   getSummaryHandler,
+  getSalesPipelineHandler,
+  getRecentTimelineHandler,
+  getUpcomingTasksHandler,
+  getAlertsHandler,
+  exportClientsHandler,
+  importClientsHandler,
+  updateSalesStageHandler,
+  listContactsHandler,
+  createContactHandler,
+  updateContactHandler,
+  deleteContactHandler,
 } from './clients.controller';
 
 const CLIENTS_READ: Permission = 'clients:read';
@@ -28,10 +39,40 @@ const CLIENTS_WRITE: Permission = 'clients:write';
 export async function clientsRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.verifyJwt);
 
-  // ── Summary ────────────────────────────────────────────────────────────
+  // ── Dashboard aggregates (must be before /:clientId) ───────────────────
   fastify.get('/summary', {
     preHandler: [fastify.requirePermission(CLIENTS_READ)],
     handler: getSummaryHandler,
+  });
+
+  fastify.get('/pipeline', {
+    preHandler: [fastify.requirePermission(CLIENTS_READ)],
+    handler: getSalesPipelineHandler,
+  });
+
+  fastify.get('/recent-timeline', {
+    preHandler: [fastify.requirePermission(CLIENTS_READ)],
+    handler: getRecentTimelineHandler,
+  });
+
+  fastify.get('/upcoming-tasks', {
+    preHandler: [fastify.requirePermission(CLIENTS_READ)],
+    handler: getUpcomingTasksHandler,
+  });
+
+  fastify.get('/alerts', {
+    preHandler: [fastify.requirePermission(CLIENTS_READ)],
+    handler: getAlertsHandler,
+  });
+
+  fastify.get('/export', {
+    preHandler: [fastify.requirePermission(CLIENTS_READ)],
+    handler: exportClientsHandler,
+  });
+
+  fastify.post('/import', {
+    preHandler: [fastify.requirePermission(CLIENTS_WRITE)],
+    handler: importClientsHandler,
   });
 
   // ── Client CRUD ────────────────────────────────────────────────────────
@@ -58,6 +99,11 @@ export async function clientsRoutes(fastify: FastifyInstance) {
   fastify.delete('/:clientId', {
     preHandler: [fastify.requirePermission(CLIENTS_WRITE)],
     handler: deleteClientHandler,
+  });
+
+  fastify.patch('/:clientId/sales-stage', {
+    preHandler: [fastify.requirePermission(CLIENTS_WRITE)],
+    handler: updateSalesStageHandler,
   });
 
   // ── Status ─────────────────────────────────────────────────────────────
@@ -129,5 +175,26 @@ export async function clientsRoutes(fastify: FastifyInstance) {
   fastify.get('/:clientId/timeline', {
     preHandler: [fastify.requirePermission(CLIENTS_READ)],
     handler: listTimelineHandler,
+  });
+
+  // ── Contacts ───────────────────────────────────────────────────────────
+  fastify.get('/:clientId/contacts', {
+    preHandler: [fastify.requirePermission(CLIENTS_READ)],
+    handler: listContactsHandler,
+  });
+
+  fastify.post('/:clientId/contacts', {
+    preHandler: [fastify.requirePermission(CLIENTS_WRITE)],
+    handler: createContactHandler,
+  });
+
+  fastify.patch('/:clientId/contacts/:contactId', {
+    preHandler: [fastify.requirePermission(CLIENTS_WRITE)],
+    handler: updateContactHandler,
+  });
+
+  fastify.delete('/:clientId/contacts/:contactId', {
+    preHandler: [fastify.requirePermission(CLIENTS_WRITE)],
+    handler: deleteContactHandler,
   });
 }

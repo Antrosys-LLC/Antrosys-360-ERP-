@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+function emptyToNull(val: unknown) {
+  if (val === '' || val === undefined) return null;
+  return val;
+}
+
 // ─── Params ────────────────────────────────────────────────────────────────
 
 export const clientParamsSchema = z.object({
@@ -21,25 +26,37 @@ export type ListClientsQuery = z.infer<typeof listClientsQuerySchema>;
 
 export const createClientBodySchema = z.object({
   name: z.string().min(1).max(300),
-  email: z.string().email().optional().nullable(),
-  phone: z.string().max(50).optional().nullable(),
-  pipelineStage: z.enum(['PROSPECT', 'PROPOSAL', 'NEGOTIATION', 'ACTIVE']).default('PROSPECT'),
-  currencyCode: z.string().length(3).default('USD'),
+  clientCode: z.preprocess(emptyToNull, z.string().max(20).nullable().optional()),
+  email: z.preprocess(emptyToNull, z.string().email().nullable().optional()),
+  phone: z.preprocess(emptyToNull, z.string().max(50).nullable().optional()),
+  industry: z.preprocess(emptyToNull, z.string().max(200).nullable().optional()),
+  tier: z.preprocess(emptyToNull, z.string().max(50).nullable().optional()),
+  pipelineStage: z.enum(['PROSPECT', 'PROPOSAL', 'NEGOTIATION', 'ACTIVE', 'AT_RISK']).default('PROSPECT'),
+  salesStage: z.enum(['INITIAL_CONTACT', 'PROPOSAL', 'NEGOTIATION', 'CONTRACT_REVIEW', 'CLOSED_WON']).optional().nullable(),
+  currencyCode: z.string().length(3).default('PKR'),
   renewalDueAt: z.string().datetime().optional().nullable(),
   isAtRisk: z.boolean().default(false),
   isActive: z.boolean().default(true),
+  healthScore: z.coerce.number().int().min(0).max(100).optional(),
+  lifetimeValue: z.coerce.number().optional().nullable(),
 });
 export type CreateClientBody = z.infer<typeof createClientBodySchema>;
 
 export const updateClientBodySchema = z.object({
   name: z.string().min(1).max(300).optional(),
+  clientCode: z.string().max(20).optional().nullable(),
   email: z.string().email().optional().nullable(),
   phone: z.string().max(50).optional().nullable(),
-  pipelineStage: z.enum(['PROSPECT', 'PROPOSAL', 'NEGOTIATION', 'ACTIVE']).optional(),
+  industry: z.string().max(200).optional().nullable(),
+  tier: z.string().max(50).optional().nullable(),
+  pipelineStage: z.enum(['PROSPECT', 'PROPOSAL', 'NEGOTIATION', 'ACTIVE', 'AT_RISK']).optional(),
+  salesStage: z.enum(['INITIAL_CONTACT', 'PROPOSAL', 'NEGOTIATION', 'CONTRACT_REVIEW', 'CLOSED_WON']).optional().nullable(),
   currencyCode: z.string().length(3).optional(),
   renewalDueAt: z.string().datetime().optional().nullable(),
   isAtRisk: z.boolean().optional(),
   isActive: z.boolean().optional(),
+  healthScore: z.coerce.number().int().min(0).max(100).optional(),
+  lifetimeValue: z.coerce.number().optional().nullable(),
 });
 export type UpdateClientBody = z.infer<typeof updateClientBodySchema>;
 
@@ -127,3 +144,28 @@ export const listTimelineQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 export type ListTimelineQuery = z.infer<typeof listTimelineQuerySchema>;
+
+// ─── Contact ───────────────────────────────────────────────────────────────
+
+export const createContactBodySchema = z.object({
+  name: z.string().min(1).max(200),
+  email: z.string().email().optional().nullable(),
+  phone: z.string().max(50).optional().nullable(),
+  role: z.string().max(100).optional().nullable(),
+  isPrimary: z.boolean().default(false),
+});
+export type CreateContactBody = z.infer<typeof createContactBodySchema>;
+
+export const updateContactBodySchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  email: z.string().email().optional().nullable(),
+  phone: z.string().max(50).optional().nullable(),
+  role: z.string().max(100).optional().nullable(),
+  isPrimary: z.boolean().optional(),
+});
+export type UpdateContactBody = z.infer<typeof updateContactBodySchema>;
+
+export const updateSalesStageBodySchema = z.object({
+  salesStage: z.enum(['INITIAL_CONTACT', 'PROPOSAL', 'NEGOTIATION', 'CONTRACT_REVIEW', 'CLOSED_WON']),
+});
+export type UpdateSalesStageBody = z.infer<typeof updateSalesStageBodySchema>;

@@ -1,6 +1,7 @@
 'use client';
 
 import type { ClientSummary } from '../lib/clients-api';
+import { formatCurrency } from '../lib/client-utils';
 
 interface ClientMetricsProps {
   summary: ClientSummary | null;
@@ -8,12 +9,11 @@ interface ClientMetricsProps {
 }
 
 export function ClientMetrics({ summary, loading }: ClientMetricsProps) {
-  const fmt = (val: number | null | undefined) =>
-    val != null ? `PKR ${(val / 1e6).toFixed(1)}M` : '—';
+  const dist = summary?.lifecycleDistribution ?? { active: 65, prospect: 25, atRisk: 10 };
 
   const items = [
-    { label: 'Total ARR', value: fmt(summary?.totalAnnualRevenue), color: 'text-emerald-600' },
-    { label: 'MRR', value: fmt(summary?.totalMonthlyRevenue), color: 'text-foreground' },
+    { label: 'Total ARR', value: formatCurrency(summary?.totalAnnualRevenue), color: 'text-emerald-600' },
+    { label: 'MRR', value: formatCurrency(summary?.totalMonthlyRevenue), color: 'text-emerald-600' },
     { label: 'Active Clients', value: summary?.activeClients ?? '—', color: 'text-foreground' },
     { label: 'At-risk', value: summary?.atRiskClients ?? '—', color: 'text-destructive' },
     { label: 'Renewal Pipeline', value: summary?.upcomingRenewals ?? '—', color: 'text-foreground' },
@@ -22,10 +22,10 @@ export function ClientMetrics({ summary, loading }: ClientMetricsProps) {
 
   return (
     <section className="bg-card border border-border rounded-xl p-5 shadow-xs space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 divide-y md:divide-y-0 lg:divide-x divide-border">
-        {items.map((item) => (
-          <div key={item.label} className="pt-2 md:pt-0 lg:pl-4 first:lg:pl-0">
-            <span className="text-xs font-semibold text-muted-foreground uppercase">{item.label}</span>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        {items.map((item, i) => (
+          <div key={item.label} className={`pt-1 ${i > 0 ? 'lg:border-l lg:border-border lg:pl-4' : ''}`}>
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">{item.label}</span>
             <div className={`text-xl font-bold mt-1 ${item.color}`}>
               {loading ? (
                 <span className="inline-block w-16 h-6 bg-muted rounded animate-pulse" />
@@ -36,14 +36,12 @@ export function ClientMetrics({ summary, loading }: ClientMetricsProps) {
           </div>
         ))}
       </div>
-      <div className="space-y-1.5 pt-2">
-        <div className="flex justify-between items-center text-xs text-muted-foreground font-medium">
-          <span>Client lifecycle distribution</span>
-        </div>
+      <div className="space-y-1.5 pt-1">
+        <span className="text-xs text-muted-foreground font-medium">Client lifecycle distribution</span>
         <div className="w-full bg-muted h-2.5 rounded-full overflow-hidden flex">
-          <div className="bg-primary h-full" style={{ width: '65%' }} />
-          <div className="bg-amber-400 h-full" style={{ width: '25%' }} />
-          <div className="bg-destructive h-full" style={{ width: '10%' }} />
+          <div className="bg-primary h-full transition-all" style={{ width: `${dist.active}%` }} />
+          <div className="bg-violet-300 h-full transition-all" style={{ width: `${dist.prospect}%` }} />
+          <div className="bg-destructive h-full transition-all" style={{ width: `${dist.atRisk}%` }} />
         </div>
       </div>
     </section>
