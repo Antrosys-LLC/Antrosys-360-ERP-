@@ -28,7 +28,7 @@ export interface NavItem {
 const ALL_NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', href: '/', icon: LayoutDashboard },
   { label: 'Invoices', href: '/finance/invoices', icon: FileText, permission: 'finance:read' },
-  { label: 'Payroll', href: '/finance/payroll', icon: Wallet, permission: 'payroll:read' },
+  { label: 'Payroll', href: '/payroll', icon: Wallet, permission: 'payroll:read' },
   { label: 'Employees', href: '/hr/employees', icon: Users, permission: 'hr:read' },
   { label: 'Onboarding', href: '/onboard', icon: UserCheck, permission: 'hr:read' },
   { label: 'Recruitment', href: '/hr/recruitment', icon: UserPlus, permission: 'recruitment:read' },

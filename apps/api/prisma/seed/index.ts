@@ -367,8 +367,9 @@ async function main() {
   const { seedLedgerData } = await import('./ledger.seed');
   await seedLedgerData(prisma);
 
-  const { seedPayslipsData } = await import('./payslips.seed');
+  const { seedPayslipsData, seedPayrollData } = await import('./payroll.seed');
   await seedPayslipsData(prisma);
+  await seedPayrollData(prisma);
   const { seedEmployeeDashboardData } = await import('./employee_dashboard.seed');
   await seedEmployeeDashboardData();
 
