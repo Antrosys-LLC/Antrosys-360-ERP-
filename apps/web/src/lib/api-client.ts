@@ -23,30 +23,26 @@ async function getTokenFromSession(): Promise<string | null> {
   try {
     const res = await fetch('/api/auth/session');
     const session = await res.json();
-    return session?.accessToken || null;
+    return session?.accessToken ?? null;
   } catch {
     return null;
   }
 }
 
 async function getAccessToken(): Promise<string | null> {
-  // 1. Try cookie first (fastest)
   const cookieToken = getTokenFromCookie();
   if (cookieToken) {
     cachedToken = cookieToken;
     return cookieToken;
   }
 
-  // 2. Use cached token if we have one
   if (cachedToken) return cachedToken;
 
-  // 3. Fetch from NextAuth session (deduplicated)
   if (!tokenFetchPromise) {
     tokenFetchPromise = getTokenFromSession().then((token) => {
       cachedToken = token;
       tokenFetchPromise = null;
 
-      // Also set the cookie for future requests
       if (token && typeof document !== 'undefined') {
         document.cookie = `access-token=${token}; path=/; SameSite=Lax`;
       }
