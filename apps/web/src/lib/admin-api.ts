@@ -35,6 +35,15 @@ export interface PaginatedUsers {
   limit: number;
 }
 
+export interface AdminUserStats {
+  total: number;
+  active: number;
+  suspended: number;
+  pending: number;
+  mfaEnabled: number;
+  mfaAdoption: number;
+}
+
 export interface PaginatedAuditLogs {
   logs: AuditLogEntry[];
   total: number;
@@ -50,6 +59,11 @@ export async function fetchAdminUsers(params?: {
   isActive?: string;
 }) {
   const { data } = await apiClient.get<{ status: string; data: PaginatedUsers }>('/admin/users', { params });
+  return data.data;
+}
+
+export async function fetchAdminUserStats() {
+  const { data } = await apiClient.get<{ status: string; data: AdminUserStats }>('/admin/users/stats');
   return data.data;
 }
 
@@ -75,5 +89,46 @@ export async function deleteAdminUser(id: string) {
 
 export async function fetchAuditLogs(params?: { page?: number; limit?: number; userId?: string }) {
   const { data } = await apiClient.get<{ status: string; data: PaginatedAuditLogs }>('/admin/audit-logs', { params });
+  return data.data;
+}
+
+// ---- Module Access ----
+
+export type ModuleAccessLevel = 'OFF' | 'READ' | 'FULL';
+
+export interface ModuleDef {
+  key: string;
+  label: string;
+  writeCapable: boolean;
+}
+
+export interface RoleModuleAccessCell {
+  module: string;
+  level: ModuleAccessLevel;
+  isOverridden: boolean;
+}
+
+export interface RoleModuleAccessRow {
+  role: string;
+  modules: RoleModuleAccessCell[];
+}
+
+export interface ModuleAccessMatrix {
+  modules: ModuleDef[];
+  roles: RoleModuleAccessRow[];
+}
+
+export async function fetchModuleAccess() {
+  const { data } = await apiClient.get<{ status: string; data: ModuleAccessMatrix }>('/admin/module-access');
+  return data.data;
+}
+
+export async function setModuleAccess(payload: { role: string; module: string; accessLevel: ModuleAccessLevel }) {
+  const { data } = await apiClient.put<{ status: string; data: unknown }>('/admin/module-access', payload);
+  return data.data;
+}
+
+export async function fetchMyPermissions() {
+  const { data } = await apiClient.get<{ status: string; data: { id: string; role: string; permissions: string[] } }>('/auth/permissions');
   return data.data;
 }

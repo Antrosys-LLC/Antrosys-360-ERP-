@@ -52,6 +52,20 @@ export async function listUsers(query: ListUsersQuery) {
   return { users, total, page: query.page, limit: query.limit };
 }
 
+export async function getUserStats() {
+  const [total, active, suspended, pending, mfaEnabled] = await Promise.all([
+    prisma.user.count(),
+    prisma.user.count({ where: { isActive: true } }),
+    prisma.user.count({ where: { isActive: false } }),
+    prisma.user.count({ where: { lastLoginAt: null } }),
+    prisma.user.count({ where: { mfaEnabled: true } }),
+  ]);
+
+  const mfaAdoption = total > 0 ? Math.round((mfaEnabled / total) * 100) : 0;
+
+  return { total, active, suspended, pending, mfaEnabled, mfaAdoption };
+}
+
 export async function getUser(id: string) {
   return prisma.user.findUnique({
     where: { id },

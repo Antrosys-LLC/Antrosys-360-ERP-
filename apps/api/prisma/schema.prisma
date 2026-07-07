@@ -241,6 +241,7 @@ model User {
   assignedTasks            EmployeeTask[]     @relation("TaskAssignments")
   sentMessages             Message[]          @relation("SentMessages")
   workScheduleUpdates      WorkScheduleConfig[] @relation("WorkScheduleUpdatedBy")
+  roleModuleAccessUpdates  RoleModuleAccess[]   @relation("RoleModuleAccessUpdatedBy")
   ledgerEntriesCreated     LedgerEntry[]      @relation("LedgerEntriesCreated")
 
   @@map("users")
@@ -860,6 +861,26 @@ model CompanyHoliday {
 
   @@index([date])
   @@map("company_holidays")
+}
+
+enum ModuleAccessLevel {
+  OFF
+  READ
+  FULL
+}
+
+model RoleModuleAccess {
+  id              String            @id @default(cuid())
+  role            Role
+  module          String
+  accessLevel     ModuleAccessLevel
+  updatedByUserId String?
+  updatedBy       User?             @relation("RoleModuleAccessUpdatedBy", fields: [updatedByUserId], references: [id])
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@unique([role, module])
+  @@map("role_module_access")
 }
 
 model WorkScheduleConfig {

@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Search, Plus, Shield, UserPlus, ScrollText, Loader2, Trash2, AlertTriangle, CheckCircle, XCircle } from "lucide-react";
+import { Search, Plus, Shield, UserPlus, ScrollText, Loader2, Trash2, AlertTriangle, CheckCircle, XCircle, Users, Clock, ShieldOff } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { ModuleToggles } from "./module-toggles";
 import {
-  fetchAdminUsers, createAdminUser, updateAdminUser, deleteAdminUser, fetchAuditLogs,
-  type AdminUser, type AuditLogEntry,
+  fetchAdminUsers, fetchAdminUserStats, createAdminUser, updateAdminUser, deleteAdminUser, fetchAuditLogs,
+  type AdminUser, type AdminUserStats, type AuditLogEntry,
 } from "@/lib/admin-api";
 
 const ROLES = ["CEO", "CFO", "OPERATIONS_HEAD", "HR_HEAD", "FINANCE_MANAGER", "PROJECT_MANAGER", "MANAGER", "TEAM_LEAD", "EMPLOYEE", "SUB_MANAGER"];
@@ -15,6 +16,7 @@ export default function AdminUsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [total, setTotal] = useState(0);
+  const [stats, setStats] = useState<AdminUserStats | null>(null);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
@@ -52,6 +54,15 @@ export default function AdminUsersPage() {
 
   useEffect(() => { loadAuditLogs(); }, [auditPage]);
 
+  useEffect(() => { loadStats(); }, []);
+
+  async function loadStats() {
+    try {
+      const result = await fetchAdminUserStats();
+      setStats(result);
+    } catch { /* ignore */ }
+  }
+
   async function loadAuditLogs() {
     try {
       const result = await fetchAuditLogs({ page: auditPage, limit: 10 });
@@ -67,6 +78,7 @@ export default function AdminUsersPage() {
       setShowAdd(false);
       setForm({ email: "", password: "", role: "EMPLOYEE" });
       setPage(1);
+      loadStats();
     } catch (e: any) {
       alert(e?.response?.data?.error || "Failed to create user");
     }
@@ -82,6 +94,7 @@ export default function AdminUsersPage() {
       });
       setShowEdit(null);
       setPage(1);
+      loadStats();
     } catch (e: any) {
       alert(e?.response?.data?.error || "Failed to update user");
     }
@@ -93,6 +106,7 @@ export default function AdminUsersPage() {
       await deleteAdminUser(deleteId);
       setDeleteId(null);
       setPage(1);
+      loadStats();
     } catch (e: any) {
       alert(e?.response?.data?.error || "Failed to delete user");
     }
@@ -119,8 +133,47 @@ export default function AdminUsersPage() {
     return `inline-block px-2 py-0.5 rounded text-[10px] font-bold ${colors[role] || "bg-muted text-muted-foreground"}`;
   };
 
+  const statCards = [
+    { key: "total", label: "Total users", value: stats?.total, icon: Users, valueClass: "text-foreground" },
+    { key: "active", label: "Active", value: stats?.active, icon: CheckCircle, valueClass: "text-primary" },
+    { key: "pending", label: "Pending", value: stats?.pending, icon: Clock, valueClass: "text-amber-600" },
+    { key: "suspended", label: "Suspended", value: stats?.suspended, icon: ShieldOff, valueClass: "text-destructive" },
+  ];
+
   return (
     <div className="space-y-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {statCards.map((card) => (
+          <div key={card.key} className="bg-card border border-border rounded-xl p-4 shadow-xs">
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+              <card.icon className="h-3.5 w-3.5" />
+              <span>{card.label}</span>
+            </div>
+            <div className={`mt-2 text-3xl font-bold tracking-tight ${card.valueClass}`}>
+              {stats ? card.value : <span className="inline-block h-8 w-12 rounded bg-muted animate-pulse align-middle" />}
+            </div>
+          </div>
+        ))}
+
+        <div className="bg-card border border-border rounded-xl p-4 shadow-xs flex flex-col justify-center col-span-2 sm:col-span-1">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+              <Shield className="h-3.5 w-3.5" />
+              <span>MFA Adoption</span>
+            </div>
+            <span className="text-sm font-bold text-emerald-600">
+              {stats ? `${stats.mfaAdoption}%` : "—"}
+            </span>
+          </div>
+          <div className="mt-3 h-2 w-full rounded-full bg-muted overflow-hidden">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-500"
+              style={{ width: `${stats?.mfaAdoption ?? 0}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
       <div className="bg-card border border-border rounded-xl p-5 shadow-xs">
         <div className="flex items-center justify-between gap-2 border-b border-border/60 pb-3 mb-4">
           <div>
@@ -239,6 +292,8 @@ export default function AdminUsersPage() {
           </div>
         )}
       </div>
+
+      <ModuleToggles />
 
       {showAudit && (
         <div className="bg-card border border-border rounded-xl p-5 shadow-xs">
