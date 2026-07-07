@@ -1,13 +1,13 @@
-import { LeaveType, LeaveRequestStatus, Prisma } from '@prisma/client';
-import { prisma } from '../../../config/database';
-import { DEFAULT_LEAVE_QUOTA } from '../../../shared/leaveBalance/leave-quota.constants';
-import { incrementLeaveBalanceOnApproval } from '../../../shared/leaveBalance/increment-leave-balance';
-import { requiresOpsHeadApproval as checkOpsHeadRequired } from '../../../shared/leaveBalance/requires-ops-head-approval';
+import { LeaveType, LeaveRequestStatus, Prisma } from "@prisma/client";
+import { prisma } from "../../../config/database";
+import { DEFAULT_LEAVE_QUOTA } from "../../../shared/leaveBalance/leave-quota.constants";
+import { incrementLeaveBalanceOnApproval } from "../../../shared/leaveBalance/increment-leave-balance";
+import { requiresOpsHeadApproval as checkOpsHeadRequired } from "../../../shared/leaveBalance/requires-ops-head-approval";
 import type {
   CreateLeaveRequestBody,
   UpdateLeaveStatusBody,
   ListLeaveRequestsQuery,
-} from './leave.schema';
+} from "./leave.schema";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -30,15 +30,29 @@ async function getEmployee(userId: string) {
   return prisma.employee.findFirst({ where: { userId } });
 }
 
-async function getLeaveBalance(employeeId: string, leaveType: LeaveType, year: number, month: number) {
+async function getLeaveBalance(
+  employeeId: string,
+  leaveType: LeaveType,
+  year: number,
+  month: number,
+) {
   return prisma.leaveBalance.findUnique({
-    where: { employeeId_leaveType_year_month: { employeeId, leaveType, year, month } },
+    where: {
+      employeeId_leaveType_year_month: { employeeId, leaveType, year, month },
+    },
   });
 }
 
-async function upsertLeaveBalance(employeeId: string, leaveType: LeaveType, year: number, month: number) {
+async function upsertLeaveBalance(
+  employeeId: string,
+  leaveType: LeaveType,
+  year: number,
+  month: number,
+) {
   return prisma.leaveBalance.upsert({
-    where: { employeeId_leaveType_year_month: { employeeId, leaveType, year, month } },
+    where: {
+      employeeId_leaveType_year_month: { employeeId, leaveType, year, month },
+    },
     update: {},
     create: {
       employeeId,
@@ -53,31 +67,25 @@ async function upsertLeaveBalance(employeeId: string, leaveType: LeaveType, year
 }
 
 // ─── Leave Balances (monthly, resets 1st of each month) ────────────────────
-
 export async function getMyLeaveBalances(userId: string) {
   const employee = await getEmployee(userId);
   if (!employee) return [];
 
   const year = new Date().getFullYear();
-  const types: LeaveType[] = ['ANNUAL', 'SICK', 'CASUAL', 'WFH', 'UNPAID', 'OTHER'];
+  const month = new Date().getMonth() + 1;
+  const types: LeaveType[] = [
+    "ANNUAL",
+    "SICK",
+    "CASUAL",
+    "WFH",
+    "UNPAID",
+    "OTHER",
+  ];
 
   // Upsert ensures balances exist on first access
   const upserts = types.map((type) =>
-    prisma.leaveBalance.upsert({
-      where: { employeeId_leaveType_year: { employeeId: employee.id, leaveType: type, year } },
-      update: {},
-      create: {
-        employeeId: employee.id,
-        year,
-        leaveType: type,
-        allocatedDays: DEFAULT_LEAVE_QUOTA[type],
-        usedDays: 0,
-        pendingDays: 0,
-      },
-    }),
+    upsertLeaveBalance(employee.id, type, year, month),
   );
-
-  const upserts = types.map((type) => upsertLeaveBalance(employee.id, type, year, month));
   const balances = await Promise.all(upserts);
 
   return balances.map((b) => {
@@ -94,7 +102,10 @@ export async function getMyLeaveBalances(userId: string) {
 
 // ─── Leave Requests ────────────────────────────────────────────────────────
 
-export async function getLeaveRequests(query: ListLeaveRequestsQuery, userId: string) {
+export async function getLeaveRequests(
+  query: ListLeaveRequestsQuery,
+  userId: string,
+) {
   const { status, type, employeeId: filterEmployeeId, page, limit } = query;
   const skip = (page - 1) * limit;
 
@@ -107,7 +118,7 @@ export async function getLeaveRequests(query: ListLeaveRequestsQuery, userId: st
       ? { employeeId: filterEmployeeId }
       : requestingEmployee
         ? { employeeId: requestingEmployee.id }
-        : { employeeId: 'NONE' }),
+        : { employeeId: "NONE" }),
   };
 
   const [items, total] = await Promise.all([
@@ -115,7 +126,7 @@ export async function getLeaveRequests(query: ListLeaveRequestsQuery, userId: st
       where,
       skip,
       take: limit,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
       include: {
         employee: { select: { firstName: true, lastName: true } },
         approvedBy: { select: { firstName: true, lastName: true } },
@@ -129,23 +140,36 @@ export async function getLeaveRequests(query: ListLeaveRequestsQuery, userId: st
 
 // ─── Submit Leave Request ─────────────────────────────────────────────────
 
-export async function createLeaveRequest(body: CreateLeaveRequestBody, userId: string) {
+export async function createLeaveRequest(
+  body: CreateLeaveRequestBody,
+  userId: string,
+) {
   const employee = await getEmployee(userId);
-  if (!employee) throw new Error('NO_EMPLOYEE_RECORD');
+  if (!employee) throw new Error("NO_EMPLOYEE_RECORD");
 
   const durationDays = countBusinessDays(body.startDate, body.endDate);
   const year = body.startDate.getFullYear();
   const month = body.startDate.getMonth() + 1;
 
-  const needsOpsHead = await checkOpsHeadRequired(prisma, employee.id, body.type, durationDays);
+  const needsOpsHead = await checkOpsHeadRequired(
+    prisma,
+    employee.id,
+    body.type,
+    durationDays,
+    year,
+    month,
+  );
 
   // Check for team conflicts (any PENDING or APPROVED overlapping requests in same dept)
   // Check team conflicts
   const teamConflictCount = employee.department
     ? await prisma.leaveRequest.count({
         where: {
-          status: { in: ['PENDING', 'APPROVED'] },
-          employee: { department: employee.department, id: { not: employee.id } },
+          status: { in: ["PENDING", "APPROVED"] },
+          employee: {
+            department: employee.department,
+            id: { not: employee.id },
+          },
           startDate: { lte: body.endDate },
           endDate: { gte: body.startDate },
         },
@@ -154,17 +178,30 @@ export async function createLeaveRequest(body: CreateLeaveRequestBody, userId: s
 
   // Check balance for threshold-bound types (ANNUAL, SICK, CASUAL, WFH)
   // UNPAID and OTHER skip the threshold check entirely
-  const noThresholdTypes: LeaveType[] = ['UNPAID', 'OTHER'];
+  const noThresholdTypes: LeaveType[] = ["UNPAID", "OTHER"];
   const skipThreshold = noThresholdTypes.includes(body.type as LeaveType);
 
   if (!skipThreshold) {
-    const balance = await getLeaveBalance(employee.id, body.type as LeaveType, year, month);
-    const balanceRecord = balance || (await upsertLeaveBalance(employee.id, body.type as LeaveType, year, month));
-    const remainingDays = Number(balanceRecord.allocatedDays) - Number(balanceRecord.usedDays);
+    const balance = await getLeaveBalance(
+      employee.id,
+      body.type as LeaveType,
+      year,
+      month,
+    );
+    const balanceRecord =
+      balance ||
+      (await upsertLeaveBalance(
+        employee.id,
+        body.type as LeaveType,
+        year,
+        month,
+      ));
+    const remainingDays =
+      Number(balanceRecord.allocatedDays) - Number(balanceRecord.usedDays);
 
     if (durationDays > remainingDays) {
       throw new Error(
-        `INSUFFICIENT_BALANCE:Insufficient ${body.type} leave balance. You have ${Math.max(0, remainingDays)} day(s) remaining but requested ${durationDays} day(s).`
+        `INSUFFICIENT_BALANCE:Insufficient ${body.type} leave balance. You have ${Math.max(0, remainingDays)} day(s) remaining but requested ${durationDays} day(s).`,
       );
     }
   }
@@ -177,7 +214,7 @@ export async function createLeaveRequest(body: CreateLeaveRequestBody, userId: s
         startDate: body.startDate,
         endDate: body.endDate,
         durationDays,
-        status: 'PENDING',
+        status: "PENDING",
         reason: body.reason,
         requiresOpsHeadApproval: needsOpsHead,
       },
@@ -189,7 +226,7 @@ export async function createLeaveRequest(body: CreateLeaveRequestBody, userId: s
     await tx.auditLog.create({
       data: {
         userId,
-        action: 'CREATE_LEAVE_REQUEST',
+        action: "CREATE_LEAVE_REQUEST",
         metadata: {
           leaveId: request.id,
           type: body.type,
@@ -214,7 +251,7 @@ export async function updateLeaveStatus(
   approverId: string,
 ) {
   const approverEmployee = await getEmployee(approverId);
-  if (!approverEmployee) throw new Error('APPROVER_NO_EMPLOYEE_RECORD');
+  if (!approverEmployee) throw new Error("APPROVER_NO_EMPLOYEE_RECORD");
 
   return prisma.$transaction(async (tx) => {
     const existing = await tx.leaveRequest.findUnique({
@@ -222,13 +259,13 @@ export async function updateLeaveStatus(
       include: { employee: true },
     });
     if (!existing) return null;
-    if (existing.status !== 'PENDING') throw new Error('LEAVE_NOT_PENDING');
+    if (existing.status !== "PENDING") throw new Error("LEAVE_NOT_PENDING");
 
     const isFinalApproval =
-      body.status === 'APPROVED' && !existing.requiresOpsHeadApproval;
+      body.status === "APPROVED" && !existing.requiresOpsHeadApproval;
     const nextStatus: LeaveRequestStatus =
-      body.status === 'APPROVED' && existing.requiresOpsHeadApproval
-        ? 'PENDING_OPS_HEAD'
+      body.status === "APPROVED" && existing.requiresOpsHeadApproval
+        ? "PENDING_OPS_HEAD"
         : (body.status as LeaveRequestStatus);
 
     const updated = await tx.leaveRequest.update({
@@ -237,11 +274,11 @@ export async function updateLeaveStatus(
         status: nextStatus,
         approvedById: isFinalApproval ? approverEmployee.id : null,
         managerApprovedById:
-          body.status === 'APPROVED' && existing.requiresOpsHeadApproval
+          body.status === "APPROVED" && existing.requiresOpsHeadApproval
             ? approverEmployee.id
             : undefined,
         managerApprovedAt:
-          body.status === 'APPROVED' && existing.requiresOpsHeadApproval
+          body.status === "APPROVED" && existing.requiresOpsHeadApproval
             ? new Date()
             : undefined,
         declineNote: body.declineNote,
@@ -265,11 +302,11 @@ export async function updateLeaveStatus(
       data: {
         userId: approverId,
         action:
-          nextStatus === 'PENDING_OPS_HEAD'
-            ? 'MANAGER_ESCALATE_LEAVE_TO_OPS_HEAD'
-            : body.status === 'APPROVED'
-              ? 'APPROVE_LEAVE_REQUEST'
-              : 'REJECT_LEAVE_REQUEST',
+          nextStatus === "PENDING_OPS_HEAD"
+            ? "MANAGER_ESCALATE_LEAVE_TO_OPS_HEAD"
+            : body.status === "APPROVED"
+              ? "APPROVE_LEAVE_REQUEST"
+              : "REJECT_LEAVE_REQUEST",
         metadata: {
           leaveId,
           employeeId: existing.employeeId,
@@ -288,23 +325,25 @@ export async function updateLeaveStatus(
 
 export async function cancelLeaveRequest(leaveId: string, userId: string) {
   const employee = await getEmployee(userId);
-  if (!employee) throw new Error('NO_EMPLOYEE_RECORD');
+  if (!employee) throw new Error("NO_EMPLOYEE_RECORD");
 
   return prisma.$transaction(async (tx) => {
-    const existing = await tx.leaveRequest.findUnique({ where: { id: leaveId } });
+    const existing = await tx.leaveRequest.findUnique({
+      where: { id: leaveId },
+    });
     if (!existing) return null;
-    if (existing.employeeId !== employee.id) throw new Error('FORBIDDEN');
-    if (existing.status !== 'PENDING') throw new Error('LEAVE_NOT_PENDING');
+    if (existing.employeeId !== employee.id) throw new Error("FORBIDDEN");
+    if (existing.status !== "PENDING") throw new Error("LEAVE_NOT_PENDING");
 
     const cancelled = await tx.leaveRequest.update({
       where: { id: leaveId },
-      data: { status: 'CANCELLED' },
+      data: { status: "CANCELLED" },
     });
 
     await tx.auditLog.create({
       data: {
         userId,
-        action: 'CANCEL_LEAVE_REQUEST',
+        action: "CANCEL_LEAVE_REQUEST",
         metadata: { leaveId, type: existing.type },
       },
     });
@@ -327,12 +366,12 @@ export async function getPendingApprovals(userId: string) {
 
   const where: Prisma.LeaveRequestWhereInput =
     subordinateIds.length > 0
-      ? { status: 'PENDING', employeeId: { in: subordinateIds } }
-      : { status: 'PENDING' };
+      ? { status: "PENDING", employeeId: { in: subordinateIds } }
+      : { status: "PENDING" };
 
   return prisma.leaveRequest.findMany({
     where,
-    orderBy: { createdAt: 'asc' },
+    orderBy: { createdAt: "asc" },
     include: {
       employee: {
         select: {
@@ -355,12 +394,12 @@ export async function getLeaveMetrics(userId: string) {
   today.setHours(0, 0, 0, 0);
 
   const [pendingCount, totalTakenThisYear, onLeaveToday] = await Promise.all([
-    prisma.leaveRequest.count({ where: { status: 'PENDING' } }),
+    prisma.leaveRequest.count({ where: { status: "PENDING" } }),
     employee
       ? prisma.leaveRequest.findMany({
           where: {
             employeeId: employee.id,
-            status: 'APPROVED',
+            status: "APPROVED",
             startDate: { gte: new Date(`${year}-01-01`) },
           },
           select: { durationDays: true },
@@ -368,7 +407,7 @@ export async function getLeaveMetrics(userId: string) {
       : Promise.resolve([]),
     prisma.leaveRequest.count({
       where: {
-        status: 'APPROVED',
+        status: "APPROVED",
         startDate: { lte: today },
         endDate: { gte: today },
       },
@@ -377,14 +416,17 @@ export async function getLeaveMetrics(userId: string) {
 
   const totalTakenDays = Array.isArray(totalTakenThisYear)
     ? (totalTakenThisYear as { durationDays: number }[]).reduce(
-        (sum, r) => sum + r.durationDays, 0,
+        (sum, r) => sum + r.durationDays,
+        0,
       )
     : 0;
 
   const workingDaysThisYear = 261;
   const attendancePct =
     totalTakenDays > 0
-      ? Math.round(((workingDaysThisYear - totalTakenDays) / workingDaysThisYear) * 100)
+      ? Math.round(
+          ((workingDaysThisYear - totalTakenDays) / workingDaysThisYear) * 100,
+        )
       : 100;
 
   return {
