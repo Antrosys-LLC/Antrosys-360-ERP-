@@ -1,12 +1,12 @@
 import { LeaveType } from '@prisma/client';
 
-/** Quota per leave type (days/year). Adjust as per HR policy. */
+/** Monthly quota per leave type. Reset on the 1st of each month. */
 export const DEFAULT_LEAVE_QUOTA: Record<LeaveType, number> = {
   ANNUAL: 20,
-  SICK: 10,
-  CASUAL: 6,
+  SICK: 20,
+  CASUAL: 20,
   WFH: 20,
-  UNPAID: 0,
-  MATERNITY: 90,
-  OTHER: 0,
+  UNPAID: 20,
+  MATERNITY: 20,
+  OTHER: 20,
 };

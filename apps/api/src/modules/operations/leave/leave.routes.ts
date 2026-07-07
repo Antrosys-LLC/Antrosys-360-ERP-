@@ -14,7 +14,6 @@ const READ: Permission = 'leave:read';
 const WRITE: Permission = 'leave:write';
 
 export async function leaveRoutes(fastify: FastifyInstance) {
-  // All routes in this plugin require a valid JWT
   fastify.addHook('preHandler', fastify.verifyJwt);
 
   // ─── Balances & Metrics ─────────────────────────────────────────────────
@@ -35,23 +34,23 @@ export async function leaveRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/', {
-    preHandler: [fastify.requirePermission(WRITE)], // Employees can submit
+    preHandler: [fastify.requirePermission(WRITE)],
     handler: createLeaveRequestHandler,
   });
 
   fastify.delete('/:leaveId', {
-    preHandler: [fastify.requirePermission(WRITE)], // Cancel own request
+    preHandler: [fastify.requirePermission(WRITE)],
     handler: cancelLeaveRequestHandler,
   });
 
   // ─── Manager Approvals ──────────────────────────────────────────────────
   fastify.get('/approvals', {
-    preHandler: [fastify.requirePermission(WRITE)], // Only managers should see approvals queue
+    preHandler: [fastify.requirePermission(WRITE)],
     handler: getPendingApprovalsHandler,
   });
 
   fastify.patch('/:leaveId/status', {
-    preHandler: [fastify.requirePermission(WRITE)], // Manager approves/rejects
+    preHandler: [fastify.requirePermission(WRITE)],
     handler: updateLeaveStatusHandler,
   });
 }

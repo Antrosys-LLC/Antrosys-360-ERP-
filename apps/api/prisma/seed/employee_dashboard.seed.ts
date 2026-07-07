@@ -67,19 +67,22 @@ export async function seedEmployeeDashboardData() {
     }
   }
 
-  const year = new Date().getUTCFullYear();
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth() + 1;
 
   for (const [leaveType, allocated, used, pending] of [
-    [LeaveType.ANNUAL, 14, 2, 0],
-    [LeaveType.SICK, 10, 3, 2],
-    [LeaveType.CASUAL, 5, 2, 1],
+    [LeaveType.ANNUAL, 20, 2, 0],
+    [LeaveType.SICK, 20, 3, 2],
+    [LeaveType.CASUAL, 20, 2, 1],
   ] as const) {
     await prisma.leaveBalance.upsert({
       where: {
-        employeeId_leaveType_year: {
+        employeeId_leaveType_year_month: {
           employeeId: sara.id,
           leaveType,
           year,
+          month,
         },
       },
       update: {
@@ -91,6 +94,7 @@ export async function seedEmployeeDashboardData() {
         employeeId: sara.id,
         leaveType,
         year,
+        month,
         allocatedDays: allocated,
         usedDays: used,
         pendingDays: pending,
@@ -133,9 +137,7 @@ export async function seedEmployeeDashboardData() {
     ],
   });
 
-  const now = new Date();
-  const month = now.getUTCMonth() + 1;
-  const monthYear = now.getUTCFullYear();
+  const monthYear = year;
 
   const attendancePattern: { day: number; status: AttendanceStatus; hours: number }[] = [
     { day: 1, status: AttendanceStatus.PRESENT, hours: 8 },
