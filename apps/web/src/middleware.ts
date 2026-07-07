@@ -46,6 +46,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/manager', request.url));
   }
 
+  // Redirect OPERATIONS_HEAD from root '/' to operations overview
+  if (token.role === 'OPERATIONS_HEAD' && pathname === '/') {
+    return NextResponse.redirect(new URL('/operations', request.url));
+  }
+
   // Restrict access to '/manager' routes to MANAGER/SUB_MANAGER role
   if (pathname.startsWith('/manager') && token.role !== 'MANAGER' && token.role !== 'SUB_MANAGER') {
     return NextResponse.redirect(new URL('/', request.url));

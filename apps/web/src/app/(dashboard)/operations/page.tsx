@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Users,
   CalendarDays,
@@ -11,134 +13,20 @@ import {
   Flag,
   MoreHorizontal,
 } from "lucide-react";
-
-// ============================================================================
-// MOCK DATA — replace with API fetches later (React Query hooks)
-// ============================================================================
-
-const pageHeader = {
-  title: "Operations Overview",
-  subtitle: "Mon, 16 May 2026",
-  liveLabel: "Live data",
-};
-
-const attendanceRate = {
-  label: "Attendance rate",
-  value: "87%",
-  progressPct: 87,
-  breakdown: [
-    { label: "Present", count: 420, color: "#7B68EE" },
-    { label: "Absent", count: 34, color: "#E24B4A" },
-    { label: "Late", count: 29, color: "#F2B90C" },
-  ],
-};
-
-const pendingLeave = {
-  label: "Pending leave",
-  value: 11,
-  valueColor: "#C2840A",
-  types: [
-    { label: "Annual", count: 7 },
-    { label: "Sick", count: 3 },
-    { label: "Casual", count: 1 },
-  ],
-  ctaLabel: "Review all →",
-};
-
-const manpowerGapsSummary = {
-  label: "Manpower gaps",
-  value: 3,
-  valueColor: "#A32D2D",
-  items: [
-    { label: "2 Critical roles", tone: "danger" as const },
-    { label: "1 Standard role", tone: "neutral" as const },
-  ],
-};
-
-const rosterCoverage = {
-  label: "Roster coverage",
-  value: "94%",
-  days: ["Mo", "Tu", "We", "Th", "Fr"],
-};
-
-type DeptFilter = "All" | "Eng" | "Ops" | "Fin" | "HR";
+import { useToast } from "@/hooks/use-toast";
+import {
+  fetchOpsDashboard,
+  toggleOpsAttendanceFlag,
+  overrideOpsAttendanceStatus,
+  updateOpsHeadLeaveStatus,
+  raiseManpowerRequest,
+  type DeptFilter,
+} from "@/lib/operation-head-api";
 
 const deptFilters: DeptFilter[] = ["All", "Eng", "Ops", "Fin", "HR"];
 
 type AttendanceDotStatus = "present" | "late" | "absent";
-
-// 20 dots representing a snapshot of today's check-in distribution
-const attendanceDots: AttendanceDotStatus[] = [
-  "absent",
-  "absent",
-  "absent",
-  "late",
-  "late",
-  "late",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-  "present",
-];
-
 type AttendanceStatus = "Present" | "Late" | "Absent";
-
-const todayAttendanceRows: {
-  name: string;
-  dept: string;
-  checkIn: string;
-  status: AttendanceStatus;
-}[] = [
-  {
-    name: "Bilal Hassan",
-    dept: "Engineering",
-    checkIn: "--:--",
-    status: "Absent",
-  },
-  {
-    name: "Aisha Malik",
-    dept: "Operations",
-    checkIn: "09:15 AM",
-    status: "Late",
-  },
-  {
-    name: "Raza Farouk",
-    dept: "Finance",
-    checkIn: "08:55 AM",
-    status: "Present",
-  },
-  { name: "Ali Raza", dept: "Designer", checkIn: "09:40 AM", status: "Late" },
-];
-
-const leaveApprovals = [
-  { initials: "S", name: "Sara Javed", type: "Annual", days: 3 },
-  { initials: "A", name: "Amna Baig", type: "Annual", days: 5 },
-  { initials: "O", name: "Omer Mirza", type: "Sick", days: 1 },
-];
-
-const manpowerGapsDetail: {
-  dept: string;
-  level: "Critical" | "Standard";
-  count: number;
-}[] = [
-  { dept: "Engineering", level: "Critical", count: 2 },
-  { dept: "Operations", level: "Standard", count: 1 },
-  { dept: "HR", level: "Standard", count: 1 },
-];
-
-// ============================================================================
-// HELPERS
-// ============================================================================
 
 function dotColor(status: AttendanceDotStatus): string {
   switch (status) {
@@ -162,12 +50,136 @@ function statusBadgeClasses(status: AttendanceStatus): string {
   }
 }
 
-// ============================================================================
-// PAGE
-// ============================================================================
+const OVERRIDE_OPTIONS = [
+  { label: "Mark Present", value: "PRESENT" as const },
+  { label: "Mark Late", value: "LATE" as const },
+  { label: "Mark Absent", value: "ABSENT" as const },
+  { label: "Mark On Leave", value: "ON LEAVE" as const },
+];
 
 export default function OperationsHeadDashboardPage() {
   const [activeFilter, setActiveFilter] = useState<DeptFilter>("All");
+  const [openMenuEmployeeId, setOpenMenuEmployeeId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const router = useRouter();
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["ops-head-dashboard", activeFilter],
+    queryFn: () => fetchOpsDashboard(activeFilter),
+  });
+
+  const invalidateDashboard = () => {
+    queryClient.invalidateQueries({ queryKey: ["ops-head-dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["ops-head-leaves"] });
+  };
+
+  const flagMutation = useMutation({
+    mutationFn: ({ employeeId, isFlagged }: { employeeId: string; isFlagged: boolean }) =>
+      toggleOpsAttendanceFlag(employeeId, isFlagged),
+    onSuccess: () => {
+      toast({ title: "Flag updated" });
+      invalidateDashboard();
+    },
+    onError: () => toast({ title: "Failed to update flag", variant: "destructive" }),
+  });
+
+  const overrideMutation = useMutation({
+    mutationFn: ({
+      employeeId,
+      status,
+    }: {
+      employeeId: string;
+      status: "PRESENT" | "ABSENT" | "LATE" | "ON LEAVE";
+    }) => overrideOpsAttendanceStatus(employeeId, status),
+    onSuccess: () => {
+      toast({ title: "Attendance updated" });
+      setOpenMenuEmployeeId(null);
+      invalidateDashboard();
+    },
+    onError: () => toast({ title: "Failed to update attendance", variant: "destructive" }),
+  });
+
+  const leaveMutation = useMutation({
+    mutationFn: ({
+      leaveId,
+      status,
+    }: {
+      leaveId: string;
+      status: "APPROVED" | "REJECTED";
+    }) =>
+      updateOpsHeadLeaveStatus(leaveId, {
+        status,
+        ...(status === "REJECTED" ? { declineNote: "Rejected by Operations Head" } : {}),
+      }),
+    onSuccess: () => {
+      toast({ title: "Leave status updated" });
+      invalidateDashboard();
+    },
+    onError: () =>
+      toast({ title: "Failed to update leave", variant: "destructive" }),
+  });
+
+  const manpowerMutation = useMutation({
+    mutationFn: raiseManpowerRequest,
+    onSuccess: () => {
+      toast({ title: "Manpower request raised" });
+      invalidateDashboard();
+    },
+    onError: () =>
+      toast({ title: "Failed to raise request", variant: "destructive" }),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-4 animate-pulse">
+        <div className="h-12 bg-[#F0F0F0] rounded-lg" />
+        <div className="grid grid-cols-4 gap-3">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-36 bg-[#F0F0F0] rounded-[10px]" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (isError || !data) {
+    return (
+      <div className="text-center py-12 text-[#888888]">
+        Failed to load operations dashboard.
+      </div>
+    );
+  }
+
+  const {
+    pageHeader,
+    attendanceRate,
+    pendingLeave,
+    manpowerGapsSummary,
+    rosterCoverage,
+    attendanceDots,
+    todayAttendanceRows,
+    leaveApprovals,
+    manpowerGapsDetail,
+  } = data;
+
+  const handleRaiseRequest = () => {
+    const firstGap = manpowerGapsDetail[0];
+    if (!firstGap) {
+      toast({ title: "No manpower gaps to raise a request for" });
+      return;
+    }
+    const deptMap: Record<string, string> = {
+      Engineering: "ENGINEERING",
+      Operations: "OPERATIONS",
+      Finance: "FINANCE",
+      Hr: "HR",
+      HR: "HR",
+      Sales: "SALES",
+    };
+    const department = deptMap[firstGap.dept] ?? "OTHER";
+    manpowerMutation.mutate({ department, additionalHeadcount: 1 });
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -261,6 +273,7 @@ export default function OperationsHeadDashboardPage() {
           </div>
           <button
             type="button"
+            onClick={() => router.push("/operations/leave")}
             className="text-[11px] font-medium text-[#534AB7] text-right hover:underline mt-auto"
           >
             {pendingLeave.ctaLabel}
@@ -329,17 +342,17 @@ export default function OperationsHeadDashboardPage() {
           <div className="flex items-center gap-1.5 mt-auto">
             {rosterCoverage.days.map((day) => (
               <span
-                key={day}
+                key={day.day}
                 className="flex-1 text-center text-[9px] font-medium text-[#534AB7] bg-[#EEEDFE] rounded py-1.5"
               >
-                {day}
+                {day.day}
               </span>
             ))}
           </div>
         </div>
       </div>
 
-      {/* Main grid: Today's attendance + Leave approvals + Manpower gaps detail */}
+      {/* Main grid */}
       <div className="grid grid-cols-[1.7fr_1fr_1fr] gap-3 items-start">
         {/* Today's attendance */}
         <div className="bg-white border border-[#E0E0E0] rounded-[10px] overflow-hidden">
@@ -405,7 +418,7 @@ export default function OperationsHeadDashboardPage() {
             <tbody>
               {todayAttendanceRows.map((row, idx) => (
                 <tr
-                  key={row.name}
+                  key={row.employeeId}
                   className={
                     idx !== todayAttendanceRows.length - 1
                       ? "border-b border-[#E0E0E0]"
@@ -429,21 +442,53 @@ export default function OperationsHeadDashboardPage() {
                     </span>
                   </td>
                   <td className="px-[17px] py-3">
-                    <div className="flex items-center justify-end gap-2">
+                    <div className="flex items-center justify-end gap-2 relative">
                       <button
                         type="button"
                         aria-label="Flag"
-                        className="text-[#888888] hover:text-[#1A1A1A]"
+                        onClick={() =>
+                          flagMutation.mutate({
+                            employeeId: row.employeeId,
+                            isFlagged: !row.isFlagged,
+                          })
+                        }
+                        className={`hover:text-[#1A1A1A] ${row.isFlagged ? "text-[#A32D2D]" : "text-[#888888]"}`}
                       >
                         <Flag size={13} strokeWidth={1.8} />
                       </button>
                       <button
                         type="button"
                         aria-label="More options"
+                        onClick={() =>
+                          setOpenMenuEmployeeId(
+                            openMenuEmployeeId === row.employeeId
+                              ? null
+                              : row.employeeId,
+                          )
+                        }
                         className="text-[#888888] hover:text-[#1A1A1A]"
                       >
                         <MoreHorizontal size={13} strokeWidth={1.8} />
                       </button>
+                      {openMenuEmployeeId === row.employeeId && (
+                        <div className="absolute right-0 top-full mt-1 z-10 bg-white border border-[#E0E0E0] rounded-md shadow-md py-1 min-w-[140px]">
+                          {OVERRIDE_OPTIONS.map((opt) => (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() =>
+                                overrideMutation.mutate({
+                                  employeeId: row.employeeId,
+                                  status: opt.value,
+                                })
+                              }
+                              className="block w-full text-left px-3 py-1.5 text-[11px] text-[#1A1A1A] hover:bg-[#F8F9FC]"
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -460,42 +505,67 @@ export default function OperationsHeadDashboardPage() {
             </span>
           </div>
           <div className="p-[17px] flex flex-col gap-2.5">
-            {leaveApprovals.map((req) => (
-              <div
-                key={req.name}
-                className="bg-[#F8F9FC] border border-[#E0E0E0] rounded-lg p-3"
-              >
-                <div className="flex items-center gap-2.5 mb-3">
-                  <div className="size-7 rounded-full bg-[#7B68EE] flex items-center justify-center shrink-0">
-                    <span className="text-white text-[11px] font-semibold">
-                      {req.initials}
-                    </span>
+            {leaveApprovals.length === 0 ? (
+              <p className="text-[12px] text-[#888888] text-center py-4">
+                No leaves pending Operations review
+              </p>
+            ) : (
+              leaveApprovals.map((req) => (
+                <div
+                  key={req.id}
+                  className="bg-[#F8F9FC] border border-[#E0E0E0] rounded-lg p-3"
+                >
+                  <div className="flex items-center gap-2.5 mb-3">
+                    <div className="size-7 rounded-full bg-[#7B68EE] flex items-center justify-center shrink-0">
+                      <span className="text-white text-[11px] font-semibold">
+                        {req.initials}
+                      </span>
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-[12px] font-medium text-[#1A1A1A] block truncate">
+                        {req.name}
+                      </span>
+                      <span className="text-[10px] text-[#888888]">
+                        {req.type} · {req.days} days
+                      </span>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <span className="text-[12px] font-medium text-[#1A1A1A] block truncate">
-                      {req.name}
-                    </span>
-                    <span className="text-[10px] text-[#888888]">
-                      {req.type} · {req.days} days
-                    </span>
+                  {req.reason && (
+                    <p className="text-[10px] text-[#666666] mb-2 line-clamp-2">
+                      {req.reason}
+                    </p>
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        leaveMutation.mutate({
+                          leaveId: req.id,
+                          status: "REJECTED",
+                        })
+                      }
+                      disabled={leaveMutation.isPending}
+                      className="text-[11px] font-medium text-[#1A1A1A] bg-white border border-[#D8D8D8] rounded-md py-1.5 hover:bg-[#F8F9FC] disabled:opacity-50"
+                    >
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        leaveMutation.mutate({
+                          leaveId: req.id,
+                          status: "APPROVED",
+                        })
+                      }
+                      disabled={leaveMutation.isPending}
+                      className="text-[11px] font-medium text-white bg-[#7B68EE] rounded-md py-1.5 hover:bg-[#6A5ACD] disabled:opacity-50"
+                    >
+                      Approve
+                    </button>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    className="text-[11px] font-medium text-[#1A1A1A] bg-white border border-[#D8D8D8] rounded-md py-1.5 hover:bg-[#F8F9FC]"
-                  >
-                    Reject
-                  </button>
-                  <button
-                    type="button"
-                    className="text-[11px] font-medium text-white bg-[#7B68EE] rounded-md py-1.5 hover:bg-[#6A5ACD]"
-                  >
-                    Approve
-                  </button>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
@@ -538,7 +608,9 @@ export default function OperationsHeadDashboardPage() {
           <div className="px-[17px] pb-[17px] pt-2 mt-auto">
             <button
               type="button"
-              className="w-full text-[12px] font-medium text-[#534AB7] border border-[#7B68EE] rounded-md py-2 hover:bg-[#F8F9FC]"
+              onClick={handleRaiseRequest}
+              disabled={manpowerMutation.isPending}
+              className="w-full text-[12px] font-medium text-[#534AB7] border border-[#7B68EE] rounded-md py-2 hover:bg-[#F8F9FC] disabled:opacity-50"
             >
               Raise new request
             </button>

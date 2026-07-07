@@ -2,6 +2,7 @@ import { LeaveType, LeaveRequestStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../../config/database';
 import { DEFAULT_LEAVE_QUOTA } from '../../../shared/leaveBalance/leave-quota.constants';
 import { incrementLeaveBalanceOnApproval } from '../../../shared/leaveBalance/increment-leave-balance';
+import { requiresOpsHeadApproval as checkOpsHeadRequired } from '../../../shared/leaveBalance/requires-ops-head-approval';
 import type {
   CreateLeaveRequestBody,
   UpdateLeaveStatusBody,
@@ -57,10 +58,24 @@ export async function getMyLeaveBalances(userId: string) {
   const employee = await getEmployee(userId);
   if (!employee) return [];
 
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
+  const year = new Date().getFullYear();
   const types: LeaveType[] = ['ANNUAL', 'SICK', 'CASUAL', 'WFH', 'UNPAID', 'OTHER'];
+
+  // Upsert ensures balances exist on first access
+  const upserts = types.map((type) =>
+    prisma.leaveBalance.upsert({
+      where: { employeeId_leaveType_year: { employeeId: employee.id, leaveType: type, year } },
+      update: {},
+      create: {
+        employeeId: employee.id,
+        year,
+        leaveType: type,
+        allocatedDays: DEFAULT_LEAVE_QUOTA[type],
+        usedDays: 0,
+        pendingDays: 0,
+      },
+    }),
+  );
 
   const upserts = types.map((type) => upsertLeaveBalance(employee.id, type, year, month));
   const balances = await Promise.all(upserts);
@@ -122,6 +137,9 @@ export async function createLeaveRequest(body: CreateLeaveRequestBody, userId: s
   const year = body.startDate.getFullYear();
   const month = body.startDate.getMonth() + 1;
 
+  const needsOpsHead = await checkOpsHeadRequired(prisma, employee.id, body.type, durationDays);
+
+  // Check for team conflicts (any PENDING or APPROVED overlapping requests in same dept)
   // Check team conflicts
   const teamConflictCount = employee.department
     ? await prisma.leaveRequest.count({
@@ -161,6 +179,7 @@ export async function createLeaveRequest(body: CreateLeaveRequestBody, userId: s
         durationDays,
         status: 'PENDING',
         reason: body.reason,
+        requiresOpsHeadApproval: needsOpsHead,
       },
       include: {
         employee: { select: { firstName: true, lastName: true } },
@@ -205,11 +224,26 @@ export async function updateLeaveStatus(
     if (!existing) return null;
     if (existing.status !== 'PENDING') throw new Error('LEAVE_NOT_PENDING');
 
+    const isFinalApproval =
+      body.status === 'APPROVED' && !existing.requiresOpsHeadApproval;
+    const nextStatus: LeaveRequestStatus =
+      body.status === 'APPROVED' && existing.requiresOpsHeadApproval
+        ? 'PENDING_OPS_HEAD'
+        : (body.status as LeaveRequestStatus);
+
     const updated = await tx.leaveRequest.update({
       where: { id: leaveId },
       data: {
-        status: body.status as LeaveRequestStatus,
-        approvedById: approverEmployee.id,
+        status: nextStatus,
+        approvedById: isFinalApproval ? approverEmployee.id : null,
+        managerApprovedById:
+          body.status === 'APPROVED' && existing.requiresOpsHeadApproval
+            ? approverEmployee.id
+            : undefined,
+        managerApprovedAt:
+          body.status === 'APPROVED' && existing.requiresOpsHeadApproval
+            ? new Date()
+            : undefined,
         declineNote: body.declineNote,
       },
       include: {
@@ -218,7 +252,7 @@ export async function updateLeaveStatus(
       },
     });
 
-    if (body.status === 'APPROVED') {
+    if (isFinalApproval) {
       await incrementLeaveBalanceOnApproval(tx, {
         employeeId: existing.employeeId,
         leaveType: existing.type,
@@ -230,7 +264,12 @@ export async function updateLeaveStatus(
     await tx.auditLog.create({
       data: {
         userId: approverId,
-        action: body.status === 'APPROVED' ? 'APPROVE_LEAVE_REQUEST' : 'REJECT_LEAVE_REQUEST',
+        action:
+          nextStatus === 'PENDING_OPS_HEAD'
+            ? 'MANAGER_ESCALATE_LEAVE_TO_OPS_HEAD'
+            : body.status === 'APPROVED'
+              ? 'APPROVE_LEAVE_REQUEST'
+              : 'REJECT_LEAVE_REQUEST',
         metadata: {
           leaveId,
           employeeId: existing.employeeId,
