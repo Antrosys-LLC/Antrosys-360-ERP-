@@ -10,7 +10,6 @@ import type {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-/** Business-day count (Mon–Fri) between two dates inclusive. */
 function countBusinessDays(start: Date, end: Date): number {
   let count = 0;
   const cur = new Date(start);
@@ -26,35 +25,44 @@ function countBusinessDays(start: Date, end: Date): number {
   return count;
 }
 
-// ─── Leave Balances ────────────────────────────────────────────────────────
+async function getEmployee(userId: string) {
+  return prisma.employee.findFirst({ where: { userId } });
+}
 
-/**
- * Fetch (or lazily create) all five leave balances for the current year.
- * Returns an ordered array matching the UI card layout.
- */
+async function getLeaveBalance(employeeId: string, leaveType: LeaveType, year: number, month: number) {
+  return prisma.leaveBalance.findUnique({
+    where: { employeeId_leaveType_year_month: { employeeId, leaveType, year, month } },
+  });
+}
+
+async function upsertLeaveBalance(employeeId: string, leaveType: LeaveType, year: number, month: number) {
+  return prisma.leaveBalance.upsert({
+    where: { employeeId_leaveType_year_month: { employeeId, leaveType, year, month } },
+    update: {},
+    create: {
+      employeeId,
+      year,
+      month,
+      leaveType,
+      allocatedDays: DEFAULT_LEAVE_QUOTA[leaveType],
+      usedDays: 0,
+      pendingDays: 0,
+    },
+  });
+}
+
+// ─── Leave Balances (monthly, resets 1st of each month) ────────────────────
+
 export async function getMyLeaveBalances(userId: string) {
-  const employee = await prisma.employee.findFirst({ where: { userId } });
-  if (!employee) return null;
+  const employee = await getEmployee(userId);
+  if (!employee) return [];
 
-  const year = new Date().getFullYear();
-  const types: LeaveType[] = ['ANNUAL', 'SICK', 'CASUAL', 'WFH', 'UNPAID'];
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const types: LeaveType[] = ['ANNUAL', 'SICK', 'CASUAL', 'WFH', 'UNPAID', 'OTHER'];
 
-  // Upsert ensures balances exist on first access
-  const upserts = types.map((type) =>
-    prisma.leaveBalance.upsert({
-      where: { employeeId_leaveType_year: { employeeId: employee.id, leaveType: type, year } },
-      update: {},
-      create: {
-        employeeId: employee.id,
-        year,
-        leaveType: type,
-        allocatedDays: DEFAULT_LEAVE_QUOTA[type],
-        usedDays: 0,
-        pendingDays: 0,
-      },
-    }),
-  );
-
+  const upserts = types.map((type) => upsertLeaveBalance(employee.id, type, year, month));
   const balances = await Promise.all(upserts);
 
   return balances.map((b) => {
@@ -71,18 +79,11 @@ export async function getMyLeaveBalances(userId: string) {
 
 // ─── Leave Requests ────────────────────────────────────────────────────────
 
-/**
- * List leave requests.
- * - Employees see only their own.
- * - Roles with leave:write see their subordinates' requests.
- *   (The controller passes a pre-resolved employeeId filter when manager-scoped.)
- */
 export async function getLeaveRequests(query: ListLeaveRequestsQuery, userId: string) {
   const { status, type, employeeId: filterEmployeeId, page, limit } = query;
   const skip = (page - 1) * limit;
 
-  // Resolve the requesting user's employee record
-  const requestingEmployee = await prisma.employee.findFirst({ where: { userId } });
+  const requestingEmployee = await getEmployee(userId);
 
   const where: Prisma.LeaveRequestWhereInput = {
     ...(status && { status }),
@@ -114,12 +115,14 @@ export async function getLeaveRequests(query: ListLeaveRequestsQuery, userId: st
 // ─── Submit Leave Request ─────────────────────────────────────────────────
 
 export async function createLeaveRequest(body: CreateLeaveRequestBody, userId: string) {
-  const employee = await prisma.employee.findFirst({ where: { userId } });
+  const employee = await getEmployee(userId);
   if (!employee) throw new Error('NO_EMPLOYEE_RECORD');
 
   const durationDays = countBusinessDays(body.startDate, body.endDate);
+  const year = body.startDate.getFullYear();
+  const month = body.startDate.getMonth() + 1;
 
-  // Check for team conflicts (any PENDING or APPROVED overlapping requests in same dept)
+  // Check team conflicts
   const teamConflictCount = employee.department
     ? await prisma.leaveRequest.count({
         where: {
@@ -130,6 +133,23 @@ export async function createLeaveRequest(body: CreateLeaveRequestBody, userId: s
         },
       })
     : 0;
+
+  // Check balance for threshold-bound types (ANNUAL, SICK, CASUAL, WFH)
+  // UNPAID and OTHER skip the threshold check entirely
+  const noThresholdTypes: LeaveType[] = ['UNPAID', 'OTHER'];
+  const skipThreshold = noThresholdTypes.includes(body.type as LeaveType);
+
+  if (!skipThreshold) {
+    const balance = await getLeaveBalance(employee.id, body.type as LeaveType, year, month);
+    const balanceRecord = balance || (await upsertLeaveBalance(employee.id, body.type as LeaveType, year, month));
+    const remainingDays = Number(balanceRecord.allocatedDays) - Number(balanceRecord.usedDays);
+
+    if (durationDays > remainingDays) {
+      throw new Error(
+        `INSUFFICIENT_BALANCE:Insufficient ${body.type} leave balance. You have ${Math.max(0, remainingDays)} day(s) remaining but requested ${durationDays} day(s).`
+      );
+    }
+  }
 
   const leaveRequest = await prisma.$transaction(async (tx) => {
     const request = await tx.leaveRequest.create({
@@ -174,7 +194,7 @@ export async function updateLeaveStatus(
   body: UpdateLeaveStatusBody,
   approverId: string,
 ) {
-  const approverEmployee = await prisma.employee.findFirst({ where: { userId: approverId } });
+  const approverEmployee = await getEmployee(approverId);
   if (!approverEmployee) throw new Error('APPROVER_NO_EMPLOYEE_RECORD');
 
   return prisma.$transaction(async (tx) => {
@@ -228,7 +248,7 @@ export async function updateLeaveStatus(
 // ─── Cancel Own Request ───────────────────────────────────────────────────
 
 export async function cancelLeaveRequest(leaveId: string, userId: string) {
-  const employee = await prisma.employee.findFirst({ where: { userId } });
+  const employee = await getEmployee(userId);
   if (!employee) throw new Error('NO_EMPLOYEE_RECORD');
 
   return prisma.$transaction(async (tx) => {
@@ -256,18 +276,12 @@ export async function cancelLeaveRequest(leaveId: string, userId: string) {
 
 // ─── Manager: Pending Approvals Queue ────────────────────────────────────
 
-/**
- * Returns PENDING leave requests from subordinates of the requesting user.
- * Falls back to ALL pending requests if manager has no direct reports
- * (e.g., CEO / OPERATIONS_HEAD).
- */
 export async function getPendingApprovals(userId: string) {
   const manager = await prisma.employee.findFirst({
     where: { userId },
     include: { reports: { select: { id: true } } },
   });
 
-  // If user has no employee record, return empty
   if (!manager) return [];
 
   const subordinateIds = manager.reports.map((r) => r.id);
@@ -275,7 +289,7 @@ export async function getPendingApprovals(userId: string) {
   const where: Prisma.LeaveRequestWhereInput =
     subordinateIds.length > 0
       ? { status: 'PENDING', employeeId: { in: subordinateIds } }
-      : { status: 'PENDING' }; // wide-open for top-level managers
+      : { status: 'PENDING' };
 
   return prisma.leaveRequest.findMany({
     where,
@@ -296,16 +310,13 @@ export async function getPendingApprovals(userId: string) {
 // ─── Team Schedule Metrics ────────────────────────────────────────────────
 
 export async function getLeaveMetrics(userId: string) {
-  const employee = await prisma.employee.findFirst({ where: { userId } });
+  const employee = await getEmployee(userId);
   const year = new Date().getFullYear();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   const [pendingCount, totalTakenThisYear, onLeaveToday] = await Promise.all([
-    // Total pending requests visible to this user
     prisma.leaveRequest.count({ where: { status: 'PENDING' } }),
-
-    // Total approved leave days for the requesting employee this year
     employee
       ? prisma.leaveRequest.findMany({
           where: {
@@ -316,8 +327,6 @@ export async function getLeaveMetrics(userId: string) {
           select: { durationDays: true },
         })
       : Promise.resolve([]),
-
-    // Employees with an active APPROVED leave covering today
     prisma.leaveRequest.count({
       where: {
         status: 'APPROVED',
@@ -329,13 +338,11 @@ export async function getLeaveMetrics(userId: string) {
 
   const totalTakenDays = Array.isArray(totalTakenThisYear)
     ? (totalTakenThisYear as { durationDays: number }[]).reduce(
-        (sum, r) => sum + r.durationDays,
-        0,
+        (sum, r) => sum + r.durationDays, 0,
       )
     : 0;
 
-  // Attendance rate: approximate from taken/working days
-  const workingDaysThisYear = 261; // ~261 working days
+  const workingDaysThisYear = 261;
   const attendancePct =
     totalTakenDays > 0
       ? Math.round(((workingDaysThisYear - totalTakenDays) / workingDaysThisYear) * 100)

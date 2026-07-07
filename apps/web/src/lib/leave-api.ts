@@ -1,8 +1,6 @@
 import apiClient from '@/lib/api-client';
 
-// ─── Types ─────────────────────────────────────────────────────────────────
-
-export type LeaveType = 'ANNUAL' | 'SICK' | 'CASUAL' | 'WFH' | 'UNPAID';
+export type LeaveType = 'ANNUAL' | 'SICK' | 'CASUAL' | 'WFH' | 'UNPAID' | 'OTHER';
 export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
 
 export interface ApiLeaveBalance {
@@ -17,8 +15,8 @@ export interface ApiLeaveRequest {
   employeeId: string;
   employee: { firstName: string; lastName: string; designation?: string; department?: string };
   type: LeaveType;
-  startDate: string; // ISO Date
-  endDate: string; // ISO Date
+  startDate: string;
+  endDate: string;
   durationDays: number;
   status: LeaveStatus;
   reason?: string | null;
@@ -36,7 +34,10 @@ export interface ApiLeaveMetrics {
   onLeaveToday: number;
 }
 
-// ─── API Methods ─────────────────────────────────────────────────────────
+export interface CreateLeaveResult {
+  leaveRequest: ApiLeaveRequest;
+  teamConflictCount: number;
+}
 
 export async function fetchLeaveBalances(): Promise<ApiLeaveBalance[]> {
   const { data } = await apiClient.get<{ status: string; data: ApiLeaveBalance[] }>(
@@ -77,8 +78,8 @@ export async function createLeaveRequest(body: {
   startDate: string;
   endDate: string;
   reason?: string;
-}): Promise<{ leaveRequest: ApiLeaveRequest; teamConflictCount: number }> {
-  const { data } = await apiClient.post<{ status: string; data: { leaveRequest: ApiLeaveRequest; teamConflictCount: number } }>(
+}): Promise<CreateLeaveResult> {
+  const { data } = await apiClient.post<{ status: string; data: CreateLeaveResult }>(
     '/operations/leave',
     body
   );

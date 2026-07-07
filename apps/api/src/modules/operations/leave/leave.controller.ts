@@ -47,11 +47,14 @@ export async function createLeaveRequestHandler(request: FastifyRequest, reply: 
   if (!requireUser(reply, request.user?.id)) return;
 
   try {
-    const created = await leaveService.createLeaveRequest(parsed.data, request.user!.id);
-    return reply.code(201).send({ status: 'success', data: created });
+    const result = await leaveService.createLeaveRequest(parsed.data, request.user!.id);
+    return reply.code(201).send({ status: 'success', data: result });
   } catch (err: any) {
     if (err.message === 'NO_EMPLOYEE_RECORD') {
       return reply.code(422).send({ error: 'Employee record not found for user' });
+    }
+    if (err.message?.startsWith?.('INSUFFICIENT_BALANCE:')) {
+      return reply.code(400).send({ error: err.message.slice('INSUFFICIENT_BALANCE:'.length) });
     }
     return reply.code(500).send({ error: 'Failed to create leave request' });
   }
@@ -85,8 +88,6 @@ export async function cancelLeaveRequestHandler(request: FastifyRequest, reply: 
 export async function getPendingApprovalsHandler(request: FastifyRequest, reply: FastifyReply) {
   if (!requireUser(reply, request.user?.id)) return;
 
-  // Only users with leave:write permission can see this.
-  // The RBAC plugin handles the permission check.
   const approvals = await leaveService.getPendingApprovals(request.user!.id);
   return reply.code(200).send({ status: 'success', data: approvals });
 }

@@ -11,12 +11,14 @@ export async function incrementLeaveBalanceOnApproval(
   },
 ) {
   const year = params.startDate.getFullYear();
+  const month = params.startDate.getMonth() + 1;
   await tx.leaveBalance.upsert({
     where: {
-      employeeId_leaveType_year: {
+      employeeId_leaveType_year_month: {
         employeeId: params.employeeId,
         leaveType: params.leaveType,
         year,
+        month,
       },
     },
     update: {
@@ -25,6 +27,7 @@ export async function incrementLeaveBalanceOnApproval(
     create: {
       employeeId: params.employeeId,
       year,
+      month,
       leaveType: params.leaveType,
       allocatedDays: DEFAULT_LEAVE_QUOTA[params.leaveType],
       usedDays: params.durationDays,
