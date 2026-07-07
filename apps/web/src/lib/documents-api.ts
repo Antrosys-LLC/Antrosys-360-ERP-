@@ -70,10 +70,16 @@ export async function fetchDocuments(params: {
   employeeId?: string;
   clientId?: string;
   fileType?: string;
+  tags?: string[];
   page?: number;
   limit?: number;
 }): Promise<PaginatedResult<DocumentItem>> {
-  const { data } = await apiClient.get('/documents', { params });
+  const { tags, ...rest } = params;
+  const query = {
+    ...rest,
+    tags: tags && tags.length > 0 ? tags.join(',') : undefined,
+  };
+  const { data } = await apiClient.get('/documents', { params: query });
   return data.data;
 }
 

@@ -7,7 +7,6 @@ import {
   ChevronRight,
   FileText,
   Search,
-  SlidersHorizontal,
   Grid,
   List,
   Upload,
@@ -22,6 +21,9 @@ import {
   Edit3,
   Trash2,
   FolderPlus,
+  ChevronsLeft,
+  Tag,
+  Check,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/usePermission";
@@ -67,8 +69,10 @@ export default function DocumentVaultPage() {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedFolderPath, setSelectedFolderPath] = useState("");
   const [fileTypeFilter, setFileTypeFilter] = useState<string | null>(null);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [dirCollapsed, setDirCollapsed] = useState(false);
 
   // Dialogs
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -80,6 +84,7 @@ export default function DocumentVaultPage() {
   const [editDoc, setEditDoc] = useState<DocumentItem | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [editTags, setEditTags] = useState("");
 
   // Queries
   const { data: folders = [], isLoading: foldersLoading } = useQuery({
@@ -88,17 +93,33 @@ export default function DocumentVaultPage() {
   });
 
   const { data: docsResult, isLoading: docsLoading } = useQuery({
-    queryKey: ["documents", selectedFolderId, searchQuery, fileTypeFilter],
+    queryKey: ["documents", selectedFolderId, searchQuery, fileTypeFilter, selectedTags],
     queryFn: () =>
       fetchDocuments({
         folderId: selectedFolderId ?? undefined,
         search: searchQuery || undefined,
         fileType: fileTypeFilter ?? undefined,
+        tags: selectedTags.length > 0 ? selectedTags : undefined,
         limit: 100,
       }),
   });
 
   const documents = docsResult?.items ?? [];
+
+  // Global tag universe (independent of active tag filter so options stay stable)
+  const { data: tagSource = [] } = useQuery({
+    queryKey: ["document-tags"],
+    queryFn: async () => {
+      const result = await fetchDocuments({ limit: 100 });
+      return result.items;
+    },
+  });
+
+  const availableTags = useMemo(() => {
+    const set = new Set<string>();
+    tagSource.forEach((doc) => doc.tags?.forEach((t) => set.add(t)));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [tagSource]);
 
   // Mutations
   const createDocMutation = useMutation({
@@ -106,6 +127,7 @@ export default function DocumentVaultPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
       queryClient.invalidateQueries({ queryKey: ["document-folders"] });
+      queryClient.invalidateQueries({ queryKey: ["document-tags"] });
       toast({ title: "Document uploaded successfully" });
       setUploadOpen(false);
     },
@@ -130,10 +152,11 @@ export default function DocumentVaultPage() {
   });
 
   const updateDocMutation = useMutation({
-    mutationFn: ({ id, ...payload }: { id: string; title?: string; description?: string | null }) =>
+    mutationFn: ({ id, ...payload }: { id: string; title?: string; description?: string | null; tags?: string[] }) =>
       updateDocument(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
+      queryClient.invalidateQueries({ queryKey: ["document-tags"] });
       toast({ title: "Document updated" });
       setEditDocOpen(false);
     },
@@ -177,6 +200,12 @@ export default function DocumentVaultPage() {
     setSelectedFile(null);
   }, []);
 
+  const toggleTag = useCallback((tag: string) => {
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+    );
+  }, []);
+
   const handleUploadComplete = useCallback(
     (result: Parameters<typeof createDocMutation.mutate>[0]) => {
       createDocMutation.mutate(result);
@@ -193,6 +222,7 @@ export default function DocumentVaultPage() {
     setEditDoc(doc);
     setEditTitle(doc.title);
     setEditDescription(doc.description ?? "");
+    setEditTags((doc.tags ?? []).join(", "));
     setEditDocOpen(true);
   }, []);
 
@@ -211,8 +241,12 @@ export default function DocumentVaultPage() {
       id: editDoc.id,
       title: editTitle,
       description: editDescription || null,
+      tags: editTags
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean),
     });
-  }, [editDoc, editTitle, editDescription, updateDocMutation]);
+  }, [editDoc, editTitle, editDescription, editTags, updateDocMutation]);
 
   // Derived
   const findFolderPath = useCallback(
@@ -324,15 +358,25 @@ export default function DocumentVaultPage() {
   };
 
   return (
-    <div className="flex min-h-[calc(100vh-57px)] bg-background text-foreground">
+    <div className="flex -m-8 h-[calc(100vh-var(--topbar-height))] overflow-hidden bg-background text-foreground">
       {/* 1. FOLDERS SIDEBAR */}
-      <aside className="w-64 border-r border-border bg-card flex flex-col hidden md:flex shrink-0">
-        <div className="p-4 border-b border-border flex items-center justify-between">
-          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            Directories
-          </span>
+      <aside
+        className={`border-r border-border bg-card flex-col hidden md:flex shrink-0 transition-[width] duration-200 ${
+          dirCollapsed ? "w-12" : "w-64"
+        }`}
+      >
+        <div
+          className={`h-14 border-b border-border flex items-center gap-1 ${
+            dirCollapsed ? "justify-center px-0" : "justify-between px-4"
+          }`}
+        >
+          {!dirCollapsed && (
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground truncate">
+              Directories
+            </span>
+          )}
           <div className="flex items-center gap-1">
-            {canWrite && (
+            {!dirCollapsed && canWrite && (
               <button
                 onClick={() => setCreateFolderOpen(true)}
                 className="p-1 rounded hover:bg-muted text-muted-foreground"
@@ -342,27 +386,32 @@ export default function DocumentVaultPage() {
               </button>
             )}
             <button
+              onClick={() => setDirCollapsed((v) => !v)}
               className="p-1 rounded hover:bg-muted text-muted-foreground"
-              title="Filter Settings"
+              title={dirCollapsed ? "Expand directories" : "Collapse directories"}
             >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
+              <ChevronsLeft
+                className={`h-4 w-4 transition-transform ${dirCollapsed ? "rotate-180" : ""}`}
+              />
             </button>
           </div>
         </div>
 
-        <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto text-sm">
-          {foldersLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : folders.length === 0 ? (
-            <div className="text-xs text-muted-foreground text-center py-8">
-              No folders yet
-            </div>
-          ) : (
-            renderFolderTree(folders)
-          )}
-        </nav>
+        {!dirCollapsed && (
+          <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto text-sm">
+            {foldersLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : folders.length === 0 ? (
+              <div className="text-xs text-muted-foreground text-center py-8">
+                No folders yet
+              </div>
+            ) : (
+              renderFolderTree(folders)
+            )}
+          </nav>
+        )}
       </aside>
 
       {/* 2. MAIN CONTENT */}
@@ -420,7 +469,75 @@ export default function DocumentVaultPage() {
             )}
           </div>
 
-          <div className="flex items-center gap-2 self-end sm:self-center">
+          <div className="flex items-center gap-2 self-end sm:self-center flex-wrap justify-end">
+            {selectedTags.map((tag) => (
+              <div
+                key={tag}
+                className="flex items-center gap-1.5 bg-secondary text-secondary-foreground px-2.5 py-1 rounded-md text-xs font-semibold border border-primary/10"
+              >
+                <Tag className="h-3 w-3" />
+                <span>{tag}</span>
+                <X
+                  className="h-3 w-3 cursor-pointer hover:opacity-80"
+                  onClick={() => toggleTag(tag)}
+                />
+              </div>
+            ))}
+            {availableTags.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className={`flex items-center gap-1.5 text-xs border rounded-md px-2.5 py-1.5 font-medium transition ${
+                      selectedTags.length > 0
+                        ? "border-primary/30 text-primary bg-primary/5"
+                        : "border-border text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <Tag className="h-3.5 w-3.5" />
+                    <span>Tags</span>
+                    {selectedTags.length > 0 && (
+                      <span className="ml-0.5 h-4 min-w-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
+                        {selectedTags.length}
+                      </span>
+                    )}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52 max-h-72 overflow-y-auto">
+                  {selectedTags.length > 0 && (
+                    <>
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          setSelectedTags([]);
+                        }}
+                        className="text-xs text-muted-foreground"
+                      >
+                        <X className="h-3.5 w-3.5 mr-2" />
+                        Clear all
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
+                  {availableTags.map((tag) => {
+                    const active = selectedTags.includes(tag);
+                    return (
+                      <DropdownMenuItem
+                        key={tag}
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          toggleTag(tag);
+                        }}
+                        className="text-xs justify-between"
+                      >
+                        <span className="truncate">{tag}</span>
+                        {active && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
             {fileTypeFilter && (
               <div className="flex items-center gap-1.5 bg-secondary text-secondary-foreground px-2.5 py-1 rounded-md text-xs font-semibold border border-primary/10">
                 <span>Type: {fileTypeFilter}</span>
@@ -433,7 +550,7 @@ export default function DocumentVaultPage() {
             {fileTypes.length > 0 && !fileTypeFilter && (
               <select
                 onChange={(e) => setFileTypeFilter(e.target.value || null)}
-                className="text-xs bg-card border border-border rounded-md px-2 py-1 text-foreground"
+                className="text-xs bg-card border border-border rounded-md px-2 py-1.5 text-foreground"
                 defaultValue=""
               >
                 <option value="">All types</option>
@@ -483,10 +600,21 @@ export default function DocumentVaultPage() {
               <FileText className="h-10 w-10 text-muted-foreground/60 mb-2.5" />
               <h3 className="font-semibold text-sm">No documents found</h3>
               <p className="text-xs text-muted-foreground max-w-xs mt-1">
-                {searchQuery
-                  ? "Try a different search term"
+                {searchQuery || selectedTags.length > 0 || fileTypeFilter
+                  ? "Try adjusting your search or filters"
                   : "Upload a document to get started"}
               </p>
+              {(selectedTags.length > 0 || fileTypeFilter) && (
+                <button
+                  onClick={() => {
+                    setSelectedTags([]);
+                    setFileTypeFilter(null);
+                  }}
+                  className="mt-3 text-xs font-medium text-primary hover:underline"
+                >
+                  Clear filters
+                </button>
+              )}
             </div>
           ) : viewMode === "grid" ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
@@ -879,6 +1007,31 @@ export default function DocumentVaultPage() {
                 rows={3}
                 className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-tags">Tags (comma-separated)</Label>
+              <Input
+                id="edit-tags"
+                value={editTags}
+                onChange={(e) => setEditTags(e.target.value)}
+                placeholder="e.g. contract, legal, signed"
+              />
+              {editTags.trim() && (
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {editTags
+                    .split(",")
+                    .map((t) => t.trim())
+                    .filter(Boolean)
+                    .map((tag) => (
+                      <span
+                        key={tag}
+                        className="text-[10px] bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded font-medium"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>
