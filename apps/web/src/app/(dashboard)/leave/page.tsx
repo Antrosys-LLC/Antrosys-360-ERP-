@@ -7,9 +7,7 @@ import {
   fetchLeaveBalances,
   fetchLeaveMetrics,
   fetchLeaveRequests,
-  fetchPendingApprovals,
   createLeaveRequest,
-  updateLeaveStatus,
   LeaveType,
 } from '@/lib/leave-api';
 
@@ -34,6 +32,7 @@ const leaveTypeConfig: Record<LeaveType, { label: string; icon: string; color: s
   CASUAL: { label: 'CASUAL LEAVE', icon: 'coffee', color: 'bg-[#4CAF50]' },
   WFH: { label: 'WORK FROM HOME', icon: 'home', color: 'bg-[#5CACF6]' },
   UNPAID: { label: 'UNPAID LEAVE', icon: 'plug', color: 'bg-muted-foreground' },
+  OTHER: { label: 'OTHER', icon: 'question', color: 'bg-[#9E9E9E]' },
 };
 
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -45,13 +44,14 @@ export default function LeaveManagementDashboard() {
   const [selectedType, setSelectedType] = useState<LeaveType>('ANNUAL');
   const [selectedDates, setSelectedDates] = useState<number[]>([]);
   const [conflictCount, setConflictCount] = useState<number>(0);
+
+  const requiresDetailedReason = selectedType === 'UNPAID' || selectedType === 'OTHER';
   
   // Modals State
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [submitReason, setSubmitReason] = useState('');
   
-  const [rejectingId, setRejectingId] = useState<string | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
+
   
   // Dynamic Calendar State
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -95,11 +95,6 @@ export default function LeaveManagementDashboard() {
     queryFn: () => fetchLeaveRequests({ limit: 10 }),
   });
 
-  const { data: approvals, isLoading: loadingApprovals } = useQuery({
-    queryKey: ['pending-approvals'],
-    queryFn: fetchPendingApprovals,
-  });
-
   // ─── Mutations ──────────────────────────────────────────────────────────
 
   const submitRequestMutation = useMutation({
@@ -108,7 +103,7 @@ export default function LeaveManagementDashboard() {
       setConflictCount(data.teamConflictCount);
       toast({
         title: 'Request Submitted',
-        description: 'Your leave request has been submitted successfully.',
+        description: `Your ${selectedType.toLowerCase().replace('_', ' ')} leave request has been submitted for manager approval.`,
         variant: 'default',
       });
       setSelectedDates([]);
@@ -116,38 +111,12 @@ export default function LeaveManagementDashboard() {
       setSubmitReason('');
       queryClient.invalidateQueries({ queryKey: ['my-leave-requests'] });
       queryClient.invalidateQueries({ queryKey: ['leave-balances'] });
-      queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
       queryClient.invalidateQueries({ queryKey: ['leave-metrics'] });
     },
     onError: (error: any) => {
       toast({
-        title: 'Submission Failed',
+        title: 'Request Failed',
         description: error.response?.data?.error || 'An error occurred.',
-        variant: 'destructive',
-      });
-    },
-  });
-
-  const updateStatusMutation = useMutation({
-    mutationFn: (params: { id: string; status: 'APPROVED' | 'REJECTED', declineNote?: string }) =>
-      updateLeaveStatus(params.id, { status: params.status, declineNote: params.declineNote }),
-    onSuccess: () => {
-      toast({
-        title: 'Status Updated',
-        description: 'Leave request has been updated.',
-        variant: 'default',
-      });
-      setRejectingId(null);
-      setRejectReason('');
-      queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
-      queryClient.invalidateQueries({ queryKey: ['leave-metrics'] });
-      queryClient.invalidateQueries({ queryKey: ['leave-balances'] });
-      queryClient.invalidateQueries({ queryKey: ['my-leave-requests'] });
-    },
-    onError: (error: any) => {
-      toast({
-        title: 'Update Failed',
-        description: error.response?.data?.error || 'Failed to update leave request.',
         variant: 'destructive',
       });
     },
@@ -159,14 +128,11 @@ export default function LeaveManagementDashboard() {
     if (isPastDate(dayNum)) return;
 
     if (selectedDates.length === 0) {
-      // First click: set start
       setSelectedDates([dayNum]);
     } else if (selectedDates.length === 1) {
       if (dayNum === selectedDates[0]) {
-        // Clicked same date: deselect
         setSelectedDates([]);
       } else {
-        // Second click: create full range between the two dates
         const min = Math.min(selectedDates[0], dayNum);
         const max = Math.max(selectedDates[0], dayNum);
         const range: number[] = [];
@@ -176,13 +142,12 @@ export default function LeaveManagementDashboard() {
         setSelectedDates(range);
       }
     } else {
-      // Third click: reset and start fresh
       setSelectedDates([dayNum]);
     }
   };
 
   const changeMonth = (offset: number) => {
-    if (offset < 0 && isCurrentMonthOrPast) return; // Prevent going back to past months
+    if (offset < 0 && isCurrentMonthOrPast) return;
     const newDate = new Date(currentDate);
     newDate.setMonth(currentDate.getMonth() + offset);
     setCurrentDate(newDate);
@@ -194,14 +159,21 @@ export default function LeaveManagementDashboard() {
       toast({ title: 'Select Dates', description: 'Please select at least one date.', variant: 'default' });
       return;
     }
-    setSubmitReason('');
     setShowSubmitModal(true);
   };
 
   const handleConfirmSubmit = () => {
+    if (requiresDetailedReason && (!submitReason || submitReason.trim().length === 0)) {
+      toast({
+        title: 'Reason Required',
+        description: `A detailed reason is required for ${selectedType.toLowerCase().replace('_', ' ')} leave.`,
+        variant: 'destructive',
+      });
+      return;
+    }
     const firstDate = selectedDates[0];
     const lastDate = selectedDates[selectedDates.length - 1];
-    
+
     const startDate = new Date(currentYear, currentMonth, firstDate).toISOString();
     const endDate = new Date(currentYear, currentMonth, lastDate).toISOString();
 
@@ -211,20 +183,6 @@ export default function LeaveManagementDashboard() {
       endDate,
       reason: submitReason.trim() || undefined,
     });
-  };
-
-  const handleApprove = (id: string) => {
-    updateStatusMutation.mutate({ id, status: 'APPROVED' });
-  };
-
-  const handleConfirmReject = () => {
-    if (rejectReason.trim() === '') {
-      toast({ title: 'Note Required', description: 'You must provide a reason for rejection.', variant: 'destructive' });
-      return;
-    }
-    if (rejectingId) {
-      updateStatusMutation.mutate({ id: rejectingId, status: 'REJECTED', declineNote: rejectReason });
-    }
   };
 
   return (
@@ -247,13 +205,20 @@ export default function LeaveManagementDashboard() {
                 You are requesting <span className="font-semibold text-foreground">{selectedDates.length} day(s)</span> of <span className="font-semibold text-foreground capitalize">{selectedType.toLowerCase()} Leave</span>.
               </p>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Add a note (Optional)</label>
+                <label className="text-sm font-medium text-foreground">
+                  Reason {requiresDetailedReason ? <span className="text-destructive">(required)</span> : <span className="text-muted-foreground">(optional)</span>}
+                </label>
                 <textarea 
                   value={submitReason}
                   onChange={(e) => setSubmitReason(e.target.value)}
-                  placeholder="E.g. Family trip, doctor appointment..."
+                  placeholder={requiresDetailedReason
+                    ? `Please provide a detailed reason for your ${selectedType.toLowerCase().replace('_', ' ')} leave request...`
+                    : 'E.g. Family trip, doctor appointment...'}
                   className="w-full h-24 p-3 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
                 />
+                {requiresDetailedReason && submitReason.trim().length === 0 && (
+                  <p className="text-xs text-destructive">A detailed reason is required for this leave type.</p>
+                )}
               </div>
             </div>
             <div className="p-5 border-t border-border bg-muted/30 flex justify-end gap-3">
@@ -264,47 +229,9 @@ export default function LeaveManagementDashboard() {
               </button>
               <button 
                 onClick={handleConfirmSubmit}
-                disabled={submitRequestMutation.isPending}
+                disabled={submitRequestMutation.isPending || (requiresDetailedReason && !submitReason.trim())}
                 className="px-4 py-2 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2">
                 {submitRequestMutation.isPending ? 'Submitting...' : 'Confirm Submit'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Reject Confirmation Modal */}
-      {rejectingId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-card w-full max-w-md rounded-xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-border">
-              <h3 className="font-bold text-lg text-destructive">Decline Request</h3>
-              <button onClick={() => setRejectingId(null)} className="text-muted-foreground hover:text-foreground">
-                <RenderIcon type="close" className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-5 space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Decline Reason (Required)</label>
-                <textarea 
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  placeholder="Please explain why this request is being declined..."
-                  className="w-full h-24 p-3 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive resize-none"
-                />
-              </div>
-            </div>
-            <div className="p-5 border-t border-border bg-muted/30 flex justify-end gap-3">
-              <button 
-                onClick={() => setRejectingId(null)}
-                className="px-4 py-2 text-sm font-medium rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground">
-                Cancel
-              </button>
-              <button 
-                onClick={handleConfirmReject}
-                disabled={updateStatusMutation.isPending}
-                className="px-4 py-2 text-sm font-medium rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50">
-                {updateStatusMutation.isPending ? 'Declining...' : 'Decline Request'}
               </button>
             </div>
           </div>
@@ -327,37 +254,44 @@ export default function LeaveManagementDashboard() {
       <main className="flex-1 w-full max-w-[1200px] mx-auto p-6 md:p-8 space-y-6">
         
         {/* TOP ROW: SUMMARY BALANCE KPI CARDS */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           {loadingBalances ? (
-            Array(5).fill(0).map((_, i) => (
+            Array(6).fill(0).map((_, i) => (
               <div key={i} className="bg-card border border-border rounded-[var(--radius)] p-5 h-[100px] animate-pulse">
                 <div className="h-4 bg-muted w-1/2 mb-2 rounded"></div>
                 <div className="h-6 bg-muted w-1/4 rounded"></div>
               </div>
             ))
           ) : (
-            balances?.map((balance) => {
-              const config = leaveTypeConfig[balance.type];
-              const pct = balance.totalDays > 0 ? (balance.remainingDays / balance.totalDays) * 100 : 0;
+            (Object.keys(leaveTypeConfig) as LeaveType[]).map((typeKey) => {
+              const balance = balances?.find(b => b.type === typeKey);
+              const config = leaveTypeConfig[typeKey];
+              const totalDays = balance?.totalDays ?? 20;
+              const remainingDays = balance?.remainingDays ?? 20;
+              const pct = totalDays > 0 ? (remainingDays / totalDays) * 100 : 0;
               return (
-                <article key={balance.type} className="bg-card text-card-foreground border border-border rounded-[var(--radius)] p-5 flex flex-col justify-between shadow-sm">
+                <article key={typeKey} className="bg-card text-card-foreground border border-border rounded-[var(--radius)] p-5 flex flex-col justify-between shadow-sm">
                   <div className="flex items-start justify-between">
                     <div className="space-y-1">
                       <span className="text-[11px] font-bold tracking-wider text-muted-foreground block">{config.label}</span>
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-2xl font-bold">{balance.remainingDays}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {balance.type === 'UNPAID' ? 'taken' : 'days left'}
-                        </span>
-                      </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-2xl font-bold">
+                        {typeKey === 'UNPAID' || typeKey === 'OTHER' ? '∞' : remainingDays}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {typeKey === 'UNPAID' || typeKey === 'OTHER' ? 'unlimited' : 'days left'}
+                      </span>
                     </div>
-                    <div className={`p-1.5 rounded text-muted-foreground`}>
+                    </div>
+                    <div className="p-1.5 rounded text-muted-foreground">
                       <RenderIcon type={config.icon} className="w-5 h-5 opacity-70" />
                     </div>
                   </div>
-                  <div className="w-full bg-muted h-1.5 rounded-full mt-5 overflow-hidden">
-                    <div className={`h-full rounded-full ${config.color}`} style={{ width: `${pct}%` }}></div>
-                  </div>
+                  {typeKey !== 'UNPAID' && typeKey !== 'OTHER' && totalDays > 0 && (
+                    <div className="w-full bg-muted h-1.5 rounded-full mt-5 overflow-hidden">
+                      <div className={`h-full rounded-full ${config.color}`} style={{ width: `${pct}%` }}></div>
+                    </div>
+                  )}
                 </article>
               );
             })
@@ -410,14 +344,14 @@ export default function LeaveManagementDashboard() {
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           
           {/* REQUEST SYSTEM */}
-          <div className={`lg:col-span-${approvals && approvals.length > 0 ? '6' : '12'} space-y-4`}>
+          <div className="lg:col-span-12 space-y-4">
             <h2 className="text-lg font-bold text-foreground">Employee: Request Leave</h2>
             
             <div className="bg-card border border-border rounded-[var(--radius)] p-6 shadow-sm space-y-6">
               <div className="space-y-3">
                 <label className="text-sm font-medium text-muted-foreground block">Leave Type</label>
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4 gap-3">
-                  {(Object.keys(leaveTypeConfig) as LeaveType[]).filter(k => k !== 'UNPAID').map((typeKey) => {
+                  {(Object.keys(leaveTypeConfig) as LeaveType[]).map((typeKey) => {
                     const config = leaveTypeConfig[typeKey];
                     const isSelected = selectedType === typeKey;
                     return (
@@ -479,7 +413,7 @@ export default function LeaveManagementDashboard() {
                   <div className="space-y-1">
                     <h4 className="text-sm font-bold text-[#F57F17]">Team Conflict Warning</h4>
                     <p className="text-xs text-[#F57F17] opacity-90 leading-relaxed">
-                      {conflictCount} team member(s) are also on leave. Approval may be delayed.
+                      {conflictCount} team member(s) are also on leave during this period.
                     </p>
                   </div>
                 </div>
@@ -502,59 +436,7 @@ export default function LeaveManagementDashboard() {
             </div>
           </div>
 
-          {/* MANAGER APPROVALS (Only rendered if items exist) */}
-          {approvals && approvals.length > 0 && (
-            <div className="lg:col-span-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-foreground">Manager: Approvals</h2>
-                <span className="bg-muted text-muted-foreground text-xs font-medium px-3 py-1 rounded-full">
-                  {approvals.length} Pending
-                </span>
-              </div>
 
-              <div className="space-y-4 max-h-[460px] overflow-y-auto pr-2 custom-scrollbar">
-                {approvals.map((approval) => (
-                  <article key={approval.id} className="bg-card border border-border rounded-[var(--radius)] p-5 shadow-sm space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-primary/10 text-primary">
-                        {approval.employee.firstName[0]}{approval.employee.lastName[0]}
-                      </div>
-                      <div className="space-y-1 flex-1">
-                        <h4 className="text-sm font-bold text-foreground leading-none">{approval.employee.firstName} {approval.employee.lastName}</h4>
-                        <p className="text-xs text-muted-foreground">
-                          {approval.type} <span className="mx-1">•</span> {new Date(approval.startDate).toLocaleDateString()} - {new Date(approval.endDate).toLocaleDateString()} ({approval.durationDays} days)
-                        </p>
-                      </div>
-                    </div>
-
-                    {approval.reason && (
-                      <div className="inline-flex items-center gap-1.5 bg-muted/50 text-muted-foreground text-xs font-medium px-2.5 py-1.5 rounded border border-border">
-                        <span>Note: {approval.reason}</span>
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-2 gap-3 pt-2">
-                      <button 
-                        onClick={() => {
-                          setRejectReason('');
-                          setRejectingId(approval.id);
-                        }}
-                        disabled={updateStatusMutation.isPending}
-                        className="bg-[#FEECEB] hover:bg-[#FDD8D8] text-destructive text-sm font-medium py-2.5 rounded-[var(--radius)] transition-colors text-center disabled:opacity-50">
-                        Decline
-                      </button>
-                      <button 
-                        onClick={() => handleApprove(approval.id)}
-                        disabled={updateStatusMutation.isPending}
-                        className="bg-primary hover:opacity-90 text-primary-foreground text-sm font-medium py-2.5 rounded-[var(--radius)] transition-opacity text-center shadow-sm disabled:opacity-50">
-                        Approve
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </div>
-          )}
         </section>
 
         {/* BOTTOM GRID: RECENT REQS AND METRICS SIDE-BY-SIDE */}
@@ -569,15 +451,23 @@ export default function LeaveManagementDashboard() {
                 <p className="text-sm text-muted-foreground">No recent requests.</p>
               ) : (
                 myRequests?.items.map((req) => (
-                  <article key={req.id} className="bg-card border border-border rounded-[var(--radius)] p-4 flex items-center justify-between shadow-sm border-l-4 border-l-primary">
+                  <article key={req.id} className={`bg-card border border-border rounded-[var(--radius)] p-4 flex items-center justify-between shadow-sm border-l-4 ${
+                    req.status === 'APPROVED' ? 'border-l-[#4CAF50]' :
+                    req.status === 'REJECTED' ? 'border-l-destructive' :
+                    'border-l-[#FFC107]'
+                  }`}>
                     <div className="space-y-1">
                       <h4 className="text-sm font-bold text-foreground">{req.type}</h4>
                       <p className="text-xs text-muted-foreground">{new Date(req.startDate).toLocaleDateString()} - {new Date(req.endDate).toLocaleDateString()} ({req.durationDays} days)</p>
+                      {req.declineNote && req.status === 'REJECTED' && (
+                        <p className="text-xs text-destructive mt-1">{req.declineNote}</p>
+                      )}
                     </div>
                     <span className={`text-[10px] font-bold px-2 py-1 rounded ${
                       req.status === 'PENDING' ? 'bg-[#FFFDF5] text-[#FFC107] border border-[#FFE082]' :
                       req.status === 'APPROVED' ? 'bg-[#F6FDF7] text-[#2E7D32] border border-[#C8E6C9]' :
-                      'bg-[#FEECEB] text-destructive border border-[#FDD8D8]'
+                      req.status === 'REJECTED' ? 'bg-[#FEECEB] text-destructive border border-[#FDD8D8]' :
+                      'bg-muted text-muted-foreground border border-border'
                     }`}>
                       {req.status}
                     </span>
