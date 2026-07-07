@@ -15,6 +15,7 @@ import {
   fetchAlerts,
   exportClients,
   importClients,
+  updateSalesStage,
 } from "./lib/clients-api";
 import { formatCurrency } from "./lib/client-utils";
 import { ClientMetrics } from "./components/client-metrics";
@@ -115,6 +116,23 @@ export default function ClientManagementDashboard() {
   const handleSelect = useCallback((id: string) => {
     setSelectedClientId(id);
   }, []);
+
+  const handleMoveStage = useCallback(
+    async (clientId: string, stage: string) => {
+      try {
+        await updateSalesStage(clientId, stage);
+        queryClient.invalidateQueries({ queryKey: ["client-pipeline"] });
+        queryClient.invalidateQueries({ queryKey: ["client-recent-timeline"] });
+        if (selectedClientId === clientId) {
+          queryClient.invalidateQueries({ queryKey: ["client", clientId] });
+        }
+      } catch (err) {
+        toast({ title: "Failed to move client", variant: "destructive" });
+        throw err;
+      }
+    },
+    [queryClient, selectedClientId, toast],
+  );
 
   const handleExport = async () => {
     setExporting(true);
@@ -254,12 +272,23 @@ export default function ClientManagementDashboard() {
       )}
 
       {/* Sales Pipeline */}
-      <SalesPipelineBoard pipeline={pipeline ?? null} loading={pipelineLoading} />
+      <SalesPipelineBoard
+        pipeline={pipeline ?? null}
+        loading={pipelineLoading}
+        canWrite={canWrite}
+        onMoved={handleMoveStage}
+      />
 
       {/* Bottom row: Timeline + Tasks */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <InteractionTimeline events={timeline ?? []} loading={timelineLoading} />
-        <UpcomingTasksPanel tasks={upcomingTasks ?? []} loading={tasksLoading} onUpdate={refresh} />
+        <UpcomingTasksPanel
+          tasks={upcomingTasks ?? []}
+          loading={tasksLoading}
+          onUpdate={refresh}
+          clients={clients.map((c) => ({ id: c.id, name: c.name }))}
+          canWrite={canWrite}
+        />
       </section>
 
       <ClientDialog open={dialogOpen} onOpenChange={setDialogOpen} client={null} onSaved={refresh} />
