@@ -1,4 +1,4 @@
-import { AttendanceStatus } from '@prisma/client';
+import { AttendanceStatus, LeaveRequestStatus } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { incrementLeaveBalanceOnApproval } from '../../shared/leaveBalance/increment-leave-balance';
 import { PostAnnouncementInput } from './manager.schema';
@@ -341,16 +341,26 @@ export async function updateLeaveStatus(leaveId: string, status: 'APPROVED' | 'R
     }
   }
 
+  const isFinalApproval = status === 'APPROVED' && !leave.requiresOpsHeadApproval;
+  const nextStatus: LeaveRequestStatus =
+    status === 'APPROVED' && leave.requiresOpsHeadApproval
+      ? 'PENDING_OPS_HEAD'
+      : status;
+
   return prisma.$transaction(async (tx) => {
     const updated = await tx.leaveRequest.update({
       where: { id: leaveId },
       data: {
-        status,
-        approvedById: status === 'APPROVED' ? employee.id : null,
+        status: nextStatus,
+        approvedById: isFinalApproval ? employee.id : null,
+        managerApprovedById:
+          status === 'APPROVED' && leave.requiresOpsHeadApproval ? employee.id : undefined,
+        managerApprovedAt:
+          status === 'APPROVED' && leave.requiresOpsHeadApproval ? new Date() : undefined,
       },
     });
 
-    if (status === 'APPROVED') {
+    if (isFinalApproval) {
       await incrementLeaveBalanceOnApproval(tx, {
         employeeId: leave.employeeId,
         leaveType: leave.type,
@@ -363,11 +373,14 @@ export async function updateLeaveStatus(leaveId: string, status: 'APPROVED' | 'R
     await tx.auditLog.create({
       data: {
         userId,
-        action: `LEAVE_${status}`,
+        action:
+          nextStatus === 'PENDING_OPS_HEAD'
+            ? 'MANAGER_ESCALATE_LEAVE_TO_OPS_HEAD'
+            : `LEAVE_${status}`,
         metadata: {
           leaveId,
           employeeId: leave.employeeId,
-          status,
+          status: nextStatus,
         },
       },
     });

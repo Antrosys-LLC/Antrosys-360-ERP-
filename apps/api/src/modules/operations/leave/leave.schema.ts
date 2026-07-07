@@ -2,9 +2,9 @@ import { z } from 'zod';
 
 // ─── Enums ─────────────────────────────────────────────────────────────────
 
-export const leaveTypeSchema = z.enum(['ANNUAL', 'SICK', 'CASUAL', 'WFH', 'UNPAID']);
+export const leaveTypeSchema = z.enum(['ANNUAL', 'SICK', 'CASUAL', 'WFH', 'UNPAID', 'OTHER']);
 
-export const leaveStatusSchema = z.enum(['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED']);
+export const leaveStatusSchema = z.enum(['PENDING', 'PENDING_OPS_HEAD', 'APPROVED', 'REJECTED', 'CANCELLED']);
 
 // ─── Leave Requests ────────────────────────────────────────────────────────
 

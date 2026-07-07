@@ -41,6 +41,7 @@ import { createRouteHandler } from 'uploadthing/fastify';
 import { employeeDashboardRoutes } from './modules/employee/EmployeeDashboard/employee_dashboard.routes';
 import { ledgerRoutes } from './modules/ledger/ledger.routes';
 import { currencyRoutes } from './modules/currency/currency.routes';
+import { operationHeadRoutes } from './modules/operationHead/operationHead.routes';
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
@@ -111,6 +112,7 @@ export async function buildApp() {
       await api.register(employeeDashboardRoutes, { prefix: '/employee/dashboard' });
       await api.register(ledgerRoutes, { prefix: '/ledger' });
       await api.register(currencyRoutes, { prefix: '/currency' });
+      await api.register(operationHeadRoutes, { prefix: '/operation-head' });
     },
     { prefix: '/api/v1' },
   );

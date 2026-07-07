@@ -2,6 +2,7 @@ import { LeaveType, LeaveRequestStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../../config/database';
 import { DEFAULT_LEAVE_QUOTA } from '../../../shared/leaveBalance/leave-quota.constants';
 import { incrementLeaveBalanceOnApproval } from '../../../shared/leaveBalance/increment-leave-balance';
+import { requiresOpsHeadApproval as checkOpsHeadRequired } from '../../../shared/leaveBalance/requires-ops-head-approval';
 import type {
   CreateLeaveRequestBody,
   UpdateLeaveStatusBody,
@@ -37,7 +38,7 @@ export async function getMyLeaveBalances(userId: string) {
   if (!employee) return null;
 
   const year = new Date().getFullYear();
-  const types: LeaveType[] = ['ANNUAL', 'SICK', 'CASUAL', 'WFH', 'UNPAID'];
+  const types: LeaveType[] = ['ANNUAL', 'SICK', 'CASUAL', 'WFH', 'UNPAID', 'OTHER'];
 
   // Upsert ensures balances exist on first access
   const upserts = types.map((type) =>
@@ -119,6 +120,8 @@ export async function createLeaveRequest(body: CreateLeaveRequestBody, userId: s
 
   const durationDays = countBusinessDays(body.startDate, body.endDate);
 
+  const needsOpsHead = await checkOpsHeadRequired(prisma, employee.id, body.type, durationDays);
+
   // Check for team conflicts (any PENDING or APPROVED overlapping requests in same dept)
   const teamConflictCount = employee.department
     ? await prisma.leaveRequest.count({
@@ -141,6 +144,7 @@ export async function createLeaveRequest(body: CreateLeaveRequestBody, userId: s
         durationDays,
         status: 'PENDING',
         reason: body.reason,
+        requiresOpsHeadApproval: needsOpsHead,
       },
       include: {
         employee: { select: { firstName: true, lastName: true } },
@@ -185,11 +189,26 @@ export async function updateLeaveStatus(
     if (!existing) return null;
     if (existing.status !== 'PENDING') throw new Error('LEAVE_NOT_PENDING');
 
+    const isFinalApproval =
+      body.status === 'APPROVED' && !existing.requiresOpsHeadApproval;
+    const nextStatus: LeaveRequestStatus =
+      body.status === 'APPROVED' && existing.requiresOpsHeadApproval
+        ? 'PENDING_OPS_HEAD'
+        : (body.status as LeaveRequestStatus);
+
     const updated = await tx.leaveRequest.update({
       where: { id: leaveId },
       data: {
-        status: body.status as LeaveRequestStatus,
-        approvedById: approverEmployee.id,
+        status: nextStatus,
+        approvedById: isFinalApproval ? approverEmployee.id : null,
+        managerApprovedById:
+          body.status === 'APPROVED' && existing.requiresOpsHeadApproval
+            ? approverEmployee.id
+            : undefined,
+        managerApprovedAt:
+          body.status === 'APPROVED' && existing.requiresOpsHeadApproval
+            ? new Date()
+            : undefined,
         declineNote: body.declineNote,
       },
       include: {
@@ -198,7 +217,7 @@ export async function updateLeaveStatus(
       },
     });
 
-    if (body.status === 'APPROVED') {
+    if (isFinalApproval) {
       await incrementLeaveBalanceOnApproval(tx, {
         employeeId: existing.employeeId,
         leaveType: existing.type,
@@ -210,7 +229,12 @@ export async function updateLeaveStatus(
     await tx.auditLog.create({
       data: {
         userId: approverId,
-        action: body.status === 'APPROVED' ? 'APPROVE_LEAVE_REQUEST' : 'REJECT_LEAVE_REQUEST',
+        action:
+          nextStatus === 'PENDING_OPS_HEAD'
+            ? 'MANAGER_ESCALATE_LEAVE_TO_OPS_HEAD'
+            : body.status === 'APPROVED'
+              ? 'APPROVE_LEAVE_REQUEST'
+              : 'REJECT_LEAVE_REQUEST',
         metadata: {
           leaveId,
           employeeId: existing.employeeId,
@@ -275,7 +299,7 @@ export async function getPendingApprovals(userId: string) {
   const where: Prisma.LeaveRequestWhereInput =
     subordinateIds.length > 0
       ? { status: 'PENDING', employeeId: { in: subordinateIds } }
-      : { status: 'PENDING' }; // wide-open for top-level managers
+      : { status: 'PENDING' };
 
   return prisma.leaveRequest.findMany({
     where,

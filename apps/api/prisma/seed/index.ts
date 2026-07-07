@@ -364,6 +364,9 @@ async function main() {
   const { seedLeaveData } = await import('./leave.seed');
   await seedLeaveData();
 
+  const { seedOperationHeadData } = await import('./operation_head.seed');
+  await seedOperationHeadData(prisma);
+
   const { seedLedgerData } = await import('./ledger.seed');
   await seedLedgerData(prisma);
 
