@@ -24,12 +24,21 @@ function toNumber(val: Prisma.Decimal | number | null | undefined): number | nul
   return typeof val === 'number' ? val : Number(val);
 }
 
+function serializeProject<T extends Record<string, unknown>>(project: T) {
+  return {
+    ...project,
+    budget: toNumber(project.budget as Prisma.Decimal | null),
+  };
+}
+
 function serializeClient<T extends Record<string, unknown>>(client: T) {
+  const projects = client.projects as Array<Record<string, unknown>> | undefined;
   return {
     ...client,
     monthlyRevenue: toNumber(client.monthlyRevenue as Prisma.Decimal | null),
     annualRevenue: toNumber(client.annualRevenue as Prisma.Decimal | null),
     lifetimeValue: toNumber(client.lifetimeValue as Prisma.Decimal | null),
+    ...(projects ? { projects: projects.map(serializeProject) } : {}),
   };
 }
 
@@ -308,10 +317,11 @@ export async function createActivity(clientId: string, payload: CreateActivityBo
 // ─── Project ───────────────────────────────────────────────────────────────
 
 export async function listProjects(clientId: string) {
-  return prisma.clientProject.findMany({
+  const projects = await prisma.clientProject.findMany({
     where: { clientId },
     orderBy: { createdAt: 'desc' },
   });
+  return projects.map(serializeProject);
 }
 
 export async function createProject(clientId: string, payload: CreateProjectBody, userId: string) {
@@ -322,6 +332,8 @@ export async function createProject(clientId: string, payload: CreateProjectBody
         name: payload.name,
         description: payload.description ?? null,
         status: payload.status,
+        priority: payload.priority,
+        projectManager: payload.projectManager ?? null,
         startDate: payload.startDate ? new Date(payload.startDate) : null,
         endDate: payload.endDate ? new Date(payload.endDate) : null,
         budget: payload.budget ?? null,
@@ -334,7 +346,7 @@ export async function createProject(clientId: string, payload: CreateProjectBody
     return project;
   }).then(async (project) => {
     await recalculateClientRevenue(clientId);
-    return project;
+    return serializeProject(project);
   });
 }
 
@@ -347,6 +359,8 @@ export async function updateProject(projectId: string, clientId: string, payload
     if (payload.name !== undefined) data.name = payload.name;
     if (payload.description !== undefined) data.description = payload.description;
     if (payload.status !== undefined) data.status = payload.status;
+    if (payload.priority !== undefined) data.priority = payload.priority;
+    if (payload.projectManager !== undefined) data.projectManager = payload.projectManager;
     if (payload.startDate !== undefined) data.startDate = payload.startDate ? new Date(payload.startDate) : null;
     if (payload.endDate !== undefined) data.endDate = payload.endDate ? new Date(payload.endDate) : null;
     if (payload.budget !== undefined) data.budget = payload.budget;
@@ -354,8 +368,17 @@ export async function updateProject(projectId: string, clientId: string, payload
     const updated = await tx.clientProject.update({ where: { id: projectId }, data });
     await writeAuditLog(tx, userId, 'CLIENT_PROJECT_UPDATE', { clientId, projectId });
 
-    if (payload.status && payload.status !== current.status && payload.status === 'COMPLETED') {
-      await pushTimeline(tx, clientId, 'PROJECT_COMPLETED', `Project "${current.name}" completed`);
+    if (payload.status && payload.status !== current.status) {
+      const isCompleted = payload.status === 'COMPLETED';
+      await pushTimeline(
+        tx,
+        clientId,
+        isCompleted ? 'PROJECT_COMPLETED' : 'STATUS',
+        isCompleted
+          ? `Project "${current.name}" completed`
+          : `Project "${current.name}" moved to ${payload.status}`,
+        `Status changed from ${current.status} to ${payload.status}`,
+      );
     }
 
     return updated;
@@ -363,7 +386,7 @@ export async function updateProject(projectId: string, clientId: string, payload
     if (result) {
       await recalculateClientRevenue(clientId);
     }
-    return result;
+    return result ? serializeProject(result) : result;
   });
 }
 

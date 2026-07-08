@@ -56,6 +56,8 @@ export interface ClientProject {
   name: string;
   description: string | null;
   status: string;
+  priority: string;
+  projectManager: string | null;
   startDate: string | null;
   endDate: string | null;
   budget: number | null;
@@ -385,12 +387,12 @@ export async function fetchProjects(clientId: string): Promise<ClientProject[]> 
   return data.data;
 }
 
-export async function createProject(clientId: string, payload: { name: string; description?: string | null; status?: string; startDate?: string | null; endDate?: string | null; budget?: number | null }): Promise<ClientProject> {
+export async function createProject(clientId: string, payload: { name: string; description?: string | null; status?: string; priority?: string; projectManager?: string | null; startDate?: string | null; endDate?: string | null; budget?: number | null }): Promise<ClientProject> {
   const { data } = await apiClient.post(`/clients/${clientId}/projects`, payload);
   return data.data;
 }
 
-export async function updateProject(clientId: string, projectId: string, payload: Partial<{ name: string; description: string | null; status: string; startDate: string | null; endDate: string | null; budget: number | null }>): Promise<ClientProject> {
+export async function updateProject(clientId: string, projectId: string, payload: Partial<{ name: string; description: string | null; status: string; priority: string; projectManager: string | null; startDate: string | null; endDate: string | null; budget: number | null }>): Promise<ClientProject> {
   const { data } = await apiClient.patch(`/clients/${clientId}/projects/${projectId}`, payload);
   return data.data;
 }

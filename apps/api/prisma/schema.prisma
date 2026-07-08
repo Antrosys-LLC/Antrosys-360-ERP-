@@ -442,18 +442,20 @@ model ClientActivity {
 }
 
 model ClientProject {
-  id          String    @id @default(cuid())
-  clientId    String
-  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  name        String
-  description String?
-  status      String    @default("PLANNING") // PLANNING, ACTIVE, ON_HOLD, COMPLETED, CANCELLED
-  startDate   DateTime?
-  endDate     DateTime?
-  budget      Decimal?  @db.Decimal(14, 2)
-  invoices    Invoice[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  clientId       String
+  client         Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  status         String    @default("PLANNING") // PLANNING, ACTIVE, ON_HOLD, COMPLETED, CANCELLED
+  priority       String    @default("MEDIUM") // LOW, MEDIUM, HIGH
+  projectManager String?
+  startDate      DateTime?
+  endDate        DateTime?
+  budget         Decimal?  @db.Decimal(14, 2)
+  invoices       Invoice[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@index([clientId])
   @@index([status])
