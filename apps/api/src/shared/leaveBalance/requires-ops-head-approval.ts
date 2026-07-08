@@ -12,7 +12,7 @@ export async function requiresOpsHeadApproval(
   year: number,
   month: number,
 ): Promise<boolean> {
-  if (type === 'OTHER') return true;
+  if (type === 'UNPAID' || type === 'OTHER') return true;
 
   const balance = await db.leaveBalance.findUnique({
     where: { employeeId_leaveType_year_month: { employeeId, leaveType: type, year, month } },
