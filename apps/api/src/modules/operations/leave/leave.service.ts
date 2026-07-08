@@ -26,6 +26,14 @@ function countBusinessDays(start: Date, end: Date): number {
   return count;
 }
 
+function countCalendarDays(start: Date, end: Date): number {
+  const s = new Date(start);
+  s.setHours(0, 0, 0, 0);
+  const e = new Date(end);
+  e.setHours(0, 0, 0, 0);
+  return Math.floor((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+}
+
 async function getEmployee(userId: string) {
   return prisma.employee.findFirst({ where: { userId } });
 }
@@ -147,7 +155,10 @@ export async function createLeaveRequest(
   const employee = await getEmployee(userId);
   if (!employee) throw new Error("NO_EMPLOYEE_RECORD");
 
-  const durationDays = countBusinessDays(body.startDate, body.endDate);
+  const isUnlimitedType = body.type === 'UNPAID' || body.type === 'OTHER';
+  const durationDays = isUnlimitedType
+    ? countCalendarDays(body.startDate, body.endDate)
+    : countBusinessDays(body.startDate, body.endDate);
   const year = body.startDate.getFullYear();
   const month = body.startDate.getMonth() + 1;
 

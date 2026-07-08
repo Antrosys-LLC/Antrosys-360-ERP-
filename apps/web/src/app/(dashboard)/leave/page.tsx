@@ -42,7 +42,7 @@ export default function LeaveManagementDashboard() {
   const { toast } = useToast();
 
   const [selectedType, setSelectedType] = useState<LeaveType>('ANNUAL');
-  const [selectedDates, setSelectedDates] = useState<number[]>([]);
+  const [selectedDates, setSelectedDates] = useState<Date[]>([]);
   const [conflictCount, setConflictCount] = useState<number>(0);
 
   const requiresDetailedReason = selectedType === 'UNPAID' || selectedType === 'OTHER';
@@ -76,6 +76,14 @@ export default function LeaveManagementDashboard() {
     if (currentMonth < realCurrentDate.getMonth()) return true;
     if (currentMonth > realCurrentDate.getMonth()) return false;
     return dayNum < realCurrentDate.getDate();
+  };
+
+  const isBeforeToday = (date: Date) => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return d < today;
   };
 
   // ─── Data Fetching ──────────────────────────────────────────────────────
@@ -127,22 +135,32 @@ export default function LeaveManagementDashboard() {
   const handleDateClick = (dayNum: number) => {
     if (isPastDate(dayNum)) return;
 
+    const clickedDate = new Date(currentYear, currentMonth, dayNum);
+    clickedDate.setHours(0, 0, 0, 0);
+
     if (selectedDates.length === 0) {
-      setSelectedDates([dayNum]);
+      setSelectedDates([clickedDate]);
     } else if (selectedDates.length === 1) {
-      if (dayNum === selectedDates[0]) {
+      const firstDate = new Date(selectedDates[0]);
+      firstDate.setHours(0, 0, 0, 0);
+
+      if (clickedDate.getTime() === firstDate.getTime()) {
         setSelectedDates([]);
       } else {
-        const min = Math.min(selectedDates[0], dayNum);
-        const max = Math.max(selectedDates[0], dayNum);
-        const range: number[] = [];
-        for (let i = min; i <= max; i++) {
-          if (!isPastDate(i)) range.push(i);
+        const min = firstDate < clickedDate ? firstDate : clickedDate;
+        const max = firstDate < clickedDate ? clickedDate : firstDate;
+        const range: Date[] = [];
+        const current = new Date(min);
+        while (current <= max) {
+          if (!isBeforeToday(current)) {
+            range.push(new Date(current));
+          }
+          current.setDate(current.getDate() + 1);
         }
-        setSelectedDates(range);
+        if (range.length > 0) setSelectedDates(range);
       }
     } else {
-      setSelectedDates([dayNum]);
+      setSelectedDates([clickedDate]);
     }
   };
 
@@ -151,13 +169,24 @@ export default function LeaveManagementDashboard() {
     const newDate = new Date(currentDate);
     newDate.setMonth(currentDate.getMonth() + offset);
     setCurrentDate(newDate);
-    setSelectedDates([]);
   };
 
   const handleOpenSubmitModal = () => {
     if (selectedDates.length === 0) {
       toast({ title: 'Select Dates', description: 'Please select at least one date.', variant: 'default' });
       return;
+    }
+    const noThresholdTypes: LeaveType[] = ['UNPAID', 'OTHER'];
+    if (!noThresholdTypes.includes(selectedType)) {
+      const balance = balances?.find(b => b.type === selectedType);
+      if (balance && selectedDates.length > balance.remainingDays) {
+        toast({
+          title: 'Insufficient Leave Balance',
+          description: `You only have ${balance.remainingDays} day(s) of ${selectedType.toLowerCase().replace('_', ' ')} leave remaining but requested ${selectedDates.length} day(s).`,
+          variant: 'destructive',
+        });
+        return;
+      }
     }
     setShowSubmitModal(true);
   };
@@ -171,11 +200,9 @@ export default function LeaveManagementDashboard() {
       });
       return;
     }
-    const firstDate = selectedDates[0];
-    const lastDate = selectedDates[selectedDates.length - 1];
-
-    const startDate = new Date(currentYear, currentMonth, firstDate).toISOString();
-    const endDate = new Date(currentYear, currentMonth, lastDate).toISOString();
+    const sortedDates = [...selectedDates].sort((a, b) => a.getTime() - b.getTime());
+    const startDate = sortedDates[0].toISOString();
+    const endDate = sortedDates[sortedDates.length - 1].toISOString();
 
     submitRequestMutation.mutate({
       type: selectedType,
@@ -320,7 +347,7 @@ export default function LeaveManagementDashboard() {
               {currentMonthDays.map((dayNum) => {
                 const past = isPastDate(dayNum);
                 let cellStyle = "text-muted-foreground bg-[#F8F9FB] hover:bg-muted";
-                if (selectedDates.includes(dayNum)) {
+                if (selectedDates.some(d => d.getFullYear() === currentYear && d.getMonth() === currentMonth && d.getDate() === dayNum)) {
                   cellStyle = "bg-primary text-primary-foreground font-medium shadow-sm ring-1 ring-primary ring-offset-1";
                 }
                 if (past) {
@@ -384,7 +411,7 @@ export default function LeaveManagementDashboard() {
                     {Array(startOffset).fill(null).map((_, i) => <div key={`empty-${i}`} />)}
                     {currentMonthDays.map((dayNum) => {
                       const past = isPastDate(dayNum);
-                      const isSelected = selectedDates.includes(dayNum);
+                      const isSelected = selectedDates.some(d => d.getFullYear() === currentYear && d.getMonth() === currentMonth && d.getDate() === dayNum);
                       let itemClass = "text-foreground hover:bg-muted rounded-full";
                       if (isSelected) itemClass = "bg-primary text-primary-foreground font-medium rounded-full";
                       if (past) itemClass = "text-muted-foreground/30 cursor-not-allowed";
