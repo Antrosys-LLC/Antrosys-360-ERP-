@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 'use client';
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bell,
   History,
@@ -24,6 +24,8 @@ import {
   CheckCircle2,
   Clock,
 } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 
 // ==========================================
 // MOCK DATA (Ready for API replacement)
@@ -110,6 +112,68 @@ const mockData = {
   ],
 };
 
+const ALL_CURRENCIES = [
+  { code: 'USD', name: 'US Dollar', symbol: '$' },
+  { code: 'EUR', name: 'Euro', symbol: '€' },
+  { code: 'GBP', name: 'British Pound', symbol: '£' },
+  { code: 'PKR', name: 'Pakistani Rupee', symbol: 'PKR' },
+  { code: 'AED', name: 'UAE Dirham', symbol: 'AED' },
+  { code: 'SAR', name: 'Saudi Riyal', symbol: 'SAR' },
+  { code: 'JPY', name: 'Japanese Yen', symbol: '¥' },
+  { code: 'CNY', name: 'Chinese Yuan', symbol: '¥' },
+  { code: 'INR', name: 'Indian Rupee', symbol: '₹' },
+  { code: 'CAD', name: 'Canadian Dollar', symbol: 'CA$' },
+  { code: 'AUD', name: 'Australian Dollar', symbol: 'A$' },
+  { code: 'CHF', name: 'Swiss Franc', symbol: 'CHF' },
+  { code: 'SGD', name: 'Singapore Dollar', symbol: 'S$' },
+  { code: 'HKD', name: 'Hong Kong Dollar', symbol: 'HK$' },
+  { code: 'KRW', name: 'South Korean Won', symbol: '₩' },
+  { code: 'BRL', name: 'Brazilian Real', symbol: 'R$' },
+  { code: 'MXN', name: 'Mexican Peso', symbol: 'MX$' },
+  { code: 'ZAR', name: 'South African Rand', symbol: 'R' },
+  { code: 'SEK', name: 'Swedish Krona', symbol: 'kr' },
+  { code: 'NOK', name: 'Norwegian Krone', symbol: 'kr' },
+  { code: 'DKK', name: 'Danish Krone', symbol: 'kr' },
+  { code: 'PLN', name: 'Polish Złoty', symbol: 'zł' },
+  { code: 'TRY', name: 'Turkish Lira', symbol: '₺' },
+  { code: 'THB', name: 'Thai Baht', symbol: '฿' },
+  { code: 'MYR', name: 'Malaysian Ringgit', symbol: 'RM' },
+  { code: 'IDR', name: 'Indonesian Rupiah', symbol: 'Rp' },
+  { code: 'PHP', name: 'Philippine Peso', symbol: '₱' },
+  { code: 'VND', name: 'Vietnamese Dong', symbol: '₫' },
+  { code: 'EGP', name: 'Egyptian Pound', symbol: 'E£' },
+  { code: 'NGN', name: 'Nigerian Naira', symbol: '₦' },
+  { code: 'KES', name: 'Kenyan Shilling', symbol: 'KSh' },
+  { code: 'QAR', name: 'Qatari Riyal', symbol: 'QR' },
+  { code: 'KWD', name: 'Kuwaiti Dinar', symbol: 'KD' },
+  { code: 'BHD', name: 'Bahraini Dinar', symbol: 'BD' },
+  { code: 'OMR', name: 'Omani Rial', symbol: 'OMR' },
+];
+
+const CURRENCY_TAX_CONFIG: Record<string, { region: string; taxes: { type: string; label: string; defaultRate: number }[] }> = {
+  PKR: { region: 'Pakistan (FBR)', taxes: [{ type: 'GST', label: 'GST', defaultRate: 17 }, { type: 'WHT', label: 'WHT', defaultRate: 10 }] },
+  USD: { region: 'United States (IRS)', taxes: [{ type: 'SALES_TAX', label: 'Sales Tax', defaultRate: 8 }] },
+  EUR: { region: 'European Union (EU)', taxes: [{ type: 'VAT', label: 'VAT', defaultRate: 20 }] },
+  GBP: { region: 'United Kingdom (HMRC)', taxes: [{ type: 'VAT', label: 'VAT', defaultRate: 20 }] },
+  AED: { region: 'UAE (FTA)', taxes: [{ type: 'VAT', label: 'VAT', defaultRate: 5 }] },
+  SAR: { region: 'Saudi Arabia (ZATCA)', taxes: [{ type: 'VAT', label: 'VAT', defaultRate: 15 }] },
+  JPY: { region: 'Japan (NTA)', taxes: [{ type: 'VAT', label: 'Consumption Tax', defaultRate: 10 }] },
+  CNY: { region: 'China (SAT)', taxes: [{ type: 'VAT', label: 'VAT', defaultRate: 13 }] },
+  INR: { region: 'India (CBDT)', taxes: [{ type: 'GST', label: 'GST', defaultRate: 18 }, { type: 'WITHHOLDING', label: 'TDS', defaultRate: 10 }] },
+  AUD: { region: 'Australia (ATO)', taxes: [{ type: 'VAT', label: 'GST', defaultRate: 10 }] },
+  CAD: { region: 'Canada (CRA)', taxes: [{ type: 'VAT', label: 'GST/HST', defaultRate: 13 }] },
+  CHF: { region: 'Switzerland (FTA)', taxes: [{ type: 'VAT', label: 'VAT', defaultRate: 8.1 }] },
+  SGD: { region: 'Singapore (IRAS)', taxes: [{ type: 'VAT', label: 'GST', defaultRate: 9 }] },
+  KRW: { region: 'South Korea (NTS)', taxes: [{ type: 'VAT', label: 'VAT', defaultRate: 10 }] },
+  BRL: { region: 'Brazil (RFB)', taxes: [{ type: 'VAT', label: 'ICMS', defaultRate: 18 }] },
+  NZD: { region: 'New Zealand (IRD)', taxes: [{ type: 'VAT', label: 'GST', defaultRate: 15 }] },
+  ZAR: { region: 'South Africa (SARS)', taxes: [{ type: 'VAT', label: 'VAT', defaultRate: 15 }] },
+  MXN: { region: 'Mexico (SAT)', taxes: [{ type: 'VAT', label: 'IVA', defaultRate: 16 }] },
+  TRY: { region: 'Turkey (GİB)', taxes: [{ type: 'VAT', label: 'KDV', defaultRate: 18 }] },
+};
+
+const GENERIC_TAX_REGION = 'General (No default tax)';
+
 const CLIENT_OPTIONS = [
   mockData.parties.billTo,
   {
@@ -132,13 +196,6 @@ const CLIENT_OPTIONS = [
   },
 ];
 
-const TAX_REGION_OPTIONS = [
-  'Pakistan (FBR)',
-  'UAE (FTA)',
-  'Saudi Arabia (ZATCA)',
-  'United Kingdom (HMRC)',
-];
-
 function getInitials(name: string) {
   return (
     name
@@ -151,8 +208,17 @@ function getInitials(name: string) {
   );
 }
 
-function formatPkr(amount: number) {
-  return `PKR ${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+function formatCurrency(amount: number, symbol: string, code: string = '') {
+  const prefix = symbol || code || 'PKR';
+  return `${prefix} ${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+}
+
+function getCurrencySymbol(code: string): string {
+  return ALL_CURRENCIES.find((c) => c.code === code)?.symbol || code;
+}
+
+function getCurrencyTaxConfig(code: string) {
+  return CURRENCY_TAX_CONFIG[code] || null;
 }
 
 type BillToParty = {
@@ -161,6 +227,8 @@ type BillToParty = {
   ntn: string;
   address: string;
 };
+
+type TaxLine = { desc: string; amount: number };
 
 type InvoiceDocumentProps = {
   invoiceNumber: string;
@@ -179,13 +247,16 @@ type InvoiceDocumentProps = {
     wht: number;
     totalDue: number;
     currencySymbol: string;
+    currencyCode: string;
   };
   taxBreakdown: {
-    gstLines: { desc: string; amount: number }[];
-    whtLines: { desc: string; amount: number }[];
+    additiveLines: TaxLine[];
+    withholdingLines: TaxLine[];
   };
-  gstRate: number;
-  whtRate: number;
+  additiveTaxLabel: string;
+  additiveTaxRate: number;
+  withholdingTaxLabel: string;
+  withholdingTaxRate: number;
   paymentMethods: typeof mockData.paymentMethods;
 };
 
@@ -200,10 +271,15 @@ function InvoiceDocument({
   lineItems,
   summary,
   taxBreakdown,
-  gstRate,
-  whtRate,
+  additiveTaxLabel,
+  additiveTaxRate,
+  withholdingTaxLabel,
+  withholdingTaxRate,
   paymentMethods,
 }: InvoiceDocumentProps) {
+  const sym = summary.currencySymbol;
+  const code = summary.currencyCode;
+
   return (
     <div className="bg-white text-gray-900 text-sm leading-relaxed">
       <div className="flex items-start justify-between border-b border-gray-200 pb-6 mb-6">
@@ -252,7 +328,7 @@ function InvoiceDocument({
               <td className="py-2.5 pr-4 text-gray-900 break-words">{item.desc}</td>
               <td className="py-2.5 text-right text-gray-700">{item.qty}</td>
               <td className="py-2.5 text-right text-gray-700">{item.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-              <td className="py-2.5 text-right font-medium text-gray-900">{item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+              <td className="py-2.5 text-right font-medium text-gray-900">{formatCurrency(item.amount, sym, code)}</td>
             </tr>
           ))}
         </tbody>
@@ -261,27 +337,27 @@ function InvoiceDocument({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Tax breakdown</p>
-          {taxBreakdown.gstLines.length > 0 && (
+          {taxBreakdown.additiveLines.length > 0 && (
             <div className="mb-4">
-              <p className="font-semibold text-gray-900 mb-2">GST ({gstRate}%)</p>
+              <p className="font-semibold text-gray-900 mb-2">{additiveTaxLabel} ({additiveTaxRate}%)</p>
               <div className="space-y-2">
-                {taxBreakdown.gstLines.map((line) => (
-                  <div key={`doc-gst-${line.desc}`} className="bg-gray-50 rounded p-2">
+                {taxBreakdown.additiveLines.map((line, i) => (
+                  <div key={`doc-add-${i}`} className="bg-gray-50 rounded p-2">
                     <p className="text-gray-600 break-words">{line.desc}</p>
-                    <p className="text-right font-medium text-gray-900 mt-1">{formatPkr(line.amount)}</p>
+                    <p className="text-right font-medium text-gray-900 mt-1">{formatCurrency(line.amount, sym, code)}</p>
                   </div>
                 ))}
               </div>
             </div>
           )}
-          {taxBreakdown.whtLines.length > 0 && (
+          {taxBreakdown.withholdingLines.length > 0 && (
             <div>
-              <p className="font-semibold text-gray-900 mb-2">WHT ({whtRate}%)</p>
+              <p className="font-semibold text-gray-900 mb-2">{withholdingTaxLabel} ({withholdingTaxRate}%)</p>
               <div className="space-y-2">
-                {taxBreakdown.whtLines.map((line) => (
-                  <div key={`doc-wht-${line.desc}`} className="bg-gray-50 rounded p-2">
+                {taxBreakdown.withholdingLines.map((line, i) => (
+                  <div key={`doc-wht-${i}`} className="bg-gray-50 rounded p-2">
                     <p className="text-gray-600 break-words">{line.desc}</p>
-                    <p className="text-right font-medium text-amber-700 mt-1">-{formatPkr(line.amount)}</p>
+                    <p className="text-right font-medium text-amber-700 mt-1">-{formatCurrency(line.amount, sym, code)}</p>
                   </div>
                 ))}
               </div>
@@ -294,27 +370,27 @@ function InvoiceDocument({
           <div className="space-y-2 text-sm">
             <div className="flex justify-between text-gray-600">
               <span>Subtotal</span>
-              <span className="text-gray-900">{formatPkr(summary.subtotal)}</span>
+              <span className="text-gray-900">{formatCurrency(summary.subtotal, sym, code)}</span>
             </div>
             <div className="flex justify-between text-amber-700">
               <span>Discount</span>
-              <span>-{formatPkr(Math.abs(summary.discount))}</span>
+              <span>-{formatCurrency(Math.abs(summary.discount), sym, code)}</span>
             </div>
             <div className="flex justify-between font-medium border-t border-gray-200 pt-2">
               <span>Taxable amount</span>
-              <span>{formatPkr(summary.taxableAmount)}</span>
+              <span>{formatCurrency(summary.taxableAmount, sym, code)}</span>
             </div>
             <div className="flex justify-between text-gray-600">
-              <span>GST {gstRate}%</span>
-              <span className="text-gray-900">{formatPkr(summary.gst)}</span>
+              <span>{additiveTaxLabel} {additiveTaxRate}%</span>
+              <span className="text-gray-900">{formatCurrency(summary.gst, sym, code)}</span>
             </div>
             <div className="flex justify-between text-amber-700">
-              <span>WHT {whtRate}%</span>
-              <span>-{formatPkr(Math.abs(summary.wht))}</span>
+              <span>{withholdingTaxLabel} {withholdingTaxRate}%</span>
+              <span>-{formatCurrency(Math.abs(summary.wht), sym, code)}</span>
             </div>
             <div className="flex justify-between font-bold text-lg border-t border-gray-200 pt-3 mt-2">
               <span>Total due</span>
-              <span className="text-blue-700">{summary.currencySymbol} {summary.totalDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              <span className="text-blue-700">{formatCurrency(summary.totalDue, sym, code)}</span>
             </div>
           </div>
         </div>
@@ -360,21 +436,67 @@ export default function InvoiceBuilder() {
   const [billToOpen, setBillToOpen] = useState(false);
   const [taxRulesOpen, setTaxRulesOpen] = useState(false);
   const [taxBreakdownOpen, setTaxBreakdownOpen] = useState(false);
-  const [gstEnabled, setGstEnabled] = useState(true);
-  const [whtEnabled, setWhtEnabled] = useState(true);
-  const [gstRate, setGstRate] = useState(17);
-  const [whtRate, setWhtRate] = useState(10);
+
+  const [selectedCurrency, setSelectedCurrency] = useState('PKR');
+
+  const currencyConfig = getCurrencyTaxConfig(selectedCurrency);
+  const defaultTaxes = currencyConfig?.taxes || [];
+  const defaultAdditiveTax = defaultTaxes.filter((t) => !['WHT', 'WITHHOLDING'].includes(t.type))[0] || null;
+  const defaultWithholdingTax = defaultTaxes.filter((t) => ['WHT', 'WITHHOLDING'].includes(t.type))[0] || null;
+
+  const [additiveEnabled, setAdditiveEnabled] = useState(true);
+  const [withholdingEnabled, setWithholdingEnabled] = useState(true);
+  const [additiveRate, setAdditiveRate] = useState(defaultAdditiveTax?.defaultRate ?? 0);
+  const [withholdingRate, setWithholdingRate] = useState(defaultWithholdingTax?.defaultRate ?? 0);
+  const additiveLabel = defaultAdditiveTax?.label || 'Tax';
+  const withholdingLabel = defaultWithholdingTax?.label || 'Withholding';
+
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [confirmSendOpen, setConfirmSendOpen] = useState(false);
+  const [confirmSaveDraftOpen, setConfirmSaveDraftOpen] = useState(false);
+  const [draftSaved, setDraftSaved] = useState(false);
+  const [draftSent, setDraftSent] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const billToRef = useRef<HTMLDivElement | null>(null);
   const invoiceDocRef = useRef<HTMLDivElement | null>(null);
 
+  useEffect(() => {
+    setAdditiveRate(defaultAdditiveTax?.defaultRate ?? 0);
+    setWithholdingRate(defaultWithholdingTax?.defaultRate ?? 0);
+    setAdditiveEnabled(!!defaultAdditiveTax);
+    setWithholdingEnabled(!!defaultWithholdingTax);
+    const region = currencyConfig?.region || GENERIC_TAX_REGION;
+    setDetails((prev) => ({
+      ...prev,
+      currency: `${selectedCurrency} - ${ALL_CURRENCIES.find((c) => c.code === selectedCurrency)?.name || selectedCurrency}`,
+      taxRegion: region,
+      activeTaxes: defaultTaxes.map((t) => `${t.label} ${t.defaultRate}%`),
+    }));
+    setLineItems((prev) =>
+      prev.map((item) => {
+        if (item.tax === 'Exempt') return item;
+        const newType = defaultTaxes.length > 0 ? `${defaultTaxes[0].label} ${defaultTaxes[0].defaultRate}%` : 'Exempt';
+        return { ...item, tax: newType };
+      }),
+    );
+  }, [selectedCurrency]);
+
+  function getAdditiveTaxTypes(taxes: typeof defaultTaxes) {
+    return taxes.filter((t) => !['WHT', 'WITHHOLDING'].includes(t.type)).map((t) => t.type);
+  }
+
+  function getWithholdingTaxTypes(taxes: typeof defaultTaxes) {
+    return taxes.filter((t) => ['WHT', 'WITHHOLDING'].includes(t.type)).map((t) => t.type);
+  }
+
   const summary = useMemo(() => {
+    const additiveTypes = getAdditiveTaxTypes(defaultTaxes);
+    const withholdingTypes = getWithholdingTaxTypes(defaultTaxes);
     let subtotal = 0;
     let discount = 0;
     let taxableAmount = 0;
-    let gst = 0;
-    let wht = 0;
+    let additiveTaxTotal = 0;
+    let withholdingTaxTotal = 0;
 
     for (const item of lineItems) {
       const gross = item.qty * item.price;
@@ -384,47 +506,56 @@ export default function InvoiceBuilder() {
       discount += disc;
       taxableAmount += taxable;
 
-      if (item.tax.includes('GST')) {
-        const rate = Number(item.tax.replace(/[^\d.]/g, '')) || 0;
-        gst += taxable * (rate / 100);
+      const rate = Number(item.tax.replace(/[^\d.]/g, '')) || 0;
+      const isAdditive = additiveTypes.some((t) => item.tax.includes(t));
+      const isWithholding = withholdingTypes.some((t) => item.tax.includes(t));
+
+      if (isAdditive) {
+        additiveTaxTotal += taxable * (rate / 100);
       }
-      if (item.tax.includes('WHT')) {
-        const rate = Number(item.tax.replace(/[^\d.]/g, '')) || 0;
-        wht += taxable * (rate / 100);
+      if (isWithholding) {
+        withholdingTaxTotal += taxable * (rate / 100);
       }
     }
 
-    const totalDue = taxableAmount + gst - wht;
+    const totalDue = taxableAmount + additiveTaxTotal - withholdingTaxTotal;
+    const currencySymbol = getCurrencySymbol(selectedCurrency);
     return {
       subtotal,
       discount: -discount,
       taxableAmount,
-      gst,
-      wht: -wht,
+      gst: additiveTaxTotal,
+      wht: -withholdingTaxTotal,
       totalDue,
-      currencySymbol: 'PKR',
+      currencySymbol,
+      currencyCode: selectedCurrency,
     };
-  }, [lineItems]);
+  }, [lineItems, selectedCurrency, defaultTaxes]);
 
   const taxBreakdown = useMemo(() => {
-    const gstLines: { desc: string; base: number; amount: number }[] = [];
-    const whtLines: { desc: string; base: number; amount: number }[] = [];
+    const additiveTypes = getAdditiveTaxTypes(defaultTaxes);
+    const withholdingTypes = getWithholdingTaxTypes(defaultTaxes);
+    const additiveLines: { desc: string; base: number; amount: number }[] = [];
+    const withholdingLines: { desc: string; base: number; amount: number }[] = [];
 
     for (const item of lineItems) {
       const gross = item.qty * item.price;
       const base = gross - gross * (item.discount / 100);
 
-      if (item.tax.includes('GST')) {
-        const rate = Number(item.tax.replace(/[^\d.]/g, '')) || gstRate;
-        gstLines.push({ desc: item.desc, base, amount: base * (rate / 100) });
-      } else if (item.tax.includes('WHT')) {
-        const rate = Number(item.tax.replace(/[^\d.]/g, '')) || whtRate;
-        whtLines.push({ desc: item.desc, base, amount: base * (rate / 100) });
+      const isAdditive = additiveTypes.some((t) => item.tax.includes(t));
+      const isWithholding = withholdingTypes.some((t) => item.tax.includes(t));
+
+      if (isAdditive) {
+        const rate = Number(item.tax.replace(/[^\d.]/g, '')) || additiveRate;
+        additiveLines.push({ desc: item.desc, base, amount: base * (rate / 100) });
+      } else if (isWithholding) {
+        const rate = Number(item.tax.replace(/[^\d.]/g, '')) || withholdingRate;
+        withholdingLines.push({ desc: item.desc, base, amount: base * (rate / 100) });
       }
     }
 
-    return { gstLines, whtLines };
-  }, [lineItems, gstRate, whtRate]);
+    return { additiveLines, withholdingLines };
+  }, [lineItems, additiveRate, withholdingRate, defaultTaxes]);
 
   const invoiceDocumentProps: InvoiceDocumentProps = useMemo(
     () => ({
@@ -438,11 +569,13 @@ export default function InvoiceBuilder() {
       lineItems,
       summary,
       taxBreakdown,
-      gstRate,
-      whtRate,
+      additiveTaxLabel: additiveLabel,
+      additiveTaxRate: additiveRate,
+      withholdingTaxLabel: withholdingLabel,
+      withholdingTaxRate: withholdingRate,
       paymentMethods: mockData.paymentMethods,
     }),
-    [details, status, poNumber, billTo, lineItems, summary, taxBreakdown, gstRate, whtRate],
+    [details, status, poNumber, billTo, lineItems, summary, taxBreakdown, additiveLabel, additiveRate, withholdingLabel, withholdingRate],
   );
 
   const toInputDate = (value: string) => {
@@ -465,14 +598,49 @@ export default function InvoiceBuilder() {
     ]);
   };
 
-  const handleSaveDraft = () => {
+  const handleSaveDraftConfirmed = () => {
+    if (draftSaved) {
+      toast({
+        title: 'Already saved',
+        description: 'This draft has already been saved. You can continue editing and send when ready.',
+      });
+      return;
+    }
     setStatus('Draft');
+    setDraftSaved(true);
+    setConfirmSaveDraftOpen(false);
     logActivity('Draft saved');
+    toast({
+      title: 'Draft saved',
+      description: 'Your invoice draft has been saved successfully. You can edit it on next login.',
+    });
+  };
+
+  const handleSendInvoiceConfirmed = () => {
+    setStatus('Sent');
+    setDraftSent(true);
+    setConfirmSendOpen(false);
+    logActivity('Invoice sent');
+    toast({
+      title: 'Invoice sent!',
+      description: 'The invoice has been sent to the client successfully.',
+    });
+  };
+
+  const handleSaveDraft = () => {
+    if (draftSaved) {
+      toast({
+        title: 'Draft already saved',
+        description: 'This draft was already saved once. You can continue editing and send when ready.',
+        variant: 'default',
+      });
+      return;
+    }
+    setConfirmSaveDraftOpen(true);
   };
 
   const handleSendInvoice = () => {
-    setStatus('Sent');
-    logActivity('Invoice sent');
+    setConfirmSendOpen(true);
   };
 
   const handleDuplicate = () => {
@@ -498,28 +666,35 @@ export default function InvoiceBuilder() {
     setBillToOpen(false);
     setTaxRulesOpen(false);
     setTaxBreakdownOpen(false);
-    setGstEnabled(true);
-    setWhtEnabled(true);
-    setGstRate(17);
-    setWhtRate(10);
+    setSelectedCurrency('PKR');
+    setAdditiveEnabled(true);
+    setWithholdingEnabled(true);
+    setAdditiveRate(defaultAdditiveTax?.defaultRate ?? 0);
+    setWithholdingRate(defaultWithholdingTax?.defaultRate ?? 0);
+    setDraftSaved(false);
+    setDraftSent(false);
     setStatus('Draft');
     logActivity('Draft discarded and reset');
   };
 
   const applyTaxRules = () => {
+    const additiveTypes = getAdditiveTaxTypes(defaultTaxes);
+    const withholdingTypes = getWithholdingTaxTypes(defaultTaxes);
     const activeTaxes: string[] = [];
-    if (gstEnabled) activeTaxes.push(`GST ${gstRate}%`);
-    if (whtEnabled) activeTaxes.push(`WHT ${whtRate}%`);
+    if (additiveEnabled && defaultAdditiveTax) activeTaxes.push(`${additiveLabel} ${additiveRate}%`);
+    if (withholdingEnabled && defaultWithholdingTax) activeTaxes.push(`${withholdingLabel} ${withholdingRate}%`);
 
     setDetails((prev) => ({ ...prev, activeTaxes }));
     setLineItems((prev) =>
       prev.map((item) => {
         if (item.tax === 'Exempt') return item;
-        if (item.tax.includes('GST') && gstEnabled) {
-          return { ...item, tax: `GST ${gstRate}%` };
+        const additiveMatch = additiveTypes.some((t) => item.tax.includes(t));
+        const withholdingMatch = withholdingTypes.some((t) => item.tax.includes(t));
+        if (additiveMatch && additiveEnabled && defaultAdditiveTax) {
+          return { ...item, tax: `${additiveLabel} ${additiveRate}%` };
         }
-        if (item.tax.includes('WHT') && whtEnabled) {
-          return { ...item, tax: `WHT ${whtRate}%` };
+        if (withholdingMatch && withholdingEnabled && defaultWithholdingTax) {
+          return { ...item, tax: `${withholdingLabel} ${withholdingRate}%` };
         }
         return item;
       }),
@@ -668,8 +843,16 @@ export default function InvoiceBuilder() {
                 <Eye className="w-4 h-4" />
                 <span>Preview</span>
               </button>
-              <button onClick={handleSaveDraft} className="flex items-center space-x-2 px-4 py-2 border border-primary text-primary bg-secondary/30 rounded-md text-sm font-medium hover:bg-secondary transition">
-                <span>Save draft</span>
+              <button
+                onClick={handleSaveDraft}
+                disabled={draftSent}
+                className={`flex items-center space-x-2 px-4 py-2 border rounded-md text-sm font-medium transition ${
+                  draftSaved
+                    ? 'border-emerald-300 text-emerald-700 bg-emerald-50 cursor-default'
+                    : 'border-primary text-primary bg-secondary/30 hover:bg-secondary'
+                } ${draftSent ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <span>{draftSaved ? 'Draft saved' : 'Save draft'}</span>
               </button>
               <button onClick={handleSendInvoice} className="flex items-center space-x-2 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition shadow-sm">
                 <Send className="w-4 h-4" />
@@ -717,10 +900,17 @@ export default function InvoiceBuilder() {
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">Currency</label>
                 <div className="relative">
-                  <select className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm appearance-none focus:ring-1 focus:ring-ring outline-none pl-8">
-                    <option>{details.currency}</option>
+                  <select
+                    value={selectedCurrency}
+                    onChange={(e) => setSelectedCurrency(e.target.value)}
+                    className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm appearance-none focus:ring-1 focus:ring-ring outline-none pr-8"
+                  >
+                    {ALL_CURRENCIES.map((cur) => (
+                      <option key={cur.code} value={cur.code}>
+                        {cur.code} - {cur.name} ({cur.symbol})
+                      </option>
+                    ))}
                   </select>
-                  <span className="absolute left-3 top-2.5 text-sm font-medium text-muted-foreground">Rs</span>
                   <ChevronDown className="w-4 h-4 absolute right-3 top-2.5 text-muted-foreground pointer-events-none" />
                 </div>
               </div>
@@ -730,19 +920,13 @@ export default function InvoiceBuilder() {
               <label className="text-sm font-medium text-foreground block mb-2">Tax region & rules</label>
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  <div className="relative w-48">
-                    <select
+                  <div className="relative w-56">
+                    <input
+                      type="text"
+                      readOnly
                       value={details.taxRegion}
-                      onChange={(e) => setDetails((prev) => ({ ...prev, taxRegion: e.target.value }))}
-                      className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm appearance-none focus:ring-1 focus:ring-ring outline-none"
-                    >
-                      {TAX_REGION_OPTIONS.map((region) => (
-                        <option key={region} value={region}>
-                          {region}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="w-4 h-4 absolute right-3 top-2.5 text-muted-foreground pointer-events-none" />
+                      className="w-full bg-muted border border-input rounded-md px-3 py-2 text-sm text-muted-foreground cursor-default"
+                    />
                   </div>
                   {details.activeTaxes.map((tax, idx) => (
                     <span key={idx} className="bg-secondary text-primary text-xs px-2 py-1 rounded-full font-medium">
@@ -760,36 +944,45 @@ export default function InvoiceBuilder() {
               </div>
               {taxRulesOpen && (
                 <div className="mt-4 p-4 border border-border rounded-md bg-muted/20 space-y-4">
-                  <p className="text-sm font-medium text-foreground">Configure tax rules</p>
+                  <p className="text-sm font-medium text-foreground">
+                    Tax rules for <span className="text-primary">{selectedCurrency}</span> — {currencyConfig?.region || GENERIC_TAX_REGION}
+                  </p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <label className="flex items-center space-x-2 text-sm">
-                      <input type="checkbox" checked={gstEnabled} onChange={(e) => setGstEnabled(e.target.checked)} />
-                      <span>GST enabled</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                        value={gstRate}
-                        onChange={(e) => setGstRate(Number(e.target.value))}
-                        className="w-16 ml-auto bg-background border border-input rounded px-2 py-1 text-sm"
-                      />
-                      <span>%</span>
-                    </label>
-                    <label className="flex items-center space-x-2 text-sm">
-                      <input type="checkbox" checked={whtEnabled} onChange={(e) => setWhtEnabled(e.target.checked)} />
-                      <span>WHT enabled</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                        value={whtRate}
-                        onChange={(e) => setWhtRate(Number(e.target.value))}
-                        className="w-16 ml-auto bg-background border border-input rounded px-2 py-1 text-sm"
-                      />
-                      <span>%</span>
-                    </label>
+                    {defaultAdditiveTax && (
+                      <label className="flex items-center space-x-2 text-sm">
+                        <input type="checkbox" checked={additiveEnabled} onChange={(e) => setAdditiveEnabled(e.target.checked)} />
+                        <span>{additiveLabel} enabled</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={additiveRate}
+                          onChange={(e) => setAdditiveRate(Number(e.target.value))}
+                          className="w-16 ml-auto bg-background border border-input rounded px-2 py-1 text-sm"
+                        />
+                        <span>%</span>
+                      </label>
+                    )}
+                    {defaultWithholdingTax && (
+                      <label className="flex items-center space-x-2 text-sm">
+                        <input type="checkbox" checked={withholdingEnabled} onChange={(e) => setWithholdingEnabled(e.target.checked)} />
+                        <span>{withholdingLabel} enabled</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={withholdingRate}
+                          onChange={(e) => setWithholdingRate(Number(e.target.value))}
+                          className="w-16 ml-auto bg-background border border-input rounded px-2 py-1 text-sm"
+                        />
+                        <span>%</span>
+                      </label>
+                    )}
+                    {!defaultAdditiveTax && !defaultWithholdingTax && (
+                      <p className="text-sm text-muted-foreground col-span-2">No default tax rules for this currency.</p>
+                    )}
                   </div>
                   <div className="flex justify-end space-x-2">
                     <button
@@ -996,7 +1189,7 @@ export default function InvoiceBuilder() {
                             {item.tax}
                           </span>
                         </td>
-                        <td className="py-4 text-right font-medium">{item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td className="py-4 text-right font-medium">{formatCurrency(item.amount, getCurrencySymbol(selectedCurrency), selectedCurrency)}</td>
                         <td className="py-4 text-right">
                           <Trash2 onClick={() => setLineItems((prev) => prev.filter((_, i) => i !== index).map((it, i) => ({ ...it, id: i + 1 })))} className="w-4 h-4 text-destructive/70 hover:text-destructive cursor-pointer opacity-0 group-hover:opacity-100 transition" />
                         </td>
@@ -1005,7 +1198,7 @@ export default function InvoiceBuilder() {
                 </tbody>
               </table>
             </div>
-            <button onClick={() => setLineItems((prev) => [...prev, { id: prev.length + 1, desc: 'New item', qty: 1, unit: 'Item', price: 0, discount: 0, tax: 'Exempt', amount: 0 }])} className="w-full mt-4 py-3 border-2 border-dashed border-border rounded-md text-sm font-medium text-primary hover:bg-secondary/20 transition flex items-center justify-center space-x-2">
+            <button onClick={() => setLineItems((prev) => [...prev, { id: prev.length + 1, desc: 'New item', qty: 1, unit: 'Item', price: 0, discount: 0, tax: defaultTaxes.length > 0 ? `${defaultTaxes[0].label} ${defaultTaxes[0].defaultRate}%` : 'Exempt', amount: 0 }])} className="w-full mt-4 py-3 border-2 border-dashed border-border rounded-md text-sm font-medium text-primary hover:bg-secondary/20 transition flex items-center justify-center space-x-2">
               <Plus className="w-4 h-4" />
               <span>Add line item</span>
             </button>
@@ -1064,23 +1257,23 @@ export default function InvoiceBuilder() {
             <div className="space-y-4 text-sm">
               <div className="flex justify-between text-muted-foreground">
                 <span>Subtotal</span>
-                <span className="text-foreground">PKR {summary.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                <span className="text-foreground">{formatCurrency(summary.subtotal, summary.currencySymbol, summary.currencyCode)}</span>
               </div>
               <div className="flex justify-between text-yellow-600 font-medium">
                 <span>Discount</span>
-                <span>-PKR {Math.abs(summary.discount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                <span>-{formatCurrency(Math.abs(summary.discount), summary.currencySymbol, summary.currencyCode)}</span>
               </div>
               <div className="flex justify-between font-medium border-t border-border pt-3">
                 <span>Taxable amount</span>
-                <span>PKR {summary.taxableAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                <span>{formatCurrency(summary.taxableAmount, summary.currencySymbol, summary.currencyCode)}</span>
               </div>
               <div className="flex justify-between text-muted-foreground">
-                <span>GST 17%</span>
-                <span className="text-foreground">PKR {summary.gst.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                <span>{additiveLabel} {additiveRate}%</span>
+                <span className="text-foreground">{formatCurrency(summary.gst, summary.currencySymbol, summary.currencyCode)}</span>
               </div>
               <div className="flex justify-between text-yellow-600 font-medium">
-                <span>WHT 10%</span>
-                <span>-PKR {Math.abs(summary.wht).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                <span>{withholdingLabel} {withholdingRate}%</span>
+                <span>-{formatCurrency(Math.abs(summary.wht), summary.currencySymbol, summary.currencyCode)}</span>
               </div>
             </div>
             
@@ -1088,7 +1281,7 @@ export default function InvoiceBuilder() {
               <span className="font-bold text-foreground">Total Due</span>
               <div className="text-right">
                 <span className="text-xl font-bold text-primary block">
-                  {summary.currencySymbol} {summary.totalDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  {formatCurrency(summary.totalDue, summary.currencySymbol, summary.currencyCode)}
                 </span>
                 <button
                   type="button"
@@ -1100,30 +1293,30 @@ export default function InvoiceBuilder() {
                 </button>
                 {taxBreakdownOpen && (
                   <div className="mt-3 pt-3 border-t border-border text-xs space-y-3 text-left">
-                    {taxBreakdown.gstLines.length > 0 && (
+                    {taxBreakdown.additiveLines.length > 0 && (
                       <div>
-                        <p className="font-semibold text-foreground mb-1.5">GST ({gstRate}%)</p>
+                        <p className="font-semibold text-foreground mb-1.5">{additiveLabel} ({additiveRate}%)</p>
                         <div className="space-y-2">
-                          {taxBreakdown.gstLines.map((line) => (
-                            <div key={`gst-${line.desc}`} className="rounded-md bg-muted/30 p-2.5">
+                          {taxBreakdown.additiveLines.map((line, i) => (
+                            <div key={`add-${i}`} className="rounded-md bg-muted/30 p-2.5">
                               <p className="text-muted-foreground break-words leading-snug">{line.desc}</p>
                               <p className="text-foreground font-medium text-right mt-1">
-                                PKR {line.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                {formatCurrency(line.amount, summary.currencySymbol, summary.currencyCode)}
                               </p>
                             </div>
                           ))}
                         </div>
                       </div>
                     )}
-                    {taxBreakdown.whtLines.length > 0 && (
+                    {taxBreakdown.withholdingLines.length > 0 && (
                       <div>
-                        <p className="font-semibold text-foreground mb-1.5">WHT ({whtRate}%)</p>
+                        <p className="font-semibold text-foreground mb-1.5">{withholdingLabel} ({withholdingRate}%)</p>
                         <div className="space-y-2">
-                          {taxBreakdown.whtLines.map((line) => (
-                            <div key={`wht-${line.desc}`} className="rounded-md bg-muted/30 p-2.5">
+                          {taxBreakdown.withholdingLines.map((line, i) => (
+                            <div key={`wht-${i}`} className="rounded-md bg-muted/30 p-2.5">
                               <p className="text-muted-foreground break-words leading-snug">{line.desc}</p>
                               <p className="text-yellow-600 font-medium text-right mt-1">
-                                -PKR {line.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                -{formatCurrency(line.amount, summary.currencySymbol, summary.currencyCode)}
                               </p>
                             </div>
                           ))}
@@ -1213,7 +1406,7 @@ export default function InvoiceBuilder() {
           {/* SECTION: ACTIVITY */}
           <section className="bg-transparent pt-4">
              <h3 className="text-base font-semibold mb-6 px-2">Activity</h3>
-             <div className="relative border-l border-border ml-4 space-y-6 pb-4">
+             <div className={`relative border-l border-border ml-4 space-y-6 pb-4 ${activity.length > 5 ? 'max-h-[340px] overflow-y-auto pr-2' : ''}`}>
                 {activity.map((item) => (
                   <div key={item.id} className="relative pl-6">
                     <div className={`absolute -left-1.5 top-1.5 w-3 h-3 rounded-full border-2 border-background ${item.active ? 'bg-primary' : 'bg-border'}`}></div>
@@ -1222,6 +1415,9 @@ export default function InvoiceBuilder() {
                   </div>
                 ))}
              </div>
+             {activity.length > 5 && (
+               <p className="text-xs text-center text-muted-foreground mt-2">Showing {activity.length} entries — scroll for more</p>
+             )}
           </section>
 
         </div>
@@ -1249,8 +1445,16 @@ export default function InvoiceBuilder() {
           <button onClick={handleDiscardDraft} className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition">
             Cancel
           </button>
-          <button onClick={handleSaveDraft} className="px-4 py-2 border border-border bg-background rounded-md text-sm font-medium hover:bg-muted transition">
-            Save draft
+          <button
+            onClick={handleSaveDraft}
+            disabled={draftSent}
+            className={`px-4 py-2 border border-border rounded-md text-sm font-medium transition ${
+              draftSaved
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default'
+                : 'bg-background hover:bg-muted'
+            } ${draftSent ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            {draftSaved ? 'Draft saved' : 'Save draft'}
           </button>
           <button onClick={handleSendInvoice} className="flex items-center space-x-2 px-6 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition">
             <Send className="w-4 h-4" />
@@ -1284,6 +1488,77 @@ export default function InvoiceBuilder() {
           </div>
         </div>
       )}
+
+      {/* Send confirmation dialog */}
+      <Dialog open={confirmSendOpen} onOpenChange={setConfirmSendOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="w-5 h-5 text-primary" />
+              Send invoice
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to send this invoice to the client? Once sent, the invoice status will change to <strong>Sent</strong> and cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmSendOpen(false);
+                toast({ title: 'Cancelled', description: 'Invoice was not sent.' });
+              }}
+              className="px-4 py-2 border border-border rounded-md text-sm font-medium hover:bg-muted transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSendInvoiceConfirmed}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition"
+            >
+              <Send className="w-4 h-4" />
+              Send invoice
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Save draft confirmation dialog */}
+      <Dialog open={confirmSaveDraftOpen} onOpenChange={setConfirmSaveDraftOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Save className="w-5 h-5 text-primary" />
+              Save draft
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to save this invoice as a draft? 
+              {!draftSaved && ' You can only save the draft once. After saving, you can continue editing and send when ready.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmSaveDraftOpen(false);
+                toast({ title: 'Cancelled', description: 'Draft was not saved.' });
+              }}
+              className="px-4 py-2 border border-border rounded-md text-sm font-medium hover:bg-muted transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveDraftConfirmed}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition"
+            >
+              <Save className="w-4 h-4" />
+              Save draft
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

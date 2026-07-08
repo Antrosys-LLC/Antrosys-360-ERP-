@@ -288,7 +288,7 @@ export function ClientInvoices({ clientId, invoices, onUpdate }: ClientInvoicesP
                         className="text-xs h-7 w-28"
                       />
                       <span className="text-xs font-mono font-bold text-foreground self-center whitespace-nowrap min-w-[60px] text-right">
-                        PKR {(item.quantity * item.unitPrice).toLocaleString()}
+                        {(item.quantity * item.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>
