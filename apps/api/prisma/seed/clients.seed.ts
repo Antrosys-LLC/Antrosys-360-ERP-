@@ -45,7 +45,7 @@ export async function seedClientsData() {
   await prisma.clientProject.deleteMany();
   await prisma.client.deleteMany();
 
-  const clients = [
+  const clients: Prisma.ClientCreateInput[] = [
     {
       clientCode: 'CLT-001',
       name: 'Nexus Corp',
@@ -185,7 +185,7 @@ export async function seedClientsData() {
       lifetimeValue: dec(18000000 + i * 3600000),
       healthScore: 60 + (i % 35),
       healthMetrics: health(70 + (i % 20), 65 + (i % 25), 75 + (i % 15), 68 + (i % 22), 72 + (i % 18)),
-      renewalDueAt: i % 4 === 0 ? dateOnly(year, month + (i % 6), 1 + (i % 28)) : null,
+      renewalDueAt: i % 4 === 0 ? dateOnly(year, month + (i % 6), 1 + (i % 28)) : undefined,
       isAtRisk: false,
       isActive: true,
     });
@@ -217,7 +217,7 @@ export async function seedClientsData() {
     createdClients[c.name] = client.id;
 
     await prisma.clientStatus.create({
-      data: { clientId: client.id, status: c.pipelineStage, note: 'Initial status' },
+      data: { clientId: client.id, status: c.pipelineStage!, note: 'Initial status' },
     });
   }
 
