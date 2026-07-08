@@ -9,7 +9,20 @@ import type {
   CreateTeamBody,
   UpdateTeamBody,
   SendMessageBody,
+  CreateMeetingBody,
+  UpdateMeetingBody,
 } from './onboard.schema';
+import type { OnboardingPhase } from '@prisma/client';
+
+// Ordered pipeline phases used to compute progress.
+export const PHASE_ORDER: OnboardingPhase[] = [
+  'PENDING',
+  'DOCUMENTATION',
+  'IT_SETUP',
+  'HR_ORIENTATION',
+  'TEAM_INTRO',
+  'COMPLETED',
+];
 
 const employeeInclude = {
   user: { select: { email: true, role: true } },
@@ -19,9 +32,12 @@ const employeeInclude = {
   },
   tasks: {
     orderBy: { createdAt: 'desc' as const },
-    take: 10,
+    take: 25,
   },
   onboarding: true,
+  onboardingMeetings: {
+    orderBy: { scheduledAt: 'asc' as const },
+  },
 };
 
 export async function listOnboardEmployees(query: ListOnboardEmployeesQuery) {
@@ -42,7 +58,7 @@ export async function listOnboardEmployees(query: ListOnboardEmployeesQuery) {
         user: { select: { email: true } },
         teams: { include: { team: true } },
         onboarding: true,
-        tasks: { where: { status: { not: 'COMPLETED' } }, take: 5, orderBy: { createdAt: 'desc' } },
+        tasks: { select: { id: true, status: true, phase: true }, orderBy: { createdAt: 'desc' } },
       },
       orderBy: { createdAt: 'desc' },
       skip: (query.page - 1) * query.limit,
@@ -108,11 +124,17 @@ export async function createEmployee(data: CreateEmployeeBody, userId: string) {
       });
     }
 
+    const startDate = rest.joiningDate ? new Date(rest.joiningDate) : new Date();
+    const targetEndDate = new Date(startDate);
+    targetEndDate.setDate(targetEndDate.getDate() + 30);
+
     await tx.onboardingRecord.create({
       data: {
         employeeId: user.employee!.id,
         status: 'IN_PROGRESS',
-        startDate: new Date(),
+        currentPhase: 'PENDING',
+        startDate,
+        targetEndDate,
         createdByUserId: userId,
       },
     });
@@ -216,6 +238,16 @@ export async function getDashboardStats() {
     },
   });
 
+  const phaseGroups = await prisma.onboardingRecord.groupBy({
+    by: ['currentPhase'],
+    _count: true,
+  });
+  const phaseCountMap = new Map(phaseGroups.map((g) => [g.currentPhase, g._count]));
+  const phaseDistribution = PHASE_ORDER.map((phase) => ({
+    phase,
+    count: phaseCountMap.get(phase) ?? 0,
+  }));
+
   return {
     activeOnboardings,
     avgCompletion,
@@ -224,6 +256,7 @@ export async function getDashboardStats() {
     completedOnboardings,
     totalEmployees,
     employeesWithOverdueTasks,
+    phaseDistribution,
     departments: departments.map((d) => ({
       department: d.department,
       count: d._count,
@@ -245,6 +278,7 @@ export async function createEmployeeTask(employeeId: string, data: CreateTaskBod
       employeeId,
       title: data.title,
       description: data.description ?? null,
+      phase: data.phase ?? null,
       dueAt: data.dueAt ? new Date(data.dueAt) : null,
       assignedById: userId,
     },
@@ -256,14 +290,140 @@ export async function updateTask(taskId: string, data: UpdateTaskBody) {
   if (data.dueAt !== undefined) {
     updateData.dueAt = data.dueAt ? new Date(data.dueAt) : null;
   }
-  if (data.status === 'COMPLETED') {
-    updateData.completedAt = new Date();
+  // Keep completedAt in sync with status so reopening a task clears it.
+  if (data.status !== undefined) {
+    updateData.completedAt = data.status === 'COMPLETED' ? new Date() : null;
   }
 
   return prisma.employeeTask.update({
     where: { id: taskId },
     data: updateData,
   });
+}
+
+export async function advancePhase(employeeId: string, currentPhase: OnboardingPhase) {
+  const record = await prisma.onboardingRecord.findUnique({ where: { employeeId } });
+  if (!record) return null;
+
+  const isCompleted = currentPhase === 'COMPLETED';
+  const updated = await prisma.onboardingRecord.update({
+    where: { employeeId },
+    data: {
+      currentPhase,
+      status: isCompleted ? 'COMPLETED' : 'IN_PROGRESS',
+      completedAt: isCompleted ? new Date() : null,
+    },
+  });
+
+  // When onboarding wraps up, promote the hire to an active employee.
+  if (isCompleted) {
+    await prisma.employee.update({
+      where: { id: employeeId },
+      data: { employmentStatus: 'ACTIVE' },
+    });
+  }
+
+  return updated;
+}
+
+// ----- Meetings -----
+
+const meetingInclude = {
+  createdBy: { select: { email: true } },
+  employee: { select: { id: true, firstName: true, lastName: true } },
+};
+
+export async function listMeetings(employeeId: string) {
+  return prisma.onboardingMeeting.findMany({
+    where: { employeeId },
+    include: meetingInclude,
+    orderBy: { scheduledAt: 'asc' },
+  });
+}
+
+export async function createMeeting(employeeId: string, data: CreateMeetingBody, userId: string) {
+  const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
+  if (!employee) return null;
+
+  return prisma.onboardingMeeting.create({
+    data: {
+      employeeId,
+      title: data.title,
+      description: data.description ?? null,
+      scheduledAt: new Date(data.scheduledAt),
+      durationMins: data.durationMins ?? 30,
+      location: data.location ?? null,
+      phase: data.phase ?? null,
+      createdByUserId: userId,
+    },
+    include: meetingInclude,
+  });
+}
+
+export async function updateMeeting(meetingId: string, data: UpdateMeetingBody) {
+  const existing = await prisma.onboardingMeeting.findUnique({ where: { id: meetingId } });
+  if (!existing) return null;
+
+  const updateData: Record<string, unknown> = { ...data };
+  if (data.scheduledAt !== undefined) updateData.scheduledAt = new Date(data.scheduledAt);
+
+  return prisma.onboardingMeeting.update({
+    where: { id: meetingId },
+    data: updateData,
+    include: meetingInclude,
+  });
+}
+
+export async function deleteMeeting(meetingId: string) {
+  const existing = await prisma.onboardingMeeting.findUnique({ where: { id: meetingId } });
+  if (!existing) return null;
+  await prisma.onboardingMeeting.delete({ where: { id: meetingId } });
+  return existing;
+}
+
+// ----- Employee self-service (person being onboarded) -----
+
+export async function getMyOnboarding(userId: string) {
+  const employee = await prisma.employee.findUnique({
+    where: { userId },
+    include: {
+      user: { select: { email: true, role: true } },
+      manager: { select: { id: true, firstName: true, lastName: true, designation: true } },
+      teams: { include: { team: true } },
+      onboarding: true,
+      tasks: { orderBy: [{ phase: 'asc' }, { createdAt: 'asc' }] },
+      onboardingMeetings: { orderBy: { scheduledAt: 'asc' } },
+      receivedMessages: {
+        include: { sender: { select: { email: true } } },
+        orderBy: { createdAt: 'desc' },
+      },
+    },
+  });
+
+  if (!employee) return { hasProfile: false, hasOnboarding: false, employee: null };
+
+  return {
+    hasProfile: true,
+    hasOnboarding: Boolean(employee.onboarding),
+    employee,
+  };
+}
+
+export async function updateMyTask(userId: string, taskId: string, data: UpdateTaskBody) {
+  const employee = await prisma.employee.findUnique({ where: { userId }, select: { id: true } });
+  if (!employee) return { forbidden: true as const, task: null };
+
+  const task = await prisma.employeeTask.findUnique({ where: { id: taskId } });
+  if (!task || task.employeeId !== employee.id) return { forbidden: true as const, task: null };
+
+  const updateData: Record<string, unknown> = {};
+  if (data.status !== undefined) {
+    updateData.status = data.status;
+    updateData.completedAt = data.status === 'COMPLETED' ? new Date() : null;
+  }
+
+  const updated = await prisma.employeeTask.update({ where: { id: taskId }, data: updateData });
+  return { forbidden: false as const, task: updated };
 }
 
 export async function deleteTask(taskId: string) {

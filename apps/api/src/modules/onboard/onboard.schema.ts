@@ -1,5 +1,16 @@
 import { z } from 'zod';
 
+export const ONBOARDING_PHASES = [
+  'PENDING',
+  'DOCUMENTATION',
+  'IT_SETUP',
+  'HR_ORIENTATION',
+  'TEAM_INTRO',
+  'COMPLETED',
+] as const;
+
+export const onboardingPhaseSchema = z.enum(ONBOARDING_PHASES);
+
 export const onboardParamsSchema = z.object({
   id: z.string().min(1),
 });
@@ -50,6 +61,7 @@ export type UpdateEmployeeBody = z.infer<typeof updateEmployeeBodySchema>;
 export const createTaskBodySchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
+  phase: onboardingPhaseSchema.optional(),
   dueAt: z.string().optional(),
 });
 
@@ -58,11 +70,48 @@ export type CreateTaskBody = z.infer<typeof createTaskBodySchema>;
 export const updateTaskBodySchema = z.object({
   title: z.string().optional(),
   description: z.string().optional(),
+  phase: onboardingPhaseSchema.nullable().optional(),
   status: z.enum(['PENDING', 'IN_PROGRESS', 'COMPLETED']).optional(),
   dueAt: z.string().nullable().optional(),
 });
 
 export type UpdateTaskBody = z.infer<typeof updateTaskBodySchema>;
+
+export const updatePhaseBodySchema = z.object({
+  currentPhase: onboardingPhaseSchema,
+});
+
+export type UpdatePhaseBody = z.infer<typeof updatePhaseBodySchema>;
+
+// Meetings
+export const createMeetingBodySchema = z.object({
+  title: z.string().min(1),
+  description: z.string().optional(),
+  scheduledAt: z.string().min(1),
+  durationMins: z.number().int().positive().optional(),
+  location: z.string().optional(),
+  phase: onboardingPhaseSchema.optional(),
+});
+
+export type CreateMeetingBody = z.infer<typeof createMeetingBodySchema>;
+
+export const updateMeetingBodySchema = z.object({
+  title: z.string().min(1).optional(),
+  description: z.string().nullable().optional(),
+  scheduledAt: z.string().min(1).optional(),
+  durationMins: z.number().int().positive().optional(),
+  location: z.string().nullable().optional(),
+  phase: onboardingPhaseSchema.nullable().optional(),
+  status: z.enum(['SCHEDULED', 'COMPLETED', 'CANCELLED']).optional(),
+});
+
+export type UpdateMeetingBody = z.infer<typeof updateMeetingBodySchema>;
+
+export const meetingParamsSchema = z.object({
+  meetingId: z.string().min(1),
+});
+
+export type MeetingParams = z.infer<typeof meetingParamsSchema>;
 
 export const taskParamsSchema = z.object({
   taskId: z.string().min(1),

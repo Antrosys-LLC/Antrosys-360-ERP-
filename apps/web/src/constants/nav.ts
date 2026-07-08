@@ -6,6 +6,7 @@ import {
   Users,
   UserPlus,
   UserCheck,
+  Rocket,
   ClipboardCheck,
   Calendar,
   CalendarRange,
@@ -27,6 +28,7 @@ export interface NavItem {
 
 const ALL_NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { label: 'My Onboarding', href: '/my-onboarding', icon: Rocket },
   { label: 'Invoices', href: '/finance/invoices', icon: FileText, permission: 'finance:read' },
   { label: 'Payroll', href: '/payroll', icon: Wallet, permission: 'payroll:read' },
   { label: 'Employees', href: '/hr/employees', icon: Users, permission: 'hr:read' },

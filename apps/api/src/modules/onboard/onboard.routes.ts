@@ -20,10 +20,26 @@ import {
   listMessagesHandler,
   sendMessageHandler,
   markMessageReadHandler,
+  updatePhaseHandler,
+  listMeetingsHandler,
+  createMeetingHandler,
+  updateMeetingHandler,
+  deleteMeetingHandler,
+  getMyOnboardingHandler,
+  updateMyTaskHandler,
 } from './onboard.controller';
 
 export async function onboardRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.verifyJwt);
+
+  // Self-service (person being onboarded) — resolves employee from JWT, no HR permission required
+  fastify.get('/me', {
+    handler: getMyOnboardingHandler,
+  });
+
+  fastify.patch('/me/tasks/:taskId', {
+    handler: updateMyTaskHandler,
+  });
 
   // Dashboard stats
   fastify.get('/stats', {
@@ -76,6 +92,33 @@ export async function onboardRoutes(fastify: FastifyInstance) {
   fastify.delete('/tasks/:taskId', {
     preHandler: [fastify.requirePermission('hr:write')],
     handler: deleteTaskHandler,
+  });
+
+  // Pipeline phase progression
+  fastify.patch('/employees/:id/phase', {
+    preHandler: [fastify.requirePermission('hr:write')],
+    handler: updatePhaseHandler,
+  });
+
+  // Meetings
+  fastify.get('/employees/:id/meetings', {
+    preHandler: [fastify.requirePermission('hr:read')],
+    handler: listMeetingsHandler,
+  });
+
+  fastify.post('/employees/:id/meetings', {
+    preHandler: [fastify.requirePermission('hr:write')],
+    handler: createMeetingHandler,
+  });
+
+  fastify.patch('/meetings/:meetingId', {
+    preHandler: [fastify.requirePermission('hr:write')],
+    handler: updateMeetingHandler,
+  });
+
+  fastify.delete('/meetings/:meetingId', {
+    preHandler: [fastify.requirePermission('hr:write')],
+    handler: deleteMeetingHandler,
   });
 
   // Teams

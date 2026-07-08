@@ -167,6 +167,21 @@ enum OnboardingStatus {
   COMPLETED
 }
 
+enum OnboardingPhase {
+  PENDING
+  DOCUMENTATION
+  IT_SETUP
+  HR_ORIENTATION
+  TEAM_INTRO
+  COMPLETED
+}
+
+enum OnboardingMeetingStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
 enum HrLetterType {
   OFFER
   APPOINTMENT
@@ -240,6 +255,7 @@ model User {
   uploadedDocuments        Document[]         @relation("DocumentUploadedBy")
   assignedTasks            EmployeeTask[]     @relation("TaskAssignments")
   sentMessages             Message[]          @relation("SentMessages")
+  onboardingMeetingsCreated OnboardingMeeting[] @relation("OnboardingMeetingsCreated")
   workScheduleUpdates      WorkScheduleConfig[] @relation("WorkScheduleUpdatedBy")
   roleModuleAccessUpdates  RoleModuleAccess[]   @relation("RoleModuleAccessUpdatedBy")
   ledgerEntriesCreated     LedgerEntry[]      @relation("LedgerEntriesCreated")
@@ -306,6 +322,7 @@ model Employee {
   teams                 EmployeeTeam[]
   tasks                 EmployeeTask[]
   receivedMessages      Message[]            @relation("ReceivedMessages")
+  onboardingMeetings    OnboardingMeeting[]  @relation("EmployeeMeetings")
 
   @@index([department])
   @@index([employmentStatus])
@@ -1002,6 +1019,7 @@ model OnboardingRecord {
   employeeId      String           @unique
   employee        Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   status          OnboardingStatus @default(NOT_STARTED)
+  currentPhase    OnboardingPhase  @default(PENDING)
   startDate       DateTime         @db.Date
   targetEndDate   DateTime?        @db.Date
   completedAt     DateTime?
@@ -1012,6 +1030,7 @@ model OnboardingRecord {
   updatedAt       DateTime         @updatedAt
 
   @@index([status])
+  @@index([currentPhase])
   @@index([startDate])
   @@map("onboarding_records")
 }
@@ -1152,18 +1171,19 @@ model EmployeeTeam {
 }
 
 model EmployeeTask {
-  id           String    @id @default(cuid())
+  id           String           @id @default(cuid())
   employeeId   String
-  employee     Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee     Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   title        String
   description  String?
+  phase        OnboardingPhase?
   dueAt        DateTime?
   completedAt  DateTime?
-  status       String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED
+  status       String           @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED
   assignedById String?
-  assignedBy   User?     @relation("TaskAssignments", fields: [assignedById], references: [id])
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  assignedBy   User?            @relation("TaskAssignments", fields: [assignedById], references: [id])
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
 
   @@index([employeeId])
   @@index([status])
@@ -1184,6 +1204,27 @@ model Message {
   @@index([recipientId, isRead])
   @@index([senderId])
   @@map("messages")
+}
+
+model OnboardingMeeting {
+  id              String                  @id @default(cuid())
+  employeeId      String
+  employee        Employee                @relation("EmployeeMeetings", fields: [employeeId], references: [id], onDelete: Cascade)
+  title           String
+  description     String?
+  scheduledAt     DateTime
+  durationMins    Int                     @default(30)
+  location        String?
+  phase           OnboardingPhase?
+  status          OnboardingMeetingStatus @default(SCHEDULED)
+  createdByUserId String
+  createdBy       User                    @relation("OnboardingMeetingsCreated", fields: [createdByUserId], references: [id])
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@index([employeeId])
+  @@index([scheduledAt])
+  @@map("onboarding_meetings")
 }
 
 // =========================================================================
