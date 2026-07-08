@@ -18,6 +18,7 @@ export const listDocumentsQuerySchema = z.object({
   employeeId: z.string().optional(),
   clientId: z.string().optional(),
   fileType: z.string().optional(),
+  tags: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });

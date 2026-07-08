@@ -148,6 +148,10 @@ export async function listDocuments(query: ListDocumentsQuery) {
   if (query.employeeId) where.employeeId = query.employeeId;
   if (query.clientId) where.clientId = query.clientId;
   if (query.fileType) where.fileType = query.fileType;
+  if (query.tags) {
+    const tagList = query.tags.split(',').map((t) => t.trim()).filter(Boolean);
+    if (tagList.length > 0) where.tags = { hasSome: tagList };
+  }
   if (query.search) {
     where.OR = [
       { title: { contains: query.search, mode: 'insensitive' } },
