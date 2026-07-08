@@ -39,3 +39,16 @@ export const listAuditLogsQuerySchema = z.object({
 });
 
 export type ListAuditLogsQuery = z.infer<typeof listAuditLogsQuerySchema>;
+
+const ROLE_VALUES = [
+  'CEO', 'CFO', 'OPERATIONS_HEAD', 'HR_HEAD', 'FINANCE_MANAGER',
+  'PROJECT_MANAGER', 'MANAGER', 'TEAM_LEAD', 'EMPLOYEE', 'SUB_MANAGER',
+] as const;
+
+export const setModuleAccessBodySchema = z.object({
+  role: z.enum(ROLE_VALUES),
+  module: z.string().min(1).max(50),
+  accessLevel: z.enum(['OFF', 'READ', 'FULL']),
+});
+
+export type SetModuleAccessBody = z.infer<typeof setModuleAccessBodySchema>;

@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { loginHandler, refreshHandler, logoutHandler, mfaSetupHandler, mfaVerifyHandler } from './auth.controller';
+import { loginHandler, refreshHandler, logoutHandler, mfaSetupHandler, mfaVerifyHandler, permissionsHandler } from './auth.controller';
 
 export async function authRoutes(fastify: FastifyInstance) {
   // Public routes (no auth required)
@@ -27,6 +27,11 @@ export async function authRoutes(fastify: FastifyInstance) {
   fastify.post('/logout', {
     preHandler: [fastify.verifyJwt],
     handler: logoutHandler,
+  });
+
+  fastify.get('/permissions', {
+    preHandler: [fastify.verifyJwt],
+    handler: permissionsHandler,
   });
 
   fastify.post('/mfa/setup', {

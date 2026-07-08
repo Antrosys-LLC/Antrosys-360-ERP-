@@ -5,8 +5,10 @@ import {
   createUserBodySchema,
   updateUserBodySchema,
   listAuditLogsQuerySchema,
+  setModuleAccessBodySchema,
 } from './admin.schema';
 import * as adminService from './admin.service';
+import { getModuleAccessMatrix, setModuleAccess } from './module-access.service';
 
 export async function listUsersHandler(request: FastifyRequest, reply: FastifyReply) {
   const parsed = listUsersQuerySchema.safeParse(request.query);
@@ -16,6 +18,11 @@ export async function listUsersHandler(request: FastifyRequest, reply: FastifyRe
 
   const result = await adminService.listUsers(parsed.data);
   return reply.code(200).send({ status: 'success', data: result });
+}
+
+export async function getUserStatsHandler(_request: FastifyRequest, reply: FastifyReply) {
+  const stats = await adminService.getUserStats();
+  return reply.code(200).send({ status: 'success', data: stats });
 }
 
 export async function getUserHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -74,6 +81,30 @@ export async function deleteUserHandler(request: FastifyRequest, reply: FastifyR
   }
 
   return reply.code(200).send({ status: 'success', data: { deleted: true } });
+}
+
+export async function getModuleAccessHandler(_request: FastifyRequest, reply: FastifyReply) {
+  const matrix = await getModuleAccessMatrix();
+  return reply.code(200).send({ status: 'success', data: matrix });
+}
+
+export async function setModuleAccessHandler(request: FastifyRequest, reply: FastifyReply) {
+  if (!request.user?.id) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+
+  const parsed = setModuleAccessBodySchema.safeParse(request.body);
+  if (!parsed.success) {
+    return reply.code(400).send({ error: 'Validation failed', details: parsed.error.flatten() });
+  }
+
+  const result = await setModuleAccess(
+    parsed.data.role,
+    parsed.data.module,
+    parsed.data.accessLevel,
+    request.user.id,
+  );
+  return reply.code(200).send({ status: 'success', data: result });
 }
 
 export async function listAuditLogsHandler(request: FastifyRequest, reply: FastifyReply) {

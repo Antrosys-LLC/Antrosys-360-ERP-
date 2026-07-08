@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import fp from 'fastify-plugin';
-import { ROLE_PERMISSIONS, Permission } from '@antrosys/types';
+import { Permission } from '@antrosys/types';
+import { getEffectivePermissions } from '../modules/admin/module-access.service';
 
 declare module '@fastify/jwt' {
   interface FastifyJWT {
@@ -22,8 +23,7 @@ async function authPluginFn(fastify: FastifyInstance) {
   fastify.decorate('verifyJwt', async function (request: FastifyRequest, reply: FastifyReply) {
     try {
       const payload = await request.jwtVerify<{ id: string; role: string }>();
-      const role = payload.role as keyof typeof ROLE_PERMISSIONS;
-      const permissions = ROLE_PERMISSIONS[role] || [];
+      const permissions = await getEffectivePermissions(payload.role);
 
       request.user = {
         id: payload.id,

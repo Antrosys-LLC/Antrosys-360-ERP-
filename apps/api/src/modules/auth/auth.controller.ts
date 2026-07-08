@@ -60,6 +60,17 @@ export async function logoutHandler(request: FastifyRequest, reply: FastifyReply
   return reply.code(200).send({ message: 'Logged out successfully' });
 }
 
+export async function permissionsHandler(request: FastifyRequest, reply: FastifyReply) {
+  return reply.code(200).send({
+    status: 'success',
+    data: {
+      id: request.user.id,
+      role: request.user.role,
+      permissions: request.user.permissions,
+    },
+  });
+}
+
 export async function mfaSetupHandler(request: FastifyRequest, reply: FastifyReply) {
   const result = await authService.generateMfaSecret(request.user.id);
   return reply.code(200).send(result);
