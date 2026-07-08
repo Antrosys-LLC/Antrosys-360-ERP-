@@ -590,14 +590,26 @@ const RequisitionModal = ({
 }) => {
   const [title, setTitle] = useState('');
   const [department, setDepartment] = useState('');
+  const [selectedDept, setSelectedDept] = useState('');
+
+  const DEPARTMENTS = ['Engineering', 'Operations', 'Sales', 'Finance', 'HR'];
+  const showCustomDept = selectedDept === 'Other';
 
   useEffect(() => {
     if (isOpen) {
       if (initialData) {
         setTitle(initialData.title);
-        setDepartment(initialData.department);
+        const dept = initialData.department;
+        if (DEPARTMENTS.includes(dept)) {
+          setSelectedDept(dept);
+          setDepartment(dept);
+        } else {
+          setSelectedDept('Other');
+          setDepartment(dept);
+        }
       } else {
         setTitle('');
+        setSelectedDept('');
         setDepartment('');
       }
     }
@@ -628,13 +640,35 @@ const RequisitionModal = ({
           </div>
           <div>
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1 block">Department</label>
-            <input
-              value={department}
-              onChange={(e) => setDepartment(e.target.value)}
-              placeholder="e.g. Engineering"
+            <select
+              value={selectedDept}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedDept(val);
+                if (val !== 'Other') {
+                  setDepartment(val);
+                } else {
+                  setDepartment('');
+                }
+              }}
               required
               className="w-full border border-border rounded px-3 py-2 text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-            />
+            >
+              <option value="" disabled>Select department</option>
+              {DEPARTMENTS.map((dept) => (
+                <option key={dept} value={dept}>{dept}</option>
+              ))}
+              <option value="Other">Other</option>
+            </select>
+            {showCustomDept && (
+              <input
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                placeholder="Enter department name"
+                required
+                className="w-full border border-border rounded px-3 py-2 text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary mt-2"
+              />
+            )}
           </div>
           <div className="flex gap-2 justify-end mt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm border border-border rounded text-foreground hover:bg-muted">Cancel</button>
