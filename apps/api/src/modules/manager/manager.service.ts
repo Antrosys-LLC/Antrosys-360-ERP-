@@ -103,8 +103,8 @@ export async function getDashboardData(userId: string, userRole: string) {
   let teamEmployees: any[] = [];
   let managedTeam = null;
   
-  if (isSubManager || userRole === 'MANAGER') {
-    // Sub-Manager / Manager manages a specific team
+  if (isSubManager) {
+    // Sub-Manager manages a specific team
     managedTeam = await prisma.team.findUnique({
       where: { managerId: employee.id }
     });
@@ -115,9 +115,22 @@ export async function getDashboardData(userId: string, userRole: string) {
         include: { user: { select: { email: true } } }
       });
     }
+  } else if (userRole === 'MANAGER') {
+    // Manager: sees all sub-managers and their team employees (excluding self and other managers)
+    teamEmployees = await prisma.employee.findMany({
+      where: {
+        id: { not: employee.id },
+        isActive: true,
+        user: { role: { in: ['EMPLOYEE', 'SUB_MANAGER'] } },
+      },
+      include: {
+        user: {
+          select: { email: true }
+        }
+      }
+    });
   } else {
-    // Main Manager / CEO / Operations Head: manages all active employees in their department
-    // or all active employees globally (excluding themselves)
+    // CEO / Operations Head / others: all active employees with EMPLOYEE role
     teamEmployees = await prisma.employee.findMany({
       where: {
         id: { not: employee.id },
@@ -339,8 +352,8 @@ export async function updateLeaveStatus(leaveId: string, status: 'APPROVED' | 'R
     throw new Error('Leave request is not pending');
   }
 
-  // Sub-manager / Manager check: can only edit leaves for direct team
-  if (userRole === 'SUB_MANAGER' || userRole === 'MANAGER') {
+  // Sub-manager check: can only edit leaves for direct team
+  if (userRole === 'SUB_MANAGER') {
     const managedTeam = await prisma.team.findUnique({
       where: { managerId: employee.id }
     });
@@ -415,7 +428,7 @@ export async function approveAllLeaves(userId: string, userRole: string) {
     throw new Error('Logged in user is not registered as an employee');
   }
 
-  const isSubManager = userRole === 'SUB_MANAGER' || userRole === 'MANAGER';
+  const isSubManager = userRole === 'SUB_MANAGER';
   let targetFilter = {};
   if (isSubManager) {
     const managedTeam = await prisma.team.findUnique({
@@ -582,7 +595,7 @@ export async function overrideAttendance(targetEmployeeId: string, status: strin
     throw new Error('Target employee not found');
   }
 
-  if (userRole === 'SUB_MANAGER' || userRole === 'MANAGER') {
+  if (userRole === 'SUB_MANAGER') {
     const managedTeam = await prisma.team.findUnique({
       where: { managerId: managerEmployee.id }
     });
@@ -677,7 +690,7 @@ export async function toggleFlag(targetEmployeeId: string, isFlagged: boolean, u
     throw new Error('Target employee not found');
   }
 
-  if (userRole === 'SUB_MANAGER' || userRole === 'MANAGER') {
+  if (userRole === 'SUB_MANAGER') {
     const managedTeam = await prisma.team.findUnique({
       where: { managerId: managerEmployee.id }
     });

@@ -174,15 +174,6 @@ async function main() {
   });
 
   if (mainManager && subManager) {
-    const managerTeam = await prisma.team.upsert({
-      where: { managerId: mainManager.id },
-      update: { name: 'Operations Main Team' },
-      create: {
-        name: 'Operations Main Team',
-        managerId: mainManager.id,
-      },
-    });
-
     const subManagerTeam = await prisma.team.upsert({
       where: { managerId: subManager.id },
       update: { name: 'Engineering Sub Team' },
@@ -194,7 +185,7 @@ async function main() {
 
     await prisma.employee.update({
       where: { id: subManager.id },
-      data: { managerId: mainManager.id, teamId: managerTeam.id },
+      data: { managerId: mainManager.id, teamId: subManagerTeam.id },
     });
 
     const subManagerReports = ['sara.javed@antrosys.com', 'fawad.khan@antrosys.com', 'bilal.hassan@antrosys.com', 'hina.baig@antrosys.com'];
@@ -214,7 +205,7 @@ async function main() {
       if (emp) {
         await prisma.employee.update({
           where: { id: emp.id },
-          data: { managerId: mainManager.id, teamId: managerTeam.id },
+          data: { managerId: mainManager.id },
         });
       }
     }
