@@ -268,44 +268,30 @@ export async function rejectMatch(transactionId: string, userId: string) {
 }
 
 export async function getReconciliationHealth() {
-  const currentPeriod = await prisma.bankReconciliationPeriod.findFirst({
+  const period = await prisma.bankReconciliationPeriod.findFirst({
     orderBy: { startDate: 'desc' },
   });
 
-  if (!currentPeriod) {
-    const totalLines = await prisma.bankTransaction.count();
-    const autoMatched = await prisma.bankTransaction.count({ where: { matchStatus: 'MATCHED' } });
-    const needsReview = await prisma.bankTransaction.count({
-      where: { confidenceScore: { gte: 1, lt: 95 }, matchStatus: { not: 'MATCHED' } },
-    });
-    const unmatched = await prisma.bankTransaction.count({ where: { confidenceScore: 0 } });
+  const [totalLines, autoMatched, needsReview, unmatched] = await Promise.all([
+    prisma.bankTransaction.count(),
+    prisma.bankTransaction.count({ where: { confidenceScore: { gte: 95 } } }),
+    prisma.bankTransaction.count({
+      where: { confidenceScore: { gte: 1, lt: 95 } },
+    }),
+    prisma.bankTransaction.count({ where: { confidenceScore: 0 } }),
+  ]);
 
-    const total = totalLines || 1;
-    return {
-      currentPeriod: 'Current Period',
-      totalLines: String(totalLines),
-      autoMatched: String(autoMatched),
-      needsReview: String(needsReview),
-      unmatched: String(unmatched),
-      percentages: {
-        autoMatched: `${((autoMatched / total) * 100).toFixed(1)}%`,
-        pendingReview: `${((needsReview / total) * 100).toFixed(1)}%`,
-        requiresAction: `${((unmatched / total) * 100).toFixed(1)}%`,
-      },
-    };
-  }
-
-  const total = currentPeriod.totalLines || 1;
+  const total = totalLines || 1;
   return {
-    currentPeriod: currentPeriod.periodLabel,
-    totalLines: String(currentPeriod.totalLines),
-    autoMatched: String(currentPeriod.autoMatched),
-    needsReview: String(currentPeriod.needsReview),
-    unmatched: String(currentPeriod.unmatched),
+    currentPeriod: period?.periodLabel ?? 'Current Period',
+    totalLines: String(totalLines),
+    autoMatched: String(autoMatched),
+    needsReview: String(needsReview),
+    unmatched: String(unmatched),
     percentages: {
-      autoMatched: `${((currentPeriod.autoMatched / total) * 100).toFixed(1)}%`,
-      pendingReview: `${((currentPeriod.needsReview / total) * 100).toFixed(1)}%`,
-      requiresAction: `${((currentPeriod.unmatched / total) * 100).toFixed(1)}%`,
+      autoMatched: `${((autoMatched / total) * 100).toFixed(1)}%`,
+      pendingReview: `${((needsReview / total) * 100).toFixed(1)}%`,
+      requiresAction: `${((unmatched / total) * 100).toFixed(1)}%`,
     },
   };
 }
