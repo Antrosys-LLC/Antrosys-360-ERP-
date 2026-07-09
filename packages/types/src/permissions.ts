@@ -24,7 +24,9 @@ export type Permission =
   | 'admin:write'
   | 'audit:read'
   | 'documents:read'
-  | 'documents:write';
+  | 'documents:write'
+  | 'bank_feeds:read'
+  | 'bank_feeds:write';
 
 const ALL_PERMISSIONS: Permission[] = [
   'finance:read',
@@ -51,6 +53,8 @@ const ALL_PERMISSIONS: Permission[] = [
   'audit:read',
   'documents:read',
   'documents:write',
+  'bank_feeds:read',
+  'bank_feeds:write',
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
@@ -65,6 +69,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'clients:read',
     'documents:read',
     'documents:write',
+    'bank_feeds:read',
+    'bank_feeds:write',
   ],
 
   [Role.OPERATIONS_HEAD]: [
@@ -98,6 +104,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'payroll:write',
     'documents:read',
     'documents:write',
+    'bank_feeds:read',
+    'bank_feeds:write',
   ],
 
   [Role.PROJECT_MANAGER]: [
