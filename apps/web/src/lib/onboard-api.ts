@@ -1,5 +1,40 @@
 import apiClient from '@/lib/api-client';
 
+export type OnboardingPhase =
+  | 'PENDING'
+  | 'DOCUMENTATION'
+  | 'IT_SETUP'
+  | 'HR_ORIENTATION'
+  | 'TEAM_INTRO'
+  | 'COMPLETED';
+
+export const ONBOARDING_PHASES: OnboardingPhase[] = [
+  'PENDING',
+  'DOCUMENTATION',
+  'IT_SETUP',
+  'HR_ORIENTATION',
+  'TEAM_INTRO',
+  'COMPLETED',
+];
+
+export const PHASE_LABELS: Record<OnboardingPhase, string> = {
+  PENDING: 'Pending',
+  DOCUMENTATION: 'Documentation',
+  IT_SETUP: 'IT Setup',
+  HR_ORIENTATION: 'HR Orientation',
+  TEAM_INTRO: 'Team Intro',
+  COMPLETED: 'Completed',
+};
+
+export interface OnboardingRecord {
+  id: string;
+  status: string;
+  currentPhase: OnboardingPhase;
+  startDate: string;
+  targetEndDate?: string;
+  completedAt?: string;
+}
+
 export interface OnboardEmployee {
   id: string;
   firstName: string;
@@ -15,16 +50,31 @@ export interface OnboardEmployee {
   user: { email: string };
   teams?: { team: { id: string; name: string; department?: string } }[];
   tasks?: OnboardTask[];
-  onboarding?: { status: string; startDate: string; targetEndDate?: string };
+  onboarding?: OnboardingRecord;
+  onboardingMeetings?: OnboardMeeting[];
 }
 
 export interface OnboardTask {
   id: string;
   title: string;
   description?: string;
+  phase?: OnboardingPhase | null;
   status: string;
   dueAt?: string;
   completedAt?: string;
+  createdAt: string;
+}
+
+export interface OnboardMeeting {
+  id: string;
+  employeeId: string;
+  title: string;
+  description?: string | null;
+  scheduledAt: string;
+  durationMins: number;
+  location?: string | null;
+  phase?: OnboardingPhase | null;
+  status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
   createdAt: string;
 }
 
@@ -54,7 +104,35 @@ export interface DashboardStats {
   completedOnboardings: number;
   totalEmployees: number;
   employeesWithOverdueTasks: number;
+  phaseDistribution: { phase: OnboardingPhase; count: number }[];
   departments: { department: string; count: number }[];
+}
+
+export interface MyOnboarding {
+  hasProfile: boolean;
+  hasOnboarding: boolean;
+  employee: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    designation?: string;
+    department?: string;
+    joiningDate?: string;
+    user: { email: string; role: string };
+    manager?: { id: string; firstName: string; lastName: string; designation?: string } | null;
+    teams?: { team: { id: string; name: string; department?: string } }[];
+    onboarding?: OnboardingRecord | null;
+    tasks: OnboardTask[];
+    onboardingMeetings: OnboardMeeting[];
+    receivedMessages: {
+      id: string;
+      subject: string;
+      body: string;
+      isRead: boolean;
+      createdAt: string;
+      sender: { email: string };
+    }[];
+  } | null;
 }
 
 export interface PaginatedResponse<T> {
@@ -117,12 +195,18 @@ export async function fetchEmployeeTasks(employeeId: string) {
   return data.data;
 }
 
-export async function createEmployeeTask(employeeId: string, payload: { title: string; description?: string; dueAt?: string }) {
+export async function createEmployeeTask(
+  employeeId: string,
+  payload: { title: string; description?: string; phase?: OnboardingPhase; dueAt?: string },
+) {
   const { data } = await apiClient.post<{ status: string; data: OnboardTask }>(`/onboard/employees/${employeeId}/tasks`, payload);
   return data.data;
 }
 
-export async function updateTask(taskId: string, payload: { title?: string; status?: string }) {
+export async function updateTask(
+  taskId: string,
+  payload: { title?: string; status?: string; phase?: OnboardingPhase | null },
+) {
   const { data } = await apiClient.patch<{ status: string; data: OnboardTask }>(`/onboard/tasks/${taskId}`, payload);
   return data.data;
 }
@@ -166,5 +250,83 @@ export async function sendMessage(payload: { recipientId: string; subject: strin
 
 export async function markMessageRead(id: string) {
   const { data } = await apiClient.patch<{ status: string; data: Message }>(`/onboard/messages/${id}/read`);
+  return data.data;
+}
+
+// ----- Pipeline phase -----
+
+export async function updateOnboardingPhase(employeeId: string, currentPhase: OnboardingPhase) {
+  const { data } = await apiClient.patch<{ status: string; data: OnboardingRecord }>(
+    `/onboard/employees/${employeeId}/phase`,
+    { currentPhase },
+  );
+  return data.data;
+}
+
+// ----- Meetings -----
+
+export async function fetchMeetings(employeeId: string) {
+  const { data } = await apiClient.get<{ status: string; data: OnboardMeeting[] }>(
+    `/onboard/employees/${employeeId}/meetings`,
+  );
+  return data.data;
+}
+
+export async function createMeeting(
+  employeeId: string,
+  payload: {
+    title: string;
+    description?: string;
+    scheduledAt: string;
+    durationMins?: number;
+    location?: string;
+    phase?: OnboardingPhase;
+  },
+) {
+  const { data } = await apiClient.post<{ status: string; data: OnboardMeeting }>(
+    `/onboard/employees/${employeeId}/meetings`,
+    payload,
+  );
+  return data.data;
+}
+
+export async function updateMeeting(
+  meetingId: string,
+  payload: Partial<{
+    title: string;
+    description: string | null;
+    scheduledAt: string;
+    durationMins: number;
+    location: string | null;
+    phase: OnboardingPhase | null;
+    status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
+  }>,
+) {
+  const { data } = await apiClient.patch<{ status: string; data: OnboardMeeting }>(
+    `/onboard/meetings/${meetingId}`,
+    payload,
+  );
+  return data.data;
+}
+
+export async function deleteMeeting(meetingId: string) {
+  const { data } = await apiClient.delete<{ status: string; data: { deleted: boolean } }>(
+    `/onboard/meetings/${meetingId}`,
+  );
+  return data.data;
+}
+
+// ----- Employee self-service -----
+
+export async function fetchMyOnboarding() {
+  const { data } = await apiClient.get<{ status: string; data: MyOnboarding }>('/onboard/me');
+  return data.data;
+}
+
+export async function updateMyTask(taskId: string, payload: { status: string }) {
+  const { data } = await apiClient.patch<{ status: string; data: OnboardTask }>(
+    `/onboard/me/tasks/${taskId}`,
+    payload,
+  );
   return data.data;
 }

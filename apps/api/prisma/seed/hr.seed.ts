@@ -5,6 +5,7 @@ import {
   EmploymentStatus,
   ApplicationStage,
   JobPostingStatus,
+  OnboardingPhase,
 } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -126,11 +127,39 @@ export async function seedHrData() {
     });
   }
 
-  const recentHireUpdates: { email: string; status: EmploymentStatus; joiningDaysAgo: number }[] = [
-    { email: 'sara.javed@antrosys.com', status: 'ONBOARDING', joiningDaysAgo: 15 },
+  const recentHireUpdates: {
+    email: string;
+    status: EmploymentStatus;
+    joiningDaysAgo: number;
+    phase?: OnboardingPhase;
+  }[] = [
+    { email: 'sara.javed@antrosys.com', status: 'ONBOARDING', joiningDaysAgo: 15, phase: 'IT_SETUP' },
     { email: 'fawad.khan@antrosys.com', status: 'ACTIVE', joiningDaysAgo: 26 },
     { email: 'hina.baig@antrosys.com', status: 'OFFER_SIGNED', joiningDaysAgo: 5 },
-    { email: 'omar.mirza@antrosys.com', status: 'ONBOARDING', joiningDaysAgo: 8 },
+    { email: 'omar.mirza@antrosys.com', status: 'ONBOARDING', joiningDaysAgo: 8, phase: 'DOCUMENTATION' },
+  ];
+
+  // Ordered onboarding phases (mirrors backend PHASE_ORDER).
+  const PHASE_ORDER: OnboardingPhase[] = [
+    'PENDING',
+    'DOCUMENTATION',
+    'IT_SETUP',
+    'HR_ORIENTATION',
+    'TEAM_INTRO',
+    'COMPLETED',
+  ];
+
+  // Standard onboarding checklist grouped by phase.
+  const CHECKLIST: { phase: OnboardingPhase; title: string; description?: string }[] = [
+    { phase: 'PENDING', title: 'Sign your offer letter', description: 'Review and e-sign the offer letter.' },
+    { phase: 'PENDING', title: 'Submit personal details', description: 'Complete your profile and emergency contacts.' },
+    { phase: 'DOCUMENTATION', title: 'Upload ID & tax documents', description: 'CNIC, tax forms and bank details.' },
+    { phase: 'DOCUMENTATION', title: 'Sign company policies', description: 'Acknowledge the employee handbook.' },
+    { phase: 'IT_SETUP', title: 'Set up your work laptop', description: 'Collect and configure your device.' },
+    { phase: 'IT_SETUP', title: 'Configure email & VPN', description: 'Access your corporate accounts.' },
+    { phase: 'HR_ORIENTATION', title: 'Attend HR orientation', description: 'Company overview and benefits session.' },
+    { phase: 'TEAM_INTRO', title: 'Meet your team', description: 'Intro session with your squad.' },
+    { phase: 'TEAM_INTRO', title: '1:1 with your manager', description: 'Align on goals for your first 30 days.' },
   ];
 
   for (const item of recentHireUpdates) {
@@ -143,15 +172,73 @@ export async function seedHrData() {
     });
 
     if (item.status === 'ONBOARDING') {
+      const phase = item.phase ?? 'PENDING';
       await prisma.onboardingRecord.upsert({
         where: { employeeId: emp.id },
-        update: { status: 'IN_PROGRESS', startDate: joiningDate, targetEndDate: daysFromNow(14) },
+        update: { status: 'IN_PROGRESS', currentPhase: phase, startDate: joiningDate, targetEndDate: daysFromNow(14) },
         create: {
           employeeId: emp.id,
           status: 'IN_PROGRESS',
+          currentPhase: phase,
           startDate: joiningDate,
           targetEndDate: daysFromNow(14),
           createdByUserId: hrHead.id,
+        },
+      });
+
+      // Reset & seed onboarding artefacts so the pipeline has content.
+      await prisma.employeeTask.deleteMany({ where: { employeeId: emp.id } });
+      await prisma.onboardingMeeting.deleteMany({ where: { employeeId: emp.id } });
+      await prisma.message.deleteMany({ where: { recipientId: emp.id } });
+
+      const phaseIdx = PHASE_ORDER.indexOf(phase);
+      for (const task of CHECKLIST) {
+        const taskPhaseIdx = PHASE_ORDER.indexOf(task.phase);
+        const completed = taskPhaseIdx < phaseIdx;
+        await prisma.employeeTask.create({
+          data: {
+            employeeId: emp.id,
+            title: task.title,
+            description: task.description ?? null,
+            phase: task.phase,
+            status: completed ? 'COMPLETED' : 'PENDING',
+            completedAt: completed ? daysAgo(item.joiningDaysAgo - taskPhaseIdx) : null,
+            assignedById: hrHead.id,
+          },
+        });
+      }
+
+      await prisma.onboardingMeeting.create({
+        data: {
+          employeeId: emp.id,
+          title: 'HR Orientation',
+          description: 'Welcome session covering company culture, policies and benefits.',
+          scheduledAt: daysFromNow(1),
+          durationMins: 45,
+          location: 'Zoom',
+          phase: 'HR_ORIENTATION',
+          createdByUserId: hrHead.id,
+        },
+      });
+      await prisma.onboardingMeeting.create({
+        data: {
+          employeeId: emp.id,
+          title: 'Team Intro & Lunch',
+          description: 'Meet your new teammates.',
+          scheduledAt: daysFromNow(3),
+          durationMins: 60,
+          location: 'Room 4 / Cafeteria',
+          phase: 'TEAM_INTRO',
+          createdByUserId: hrHead.id,
+        },
+      });
+
+      await prisma.message.create({
+        data: {
+          senderId: hrHead.id,
+          recipientId: emp.id,
+          subject: 'Welcome to Antrosys!',
+          body: `Hi ${emp.firstName},\n\nWelcome aboard! We're thrilled to have you. Please work through your onboarding checklist and reach out if you need anything.\n\nBest,\nThe HR Team`,
         },
       });
     }
