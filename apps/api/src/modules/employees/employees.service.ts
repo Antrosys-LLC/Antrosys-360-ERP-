@@ -1,6 +1,7 @@
 import { Department, EmploymentStatus, Gender, PayslipStatus, AttendanceStatus } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { enumOptions } from '../../shared/enum-labels';
+import { normalizeDepartment, resolveDepartmentTeam } from '../../shared/department/department-utils';
 import type {
   ListEmployeesQuery,
   UpdatePersonalBody,
@@ -37,24 +38,6 @@ import {
 } from '../../shared/attendance/attendance-csv';
 import { getWorkScheduleConfig } from '../employee/EmployeeDashboard/employee_dashboard.service';
 
-const DEPARTMENT_ALIASES: Record<string, Department> = {
-  engineering: 'ENGINEERING',
-  operations: 'OPERATIONS',
-  sales: 'SALES',
-  finance: 'FINANCE',
-  hr: 'HR',
-  other: 'OTHER',
-  unassigned: 'OTHER',
-};
-
-function normalizeDepartment(value: string): Department | undefined {
-  const key = value.trim().toLowerCase().replace(/\s+dept$/i, '');
-  if (DEPARTMENT_ALIASES[key]) return DEPARTMENT_ALIASES[key];
-  const upper = value.trim().toUpperCase().replace(/\s+/g, '_');
-  if (upper in DEPARTMENT_ALIASES) return DEPARTMENT_ALIASES[upper.toLowerCase()];
-  return Object.values(Department).find((d) => d === upper) as Department | undefined;
-}
-
 function normalizeGender(value: string): Gender | undefined {
   const map: Record<string, Gender> = {
     male: 'MALE',
@@ -79,13 +62,6 @@ function normalizeEmploymentStatus(value: string): EmploymentStatus | undefined 
   const key = value.trim().toLowerCase();
   if (map[key]) return map[key];
   return Object.values(EmploymentStatus).find((s) => s === value.toUpperCase()) as EmploymentStatus | undefined;
-}
-
-async function resolveDepartmentTeam(department: Department) {
-  return prisma.team.findFirst({
-    where: { department },
-    select: { id: true, managerId: true },
-  });
 }
 
 // ============================================================================
@@ -226,7 +202,6 @@ export async function updateEmployeeEmployment(id: string, data: UpdateEmploymen
   if (data.location !== undefined) updateData.location = data.location;
   if (data.employeeType !== undefined) updateData.employeeType = data.employeeType;
   if (data.contractType !== undefined) updateData.contractType = data.contractType;
-  if (data.managerId !== undefined) updateData.managerId = data.managerId;
 
   if (data.department !== undefined) {
     if (data.department === null || data.department === '') {
@@ -247,7 +222,26 @@ export async function updateEmployeeEmployment(id: string, data: UpdateEmploymen
         if (data.managerId === undefined && team.managerId) {
           updateData.managerId = team.managerId;
         }
+      } else {
+        // No team for this department — clear stale teamId
+        updateData.teamId = null;
       }
+    }
+  }
+
+  if (data.managerId !== undefined) {
+    // Explicit managerId always wins over auto-assignment
+    updateData.managerId = data.managerId;
+
+    // When manager changes, sync teamId to match the new manager's team
+    if (data.managerId) {
+      const managersTeam = await prisma.team.findFirst({
+        where: { managerId: data.managerId },
+        select: { id: true },
+      });
+      updateData.teamId = managersTeam?.id ?? null;
+    } else {
+      updateData.teamId = null;
     }
   }
 
@@ -292,6 +286,7 @@ export async function listManagerOptions(query: ManagerOptionsQuery) {
   const employees = await prisma.employee.findMany({
     where: {
       isActive: true,
+      user: { role: { not: 'EMPLOYEE' } },
       ...(query.excludeId ? { id: { not: query.excludeId } } : {}),
     },
     select: {

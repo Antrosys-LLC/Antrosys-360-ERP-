@@ -1,6 +1,6 @@
-import { Department } from '@prisma/client';
 import { prisma } from '../../config/database';
 import bcrypt from 'bcryptjs';
+import { normalizeDepartment, resolveDepartmentTeam } from '../../shared/department/department-utils';
 import type {
   ListOnboardEmployeesQuery,
   CreateEmployeeBody,
@@ -88,21 +88,9 @@ export async function createEmployee(data: CreateEmployeeBody, userId: string) {
   let autoTeamId: string | undefined;
   let autoManagerId: string | undefined;
   if (rest.department) {
-    const deptKey = rest.department.trim().toLowerCase().replace(/\s+dept$/i, '');
-    const departmentAliases: Record<string, Department> = {
-      engineering: 'ENGINEERING',
-      operations: 'OPERATIONS',
-      sales: 'SALES',
-      finance: 'FINANCE',
-      hr: 'HR',
-      other: 'OTHER',
-    };
-    const normalizedDept = departmentAliases[deptKey];
+    const normalizedDept = normalizeDepartment(rest.department);
     if (normalizedDept) {
-      const team = await prisma.team.findFirst({
-        where: { department: normalizedDept },
-        select: { id: true, managerId: true },
-      });
+      const team = await resolveDepartmentTeam(normalizedDept);
       if (team) {
         autoTeamId = team.id;
         if (team.managerId) autoManagerId = team.managerId;
@@ -187,21 +175,9 @@ export async function updateEmployee(id: string, data: UpdateEmployeeBody) {
 
   // Auto-assign team and manager based on department change
   if (rest.department !== undefined && rest.department !== null && rest.department !== '') {
-    const deptKey = rest.department.trim().toLowerCase().replace(/\s+dept$/i, '');
-    const departmentAliases: Record<string, Department> = {
-      engineering: 'ENGINEERING',
-      operations: 'OPERATIONS',
-      sales: 'SALES',
-      finance: 'FINANCE',
-      hr: 'HR',
-      other: 'OTHER',
-    };
-    const normalizedDept = departmentAliases[deptKey];
+    const normalizedDept = normalizeDepartment(rest.department);
     if (normalizedDept) {
-      const team = await prisma.team.findFirst({
-        where: { department: normalizedDept },
-        select: { id: true, managerId: true },
-      });
+      const team = await resolveDepartmentTeam(normalizedDept);
       if (team) {
         updateData.teamId = team.id;
         if (team.managerId) updateData.managerId = team.managerId;
