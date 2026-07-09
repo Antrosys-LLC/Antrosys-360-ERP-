@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -14,6 +14,9 @@ import {
   ChevronLeft,
   ChevronRight,
   ArrowRight,
+  Plus,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -22,6 +25,13 @@ import {
   employeeCheckOut,
   fetchEmployeeCalendar,
   fetchEmployeeDashboard,
+  submitEmployeeMood,
+  createTeamAnnouncement,
+  updateTeamAnnouncement,
+  deleteTeamAnnouncement,
+  createTeamHoliday,
+  updateTeamHoliday,
+  deleteTeamHoliday,
   type DayStatus,
 } from '@/lib/employee-api';
 
@@ -59,6 +69,15 @@ export default function EmployeeDashboardPage() {
   const [calendarMonth, setCalendarMonth] = useState(now.getMonth() + 1);
   const [calendarYear, setCalendarYear] = useState(now.getFullYear());
   const [attendanceActionPending, setAttendanceActionPending] = useState(false);
+  const [showMoodModal, setShowMoodModal] = useState(false);
+  const [showAnnouncementForm, setShowAnnouncementForm] = useState(false);
+  const [editingAnnouncementId, setEditingAnnouncementId] = useState<string | null>(null);
+  const [announcementTitle, setAnnouncementTitle] = useState('');
+  const [announcementContent, setAnnouncementContent] = useState('');
+  const [showHolidayForm, setShowHolidayForm] = useState(false);
+  const [editingHolidayId, setEditingHolidayId] = useState<string | null>(null);
+  const [holidayTitle, setHolidayTitle] = useState('');
+  const [holidayDate, setHolidayDate] = useState('');
 
   const dashboardQuery = useQuery({
     queryKey: ['employee', 'dashboard'],
@@ -85,9 +104,12 @@ export default function EmployeeDashboardPage() {
 
   const checkOutMutation = useMutation({
     mutationFn: employeeCheckOut,
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['employee'] });
       toast({ title: 'Checked out successfully' });
+      if (result.needsMood) {
+        setShowMoodModal(true);
+      }
     },
     onError: () => {
       toast({ variant: 'destructive', title: 'Check-out failed' });
@@ -95,8 +117,89 @@ export default function EmployeeDashboardPage() {
     onSettled: () => setAttendanceActionPending(false),
   });
 
+  const moodMutation = useMutation({
+    mutationFn: submitEmployeeMood,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employee'] });
+      setShowMoodModal(false);
+      toast({ title: 'Mood recorded for today' });
+    },
+    onError: () => {
+      toast({ variant: 'destructive', title: 'Failed to record mood' });
+    },
+  });
+
+  const invalidateDashboard = () => {
+    queryClient.invalidateQueries({ queryKey: ['employee'] });
+  };
+
+  const announcementMutation = useMutation({
+    mutationFn: async () => {
+      const body = { title: announcementTitle.trim(), content: announcementContent.trim() };
+      if (editingAnnouncementId) {
+        return updateTeamAnnouncement(editingAnnouncementId, body);
+      }
+      return createTeamAnnouncement(body);
+    },
+    onSuccess: () => {
+      invalidateDashboard();
+      setShowAnnouncementForm(false);
+      setEditingAnnouncementId(null);
+      setAnnouncementTitle('');
+      setAnnouncementContent('');
+      toast({ title: editingAnnouncementId ? 'Announcement updated' : 'Announcement posted' });
+    },
+    onError: () => {
+      toast({ variant: 'destructive', title: 'Failed to save announcement' });
+    },
+  });
+
+  const deleteAnnouncementMutation = useMutation({
+    mutationFn: deleteTeamAnnouncement,
+    onSuccess: () => {
+      invalidateDashboard();
+      toast({ title: 'Announcement deleted' });
+    },
+    onError: () => {
+      toast({ variant: 'destructive', title: 'Failed to delete announcement' });
+    },
+  });
+
+  const holidayMutation = useMutation({
+    mutationFn: async () => {
+      const body = { title: holidayTitle.trim(), date: holidayDate };
+      if (editingHolidayId) {
+        return updateTeamHoliday(editingHolidayId, body);
+      }
+      return createTeamHoliday(body);
+    },
+    onSuccess: () => {
+      invalidateDashboard();
+      setShowHolidayForm(false);
+      setEditingHolidayId(null);
+      setHolidayTitle('');
+      setHolidayDate('');
+      toast({ title: editingHolidayId ? 'Holiday updated' : 'Holiday added' });
+    },
+    onError: () => {
+      toast({ variant: 'destructive', title: 'Failed to save holiday' });
+    },
+  });
+
+  const deleteHolidayMutation = useMutation({
+    mutationFn: deleteTeamHoliday,
+    onSuccess: () => {
+      invalidateDashboard();
+      toast({ title: 'Holiday deleted' });
+    },
+    onError: () => {
+      toast({ variant: 'destructive', title: 'Failed to delete holiday' });
+    },
+  });
+
   const dashboard = dashboardQuery.data;
   const calendar = calendarQuery.data ?? dashboard?.calendarMonth;
+  const canManageTeam = dashboard?.canManageTeam ?? false;
 
   const currentUser = dashboard?.currentUser;
   const attendanceToday = dashboard?.attendanceToday;
@@ -108,6 +211,12 @@ export default function EmployeeDashboardPage() {
 
   const hasCheckedIn = attendanceToday?.hasCheckedIn ?? false;
   const hasCheckedOut = attendanceToday?.hasCheckedOut ?? false;
+
+  useEffect(() => {
+    if (attendanceToday?.needsMood) {
+      setShowMoodModal(true);
+    }
+  }, [attendanceToday?.needsMood]);
 
   const attendanceButtonLabel = useMemo(() => {
     if (!hasCheckedIn) {
@@ -192,6 +301,33 @@ export default function EmployeeDashboardPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      {showMoodModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-[10px] border border-[#E0E0E0] p-5 w-full max-w-sm shadow-lg">
+            <h2 className="text-[16px] font-semibold text-[#1A1A1A] mb-1">How are you feeling today?</h2>
+            <p className="text-[12px] text-[#888888] mb-4">Your mood helps your manager track team wellbeing.</p>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { mood: 'HAPPY' as const, label: 'Happy', emoji: '😊' },
+                { mood: 'NEUTRAL' as const, label: 'Neutral', emoji: '😐' },
+                { mood: 'STRESSED' as const, label: 'Stressed', emoji: '😓' },
+              ]).map((option) => (
+                <button
+                  key={option.mood}
+                  type="button"
+                  disabled={moodMutation.isPending}
+                  onClick={() => moodMutation.mutate(option.mood)}
+                  className="flex flex-col items-center gap-1 border border-[#E0E0E0] rounded-lg py-3 hover:bg-[#F8F9FC] disabled:opacity-50"
+                >
+                  <span className="text-[20px]">{option.emoji}</span>
+                  <span className="text-[11px] font-medium text-[#1A1A1A]">{option.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Greeting */}
       <div>
         <h1 className="text-[22px] font-semibold text-[#1A1A1A] leading-tight flex items-center gap-2">
@@ -394,7 +530,57 @@ export default function EmployeeDashboardPage() {
       <div className="grid grid-cols-[1.6fr_1fr] gap-4">
         {/* Team announcements */}
         <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-5 h-fit">
-          <span className="text-[14px] font-semibold text-[#1A1A1A] block mb-4">Team Announcements</span>
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-[14px] font-semibold text-[#1A1A1A]">Team Announcements</span>
+            {canManageTeam && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingAnnouncementId(null);
+                  setAnnouncementTitle('');
+                  setAnnouncementContent('');
+                  setShowAnnouncementForm(true);
+                }}
+                className="flex items-center gap-1 text-[11px] font-medium text-[#534AB7] hover:underline"
+              >
+                <Plus size={12} /> Add
+              </button>
+            )}
+          </div>
+          {showAnnouncementForm && canManageTeam && (
+            <div className="border border-[#E0E0E0] rounded-lg p-3 mb-4 flex flex-col gap-2">
+              <input
+                value={announcementTitle}
+                onChange={(e) => setAnnouncementTitle(e.target.value)}
+                placeholder="Title"
+                className="text-[12px] border border-[#E0E0E0] rounded-md px-2.5 py-1.5"
+              />
+              <textarea
+                value={announcementContent}
+                onChange={(e) => setAnnouncementContent(e.target.value)}
+                placeholder="Message"
+                rows={3}
+                className="text-[12px] border border-[#E0E0E0] rounded-md px-2.5 py-1.5 resize-none"
+              />
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowAnnouncementForm(false)}
+                  className="text-[11px] px-3 py-1.5 border border-[#E0E0E0] rounded-md"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!announcementTitle.trim() || !announcementContent.trim() || announcementMutation.isPending}
+                  onClick={() => announcementMutation.mutate()}
+                  className="text-[11px] px-3 py-1.5 bg-[#7B68EE] text-white rounded-md disabled:opacity-50"
+                >
+                  {editingAnnouncementId ? 'Update' : 'Post'}
+                </button>
+              </div>
+            </div>
+          )}
           <div className="flex flex-col gap-4">
             {teamAnnouncements.length === 0 ? (
               <span className="text-[11px] text-[#888888]">No team announcements yet.</span>
@@ -407,7 +593,34 @@ export default function EmployeeDashboardPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[12px] font-medium text-[#1A1A1A] truncate">{item.name}</span>
-                      <span className="text-[10px] text-[#AAAAAA] shrink-0">{item.time}</span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {canManageTeam && item.isOwn && (
+                          <>
+                            <button
+                              type="button"
+                              aria-label="Edit announcement"
+                              onClick={() => {
+                                setEditingAnnouncementId(item.id);
+                                setAnnouncementTitle(item.title ?? item.message.slice(0, 40));
+                                setAnnouncementContent(item.message);
+                                setShowAnnouncementForm(true);
+                              }}
+                              className="text-[#888888] hover:text-[#1A1A1A]"
+                            >
+                              <Pencil size={12} />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label="Delete announcement"
+                              onClick={() => deleteAnnouncementMutation.mutate(item.id)}
+                              className="text-[#888888] hover:text-[#A32D2D]"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </>
+                        )}
+                        <span className="text-[10px] text-[#AAAAAA]">{item.time}</span>
+                      </div>
                     </div>
                     <span className="text-[11px] text-[#888888] leading-snug block mt-0.5">{item.message}</span>
                   </div>
@@ -488,9 +701,56 @@ export default function EmployeeDashboardPage() {
 
           {/* Upcoming holidays */}
           <div className="bg-white border border-[#E0E0E0] rounded-[10px] overflow-hidden">
-            <span className="text-[14px] font-semibold text-[#1A1A1A] block px-5 pt-4 pb-3">
-              Upcoming Holidays
-            </span>
+            <div className="flex items-center justify-between px-5 pt-4 pb-3">
+              <span className="text-[14px] font-semibold text-[#1A1A1A]">Upcoming Holidays</span>
+              {canManageTeam && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingHolidayId(null);
+                    setHolidayTitle('');
+                    setHolidayDate('');
+                    setShowHolidayForm(true);
+                  }}
+                  className="flex items-center gap-1 text-[11px] font-medium text-[#534AB7] hover:underline"
+                >
+                  <Plus size={12} /> Add
+                </button>
+              )}
+            </div>
+            {showHolidayForm && canManageTeam && (
+              <div className="px-5 pb-3 flex flex-col gap-2">
+                <input
+                  value={holidayTitle}
+                  onChange={(e) => setHolidayTitle(e.target.value)}
+                  placeholder="Holiday title"
+                  className="text-[12px] border border-[#E0E0E0] rounded-md px-2.5 py-1.5"
+                />
+                <input
+                  type="date"
+                  value={holidayDate}
+                  onChange={(e) => setHolidayDate(e.target.value)}
+                  className="text-[12px] border border-[#E0E0E0] rounded-md px-2.5 py-1.5"
+                />
+                <div className="flex gap-2 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowHolidayForm(false)}
+                    className="text-[11px] px-3 py-1.5 border border-[#E0E0E0] rounded-md"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!holidayTitle.trim() || !holidayDate || holidayMutation.isPending}
+                    onClick={() => holidayMutation.mutate()}
+                    className="text-[11px] px-3 py-1.5 bg-[#7B68EE] text-white rounded-md disabled:opacity-50"
+                  >
+                    {editingHolidayId ? 'Update' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="flex flex-col">
               {upcomingHolidays.length === 0 ? (
                 <span className="text-[11px] text-[#888888] px-5 pb-4">No upcoming holidays.</span>
@@ -520,10 +780,35 @@ export default function EmployeeDashboardPage() {
                         {holiday.day}
                       </span>
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <span className="text-[12px] font-medium text-[#1A1A1A] block truncate">{holiday.title}</span>
                       <span className="text-[10px] text-[#AAAAAA]">{holiday.subtitle}</span>
                     </div>
+                    {canManageTeam && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          aria-label="Edit holiday"
+                          onClick={() => {
+                            setEditingHolidayId(holiday.id);
+                            setHolidayTitle(holiday.title);
+                            setHolidayDate(holiday.dateIso);
+                            setShowHolidayForm(true);
+                          }}
+                          className="text-[#888888] hover:text-[#1A1A1A]"
+                        >
+                          <Pencil size={12} />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Delete holiday"
+                          onClick={() => deleteHolidayMutation.mutate(holiday.id)}
+                          className="text-[#888888] hover:text-[#A32D2D]"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))
               )}

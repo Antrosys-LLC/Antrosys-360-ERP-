@@ -206,6 +206,19 @@ enum LeaveRequestStatus {
   CANCELLED
 }
 
+enum ManpowerRequestStatus {
+  PENDING
+  IN_PROGRESS
+  FULFILLED
+  REJECTED
+}
+
+enum DailyMood {
+  HAPPY
+  NEUTRAL
+  STRESSED
+}
+
 enum LedgerEntryType {
   DEBIT
   CREDIT
@@ -243,6 +256,7 @@ model User {
   workScheduleUpdates      WorkScheduleConfig[] @relation("WorkScheduleUpdatedBy")
   roleModuleAccessUpdates  RoleModuleAccess[]   @relation("RoleModuleAccessUpdatedBy")
   ledgerEntriesCreated     LedgerEntry[]      @relation("LedgerEntriesCreated")
+  manpowerRequests         ManpowerRequest[]  @relation("ManpowerRequestsCreated")
 
   @@map("users")
 }
@@ -306,6 +320,7 @@ model Employee {
   teams                 EmployeeTeam[]
   tasks                 EmployeeTask[]
   receivedMessages      Message[]            @relation("ReceivedMessages")
+  dailyMoods            EmployeeDailyMood[]
 
   @@index([department])
   @@index([employmentStatus])
@@ -858,11 +873,44 @@ model CompanyHoliday {
   endDate    DateTime? @db.Date
   location   String?
   isNational Boolean   @default(true)
+  teamId     String?
+  team       Team?     @relation(fields: [teamId], references: [id], onDelete: Cascade)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
   @@index([date])
+  @@index([teamId])
   @@map("company_holidays")
+}
+
+model ManpowerRequest {
+  id                  String                @id @default(cuid())
+  department          Department
+  additionalHeadcount Int
+  notes               String?
+  status              ManpowerRequestStatus @default(PENDING)
+  requestedByUserId   String
+  requestedBy         User                  @relation("ManpowerRequestsCreated", fields: [requestedByUserId], references: [id])
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@index([department])
+  @@index([status])
+  @@map("manpower_requests")
+}
+
+model EmployeeDailyMood {
+  id         String    @id @default(cuid())
+  employeeId String
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date       DateTime  @db.Date
+  mood       DailyMood
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([date])
+  @@map("employee_daily_moods")
 }
 
 enum ModuleAccessLevel {
@@ -1134,6 +1182,7 @@ model Team {
   manager        Employee?      @relation("TeamManager", fields: [managerId], references: [id])
   members        EmployeeTeam[]
   directMembers  Employee[]     @relation("TeamMembers")
+  holidays       CompanyHoliday[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
