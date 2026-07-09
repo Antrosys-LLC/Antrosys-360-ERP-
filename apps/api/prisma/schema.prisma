@@ -1417,10 +1417,11 @@ model LedgerEntry {
   currencyCode    String          @default("PKR") @db.VarChar(3)
   voidedAt        DateTime?
   voidedByUserId  String?
-  createdByUserId String
-  createdBy       User            @relation("LedgerEntriesCreated", fields: [createdByUserId], references: [id])
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  createdByUserId  String
+  createdBy        User            @relation("LedgerEntriesCreated", fields: [createdByUserId], references: [id])
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  bankTransactions BankTransaction[]
 
   @@index([date])
   @@index([accountId])
