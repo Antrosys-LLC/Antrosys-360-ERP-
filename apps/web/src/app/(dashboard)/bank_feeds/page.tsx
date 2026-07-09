@@ -51,6 +51,7 @@ interface BankLine {
   confidence: number;
   confidenceLabel: string;
   confidenceVariant: 'success' | 'warning' | 'danger';
+  matchStatus?: string;
   extraBadge?: string;
   subAmountLabel?: string;
   suggestedMatch: SuggestedMatch | null;
@@ -139,9 +140,10 @@ export default function BankFeedsDashboard() {
 
   const handleConfirmMatch = async () => {
     if (!selectedLine || !selectedLine.suggestedMatch) return;
-    setConfirmingId(selectedLine.id);
+    const lineId = selectedLine.id;
+    setConfirmingId(lineId);
     try {
-      await apiClient.post(`/finance/bank-feeds/transactions/${selectedLine.id}/confirm`, {
+      await apiClient.post(`/finance/bank-feeds/transactions/${lineId}/confirm`, {
         entryId: selectedLine.suggestedMatch.id,
       });
       showToast('Match confirmed successfully');
@@ -169,9 +171,11 @@ export default function BankFeedsDashboard() {
   };
 
   const handleCreateJournal = async (transactionId: string) => {
+    const lineId = transactionId;
     try {
-      await apiClient.post(`/finance/bank-feeds/transactions/${transactionId}/create-journal`);
+      await apiClient.post(`/finance/bank-feeds/transactions/${lineId}/create-journal`);
       showToast('Journal entry created');
+      setSelectedLine(null);
       fetchAll();
     } catch (err: any) {
       showToast(err?.response?.data?.error || 'Failed to create journal', 'error');
@@ -197,7 +201,6 @@ export default function BankFeedsDashboard() {
       await handleConfirmMatch();
     } else {
       await handleCreateJournal(selectedLine.id);
-      setSelectedLine(null);
     }
   };
 
@@ -464,32 +467,13 @@ export default function BankFeedsDashboard() {
                 </nav>
               </div>
 
-              <div className="flex items-center space-x-2 text-muted-foreground self-end sm:self-auto">
-                <Button variant="ghost" size="icon" className="h-7 w-7" title="Filter columns">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 11.293A1 1 0 013 10.586V4z" />
-                  </svg>
-                </Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7" title="Toggle Layout">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2m0 10V7" />
-                  </svg>
-                </Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7" title="More options">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                  </svg>
-                </Button>
-              </div>
+              
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-border bg-muted/40 text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
-                    <th className="py-2.5 px-4 w-10 text-center">
-                      <input type="checkbox" className="rounded border-border text-primary focus:ring-ring" />
-                    </th>
                     <th className="py-2.5 px-3 w-24">Date</th>
                     <th className="py-2.5 px-4">Description</th>
                     <th className="py-2.5 px-3 w-28">Account</th>
@@ -501,7 +485,6 @@ export default function BankFeedsDashboard() {
                   {loading
                     ? Array.from({ length: 5 }).map((_, i) => (
                         <tr key={i}>
-                          <td className="py-3 px-4 text-center"><div className="h-3 bg-muted rounded w-3 mx-auto"></div></td>
                           <td className="py-3 px-3"><div className="h-3 bg-muted rounded w-16"></div></td>
                           <td className="py-3 px-4"><div className="h-3 bg-muted rounded w-48"></div></td>
                           <td className="py-3 px-3"><div className="h-3 bg-muted rounded w-14"></div></td>
@@ -512,7 +495,7 @@ export default function BankFeedsDashboard() {
                     : filteredLines.length === 0
                       ? (
                         <tr>
-                          <td colSpan={6} className="py-8 text-center text-xs text-muted-foreground">
+                          <td colSpan={5} className="py-8 text-center text-xs text-muted-foreground">
                             No transactions found
                           </td>
                         </tr>
@@ -522,14 +505,11 @@ export default function BankFeedsDashboard() {
                         return (
                           <tr
                             key={line.id}
-                            onClick={() => setSelectedLine(line)}
-                            className={`cursor-pointer hover:bg-muted/50 transition-colors group ${
+                            onClick={() => line.matchStatus !== 'MATCHED' && setSelectedLine(line)}
+                            className={`${line.matchStatus === 'MATCHED' ? '' : 'cursor-pointer hover:bg-muted/50'} transition-colors group ${
                               isSelected ? 'bg-secondary/40' : line.confidence === 0 ? 'bg-red-50/20' : ''
                             }`}
                           >
-                            <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
-                              <input type="checkbox" className="rounded border-border text-primary focus:ring-ring" />
-                            </td>
                             <td className="py-3 px-3 text-muted-foreground whitespace-nowrap">
                               {line.date}
                             </td>

@@ -84,9 +84,12 @@ export async function listTransactions(query: ListTransactionsQuery) {
 
   if (query.tab === 'review') {
     where.confidenceScore = { gte: 1, lt: 95 };
-    where.matchStatus = { not: 'MATCHED' };
+    where.matchStatus = { notIn: ['MATCHED', 'REJECTED'] };
   } else if (query.tab === 'unmatched') {
     where.confidenceScore = 0;
+    where.matchStatus = { not: 'REJECTED' };
+  } else {
+    where.matchStatus = { not: 'REJECTED' };
   }
   if (query.accountId) {
     where.accountId = query.accountId;
@@ -128,6 +131,7 @@ export async function listTransactions(query: ListTransactionsQuery) {
       confidence: t.confidenceScore,
       confidenceLabel: label,
       confidenceVariant: variant as 'success' | 'warning' | 'danger',
+      matchStatus: t.matchStatus,
       extraBadge: t.extraBadge ?? undefined,
       subAmountLabel: t.subAmountLabel ?? undefined,
       suggestedMatch: t.matchedEntry
