@@ -272,5 +272,112 @@ export async function seedClientsData() {
     ],
   });
 
+  // Recreate finance invoices against the final client set so CEO/CFO metrics stay live.
+  const financeManager = await prisma.user.findUnique({
+    where: { email: 'finance_manager@antrosys.com' },
+  });
+  if (financeManager) {
+    const invoiceClients = [
+      createdClients['Nexus Corp'] ?? nexusId,
+      createdClients['Apex Holdings'] ?? apexId,
+      createdClients['Vanta AI'] ?? vantaId,
+    ].filter(Boolean);
+
+    const invoiceSpecs: {
+      number: string;
+      clientIdx: number;
+      status: 'DRAFT' | 'SENT' | 'PAID' | 'PARTIALLY_PAID' | 'OVERDUE';
+      total: number;
+      currency: string;
+      invoiceDay: number;
+      dueDay: number;
+      monthOffset: number;
+    }[] = [
+      { number: 'INV-2026-001', clientIdx: 0, status: 'PAID', total: 125000, currency: 'USD', invoiceDay: 2, dueDay: 17, monthOffset: 0 },
+      { number: 'INV-2026-002', clientIdx: 1, status: 'PAID', total: 89000, currency: 'USD', invoiceDay: 5, dueDay: 20, monthOffset: 0 },
+      { number: 'INV-2026-003', clientIdx: 2, status: 'SENT', total: 42000, currency: 'USD', invoiceDay: 8, dueDay: 23, monthOffset: 0 },
+      { number: 'INV-2026-004', clientIdx: 0, status: 'PARTIALLY_PAID', total: 67000, currency: 'EUR', invoiceDay: 10, dueDay: 25, monthOffset: 0 },
+      { number: 'INV-2026-005', clientIdx: 1, status: 'DRAFT', total: 34000, currency: 'USD', invoiceDay: 12, dueDay: 27, monthOffset: 0 },
+      { number: 'INV-2025-110', clientIdx: 2, status: 'PAID', total: 98000, currency: 'USD', invoiceDay: 15, dueDay: 30, monthOffset: -1 },
+      { number: 'INV-2025-111', clientIdx: 0, status: 'PAID', total: 156000, currency: 'GBP', invoiceDay: 18, dueDay: 3, monthOffset: -1 },
+      { number: 'INV-2025-112', clientIdx: 1, status: 'OVERDUE', total: 55000, currency: 'USD', invoiceDay: 1, dueDay: 10, monthOffset: -2 },
+      { number: 'INV-2026-006', clientIdx: 0, status: 'SENT', total: 28000, currency: 'PKR', invoiceDay: 14, dueDay: 1, monthOffset: -1 },
+      { number: 'INV-2026-007', clientIdx: 2, status: 'DRAFT', total: 19000, currency: 'AED', invoiceDay: 16, dueDay: 5, monthOffset: 0 },
+    ];
+
+    for (const spec of invoiceSpecs) {
+      const clientId = invoiceClients[spec.clientIdx % invoiceClients.length];
+      if (!clientId) continue;
+      const invMonth = month + spec.monthOffset;
+      const invDate = dateOnly(year, invMonth, spec.invoiceDay);
+      const dueDate = dateOnly(year, invMonth, spec.dueDay);
+      const tax = spec.total * 0.1;
+
+      await prisma.invoice.create({
+        data: {
+          invoiceNumber: spec.number,
+          clientId,
+          status: spec.status,
+          invoiceDate: invDate,
+          dueDate,
+          paymentTermsDays: 15,
+          currencyCode: spec.currency,
+          subtotal: dec(spec.total),
+          discountTotal: dec(0),
+          taxableAmount: dec(spec.total),
+          taxTotal: dec(tax),
+          withholdingTotal: dec(0),
+          totalDue: dec(spec.total + tax),
+          issuedByUserId: financeManager.id,
+          lineItems: {
+            create: [
+              {
+                sortOrder: 1,
+                description: 'Professional services',
+                quantity: dec(1),
+                unitPrice: dec(spec.total),
+                discountPct: dec(0),
+                taxType: 'GST',
+                taxRatePct: dec(10),
+                lineSubtotal: dec(spec.total),
+                lineTaxAmount: dec(tax),
+                lineTotal: dec(spec.total + tax),
+              },
+            ],
+          },
+        },
+      });
+    }
+
+    const cfoUser = await prisma.user.findUnique({ where: { email: 'cfo@antrosys.com' } });
+    const fmEmployee = await prisma.employee.findFirst({
+      where: { user: { email: 'finance_manager@antrosys.com' } },
+    });
+    const sentInvoice = await prisma.invoice.findFirst({
+      where: { invoiceNumber: 'INV-2026-003' },
+    });
+    if (cfoUser && fmEmployee && sentInvoice) {
+      await prisma.approvalTask.create({
+        data: {
+          assigneeUserId: cfoUser.id,
+          requesterEmployeeId: fmEmployee.id,
+          actionTitle: `Review Invoice ${sentInvoice.invoiceNumber}`,
+          priority: 'MEDIUM',
+          entityType: 'INVOICE',
+          entityId: sentInvoice.id,
+          dueAt: new Date(),
+        },
+      });
+      await prisma.financialActivity.create({
+        data: {
+          category: 'INVOICE',
+          title: `Sent invoice ${sentInvoice.invoiceNumber}`,
+          occurredAt: new Date(),
+          metadata: { invoiceId: sentInvoice.id },
+        },
+      });
+    }
+  }
+
   console.log('✅ Client management dashboard seed data created');
 }

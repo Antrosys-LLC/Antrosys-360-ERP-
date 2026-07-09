@@ -159,18 +159,6 @@ export async function seedCfoData() {
     },
   });
 
-  await prisma.approvalTask.create({
-    data: {
-      assigneeUserId: cfoUser.id,
-      requesterEmployeeId: fmEmployee.id,
-      actionTitle: 'Vendor Expense #882',
-      priority: 'LOW',
-      entityType: 'VENDOR_EXPENSE',
-      entityId: 'vendor-exp-882',
-      dueAt: new Date(),
-    },
-  });
-
   await prisma.vendorPayment.createMany({
     data: [
       {
@@ -178,6 +166,7 @@ export async function seedCfoData() {
         vendorReference: 'VP-9345',
         amount: dec(12500),
         currencyCode: 'USD',
+        status: 'PENDING',
         paidAt: dateOnly(year, month, 5),
         createdByUserId: financeManager.id,
       },
@@ -192,13 +181,24 @@ export async function seedCfoData() {
     ],
   });
 
+  const pendingVendor = await prisma.vendorPayment.findFirst({
+    where: { vendorReference: 'VP-9345' },
+  });
+
+  await prisma.approvalTask.create({
+    data: {
+      assigneeUserId: cfoUser.id,
+      requesterEmployeeId: fmEmployee.id,
+      actionTitle: `Approve Vendor Payment ${pendingVendor?.vendorReference ?? 'VP-9345'}`,
+      priority: 'LOW',
+      entityType: 'VENDOR_EXPENSE',
+      entityId: pendingVendor?.id ?? 'vendor-exp-882',
+      dueAt: new Date(),
+    },
+  });
+
   await prisma.financialActivity.createMany({
     data: [
-      {
-        category: 'ACCOUNTS_PAYABLE',
-        title: 'Payment sent to Vendor #9345',
-        occurredAt: new Date(dateOnly(year, month, 5).getTime() + 13 * 60 * 60 * 1000),
-      },
       {
         category: 'ACCOUNTS_PAYABLE',
         title: 'Payment sent to Vendor #42345',
@@ -208,6 +208,11 @@ export async function seedCfoData() {
         category: 'PAYROLL',
         title: 'Completed batch #12345',
         occurredAt: new Date(dateOnly(year, month - 1, 28).getTime() + 12 * 60 * 60 * 1000 + 30 * 60 * 1000),
+      },
+      {
+        category: 'ACCOUNTS_PAYABLE',
+        title: 'Vendor payment VP-9345 awaiting approval',
+        occurredAt: new Date(dateOnly(year, month, 5).getTime() + 13 * 60 * 60 * 1000),
       },
     ],
   });

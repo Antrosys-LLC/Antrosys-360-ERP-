@@ -53,6 +53,7 @@ export function buildAttendanceCalendarWeeks(
   attendanceMap: Map<number, AttendanceDayRecord>,
   holidays: { date: Date; endDate: Date | null }[],
   halfDayThreshold: number,
+  leaveDayNumbers: Set<number> = new Set(),
 ) {
   const label = new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', {
     month: 'long',
@@ -77,6 +78,8 @@ export function buildAttendanceCalendarWeeks(
 
     if (isHolidayDate(cellDate, holidays)) {
       status = 'holiday';
+    } else if (leaveDayNumbers.has(day)) {
+      status = 'leave';
     } else if (cellDate.getTime() === today.getTime()) {
       const attendance = attendanceMap.get(day);
       status = attendance ? deriveCalendarDayStatus(attendance, halfDayThreshold) : 'today';
@@ -86,7 +89,8 @@ export function buildAttendanceCalendarWeeks(
       if (attendance) {
         status = deriveCalendarDayStatus(attendance, halfDayThreshold);
       } else if (!isWeekend) {
-        status = 'none';
+        // Past weekday with no check-in is treated as absent (end-of-day rule).
+        status = 'absent';
       }
     }
 
@@ -108,9 +112,10 @@ export function buildAttendanceCalendarWeeks(
     weeks,
     legend: [
       { label: 'Present', color: '#C4BDF8' },
-      { label: 'Late', color: '#FDE68A' },
+      { label: 'Late', color: '#FBBF24' },
       { label: 'Half', color: '#86EFAC' },
       { label: 'Absent', color: '#F8B4B4' },
+      { label: 'Leave', color: '#93C5FD' },
       { label: 'Holiday', color: '#BFDBFE' },
     ],
   };

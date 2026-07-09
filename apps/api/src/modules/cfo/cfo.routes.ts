@@ -3,6 +3,8 @@ import type { Permission } from '@antrosys/types';
 import {
   acceptTaskHandler,
   cancelTaskHandler,
+  createEventHandler,
+  deleteEventHandler,
   exportReportHandler,
   getActivitiesHandler,
   getCashflowHandler,
@@ -11,6 +13,7 @@ import {
   getInvoiceStatusHandler,
   getProfileHandler,
   getTasksHandler,
+  updateEventHandler,
 } from './cfo.controller';
 
 const FINANCE_READ: Permission = 'finance:read';
@@ -63,6 +66,21 @@ export async function cfoRoutes(fastify: FastifyInstance) {
   fastify.get('/events', {
     preHandler: [fastify.requirePermission(FINANCE_READ)],
     handler: getEventsHandler,
+  });
+
+  fastify.post('/events', {
+    preHandler: [fastify.requirePermission(FINANCE_WRITE)],
+    handler: createEventHandler,
+  });
+
+  fastify.patch('/events/:eventId', {
+    preHandler: [fastify.requirePermission(FINANCE_WRITE)],
+    handler: updateEventHandler,
+  });
+
+  fastify.delete('/events/:eventId', {
+    preHandler: [fastify.requirePermission(FINANCE_WRITE)],
+    handler: deleteEventHandler,
   });
 
   fastify.get('/export', {
