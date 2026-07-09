@@ -666,17 +666,14 @@ export default function BankFeedsDashboard() {
 
                         {ex.hasActions && (
                           <div className="p-2 bg-card border-t border-border/60 flex flex-col space-y-1.5">
-                            <Button variant="outline" size="sm" onClick={() => handleCreateJournal(ex.id)} className="justify-start w-full whitespace-nowrap">
-                              <span className="text-primary text-xs mr-2 shrink-0">+</span>
-                              <span>Create Journal Entry</span>
+                            <Button variant="outline" size="sm" onClick={() => handleCreateJournal(ex.id)} className="justify-center w-full whitespace-nowrap px-3 py-2 text-[10px]">
+                              Create Journal Entry
                             </Button>
-                            <Button variant="outline" size="sm" onClick={() => handleCreateJournal(ex.id)} className="justify-start w-full whitespace-nowrap">
-                              <span className="text-muted-foreground text-xs mr-2 shrink-0">📁</span>
-                              <span>Assign Category directly</span>
+                            <Button variant="outline" size="sm" onClick={() => handleCreateJournal(ex.id)} className="justify-center w-full whitespace-nowrap px-3 py-2 text-[10px]">
+                              Assign Category directly
                             </Button>
-                            <Button variant="outline" size="sm" onClick={() => handleCreateJournal(ex.id)} className="justify-start w-full whitespace-nowrap">
-                              <span className="text-muted-foreground text-xs mr-2 shrink-0">👤</span>
-                              <span>Mark as Personal / Dir. Loan</span>
+                            <Button variant="outline" size="sm" onClick={() => handleCreateJournal(ex.id)} className="justify-center w-full whitespace-nowrap px-3 py-2 text-[10px]">
+                              Mark as Personal / Dir. Loan
                             </Button>
                           </div>
                         )}
@@ -695,7 +692,7 @@ export default function BankFeedsDashboard() {
             </section>
 
             {/* CONNECTION STATUS */}
-            <section className="bg-card border border-border rounded-[var(--radius)] p-4 shadow-sm">
+            <section className="bg-card border border-border rounded-[var(--radius)] p-4 shadow-sm overflow-x-auto">
               <h3 className="text-[11px] font-bold text-foreground uppercase tracking-wider mb-3">
                 Connection Status
               </h3>
@@ -957,7 +954,7 @@ function ConnectBankModal({
   const [accountNumber, setAccountNumber] = useState('');
   const [accountType, setAccountType] = useState('Primary');
   const [currencyCode, setCurrencyCode] = useState('PKR');
-  const [balance, setBalance] = useState(0);
+  const [balance, setBalance] = useState('');
   const [provider, setProvider] = useState('API');
   const [scheduleType, setScheduleType] = useState('Real-time');
   const [connecting, setConnecting] = useState(false);
@@ -967,7 +964,7 @@ function ConnectBankModal({
     if (!bankName || !accountNumber) return;
     setConnecting(true);
     try {
-      await onConnect({ bankName, accountNumber, accountType, currencyCode, balance, provider, scheduleType });
+      await onConnect({ bankName, accountNumber, accountType, currencyCode, balance: balance === '' ? 0 : Number(balance), provider, scheduleType });
     } finally {
       setConnecting(false);
     }
@@ -1045,10 +1042,15 @@ function ConnectBankModal({
               <input
                 type="number"
                 value={balance}
-                onChange={(e) => setBalance(Number(e.target.value))}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '' || (Number(val) >= 0 && !isNaN(Number(val)))) {
+                    setBalance(val);
+                  }
+                }}
                 min={0}
                 step="0.01"
-                className="w-full text-xs px-3 py-1.5 bg-background border border-border rounded-[var(--radius)] focus:outline-none focus:ring-1 focus:ring-ring"
+                className="w-full text-xs px-3 py-1.5 bg-background border border-border rounded-[var(--radius)] focus:outline-none focus:ring-1 focus:ring-ring [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
               />
             </div>
 
