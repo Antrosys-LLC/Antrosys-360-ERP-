@@ -9,6 +9,7 @@ import { authPlugin } from './plugins/auth.plugin';
 import { rbacPlugin } from './plugins/rbac.plugin';
 import { rateLimitPlugin } from './plugins/rate-limit.plugin';
 import { auditLoggerHook } from './shared/middleware/audit-logger';
+import { cleanupOldAuditLogs } from './modules/invoice/invoice.service';
 
 // Module routes
 import { authRoutes } from './modules/auth/auth.routes';
@@ -116,6 +117,16 @@ export async function buildApp() {
     },
     { prefix: '/api/v1' },
   );
+
+  // Clean up audit logs older than 30 days on startup
+  app.addHook('onReady', async () => {
+    try {
+      await cleanupOldAuditLogs();
+      app.log.info('Cleaned up audit logs older than 30 days');
+    } catch (err) {
+      app.log.error({ err }, 'Failed to clean up audit logs');
+    }
+  });
 
   return app;
 }

@@ -16,19 +16,22 @@ function computeLineTotals(line: {
   quantity: number;
   unitPrice: number;
   discountPct: number;
-  taxType: 'GST' | 'WHT' | 'EXEMPT' | 'CUSTOM';
+  taxType: 'GST' | 'WHT' | 'EXEMPT' | 'CUSTOM' | 'VAT' | 'SALES_TAX' | 'WITHHOLDING';
   taxRatePct: number;
 }) {
   const gross = line.quantity * line.unitPrice;
   const discountAmount = gross * (line.discountPct / 100);
   const lineSubtotal = gross - discountAmount;
 
+  const additiveTaxes = ['GST', 'CUSTOM', 'VAT', 'SALES_TAX'];
+  const withholdingTaxes = ['WHT', 'WITHHOLDING'];
+
   let lineTaxAmount = 0;
-  if (line.taxType === 'GST' || line.taxType === 'CUSTOM') {
+  if (additiveTaxes.includes(line.taxType)) {
     lineTaxAmount = lineSubtotal * (line.taxRatePct / 100);
   }
 
-  const withholdingAmount = line.taxType === 'WHT' ? lineSubtotal * (line.taxRatePct / 100) : 0;
+  const withholdingAmount = withholdingTaxes.includes(line.taxType) ? lineSubtotal * (line.taxRatePct / 100) : 0;
   const lineTotal = lineSubtotal + lineTaxAmount - withholdingAmount;
 
   return {
@@ -327,6 +330,17 @@ export async function deleteInvoice(invoiceId: string, userId: string) {
   });
 
   return current;
+}
+
+export async function cleanupOldAuditLogs() {
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  await prisma.auditLog.deleteMany({
+    where: {
+      createdAt: { lt: thirtyDaysAgo },
+    },
+  });
 }
 
 export async function sendInvoice(invoiceId: string, userId: string) {

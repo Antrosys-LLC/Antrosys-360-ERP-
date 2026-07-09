@@ -15,7 +15,7 @@ export const createInvoiceLineItemSchema = z.object({
   unit: z.string().min(1).max(50).optional(),
   unitPrice: z.number().nonnegative(),
   discountPct: z.number().min(0).max(100).default(0),
-  taxType: z.enum(['GST', 'WHT', 'EXEMPT', 'CUSTOM']).default('EXEMPT'),
+  taxType: z.enum(['GST', 'WHT', 'EXEMPT', 'CUSTOM', 'VAT', 'SALES_TAX', 'WITHHOLDING']).default('EXEMPT'),
   taxRatePct: z.number().min(0).max(100).default(0),
 });
 
