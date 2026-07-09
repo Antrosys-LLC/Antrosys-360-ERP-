@@ -81,6 +81,13 @@ function normalizeEmploymentStatus(value: string): EmploymentStatus | undefined 
   return Object.values(EmploymentStatus).find((s) => s === value.toUpperCase()) as EmploymentStatus | undefined;
 }
 
+async function resolveDepartmentTeam(department: Department) {
+  return prisma.team.findFirst({
+    where: { department },
+    select: { id: true, managerId: true },
+  });
+}
+
 // ============================================================================
 // LIST – all employees (grouped by department on the frontend)
 // ============================================================================
@@ -224,12 +231,23 @@ export async function updateEmployeeEmployment(id: string, data: UpdateEmploymen
   if (data.department !== undefined) {
     if (data.department === null || data.department === '') {
       updateData.department = null;
+      updateData.teamId = null;
     } else {
       const department = normalizeDepartment(data.department);
       if (!department) {
         throw new Error('Invalid department value');
       }
       updateData.department = department;
+
+      // Auto-assign to the team matching this department
+      const team = await resolveDepartmentTeam(department);
+      if (team) {
+        updateData.teamId = team.id;
+        // Only auto-assign manager if the caller didn't explicitly set one
+        if (data.managerId === undefined && team.managerId) {
+          updateData.managerId = team.managerId;
+        }
+      }
     }
   }
 

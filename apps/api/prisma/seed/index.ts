@@ -172,37 +172,56 @@ async function main() {
   const subManager = await prisma.employee.findFirst({
     where: { user: { email: 'sub_manager@antrosys.com' } },
   });
+  const teamLead = await prisma.employee.findFirst({
+    where: { user: { email: 'team_lead@antrosys.com' } },
+  });
 
-  if (mainManager && subManager) {
-    const subManagerTeam = await prisma.team.upsert({
+  if (mainManager && subManager && teamLead) {
+    // Create per-department teams with their respective managers
+    const operationsTeam = await prisma.team.upsert({
       where: { managerId: subManager.id },
-      update: { name: 'Engineering Sub Team' },
-      create: {
-        name: 'Engineering Sub Team',
-        managerId: subManager.id,
-      },
+      update: { name: 'Operations Team', department: 'OPERATIONS' },
+      create: { name: 'Operations Team', department: 'OPERATIONS', managerId: subManager.id },
     });
 
+    const engineeringTeam = await prisma.team.upsert({
+      where: { managerId: teamLead.id },
+      update: { name: 'Engineering Team', department: 'ENGINEERING' },
+      create: { name: 'Engineering Team', department: 'ENGINEERING', managerId: teamLead.id },
+    });
+
+    // Set up management chain: team_lead -> sub_manager -> main_manager
     await prisma.employee.update({
       where: { id: subManager.id },
-      data: { managerId: mainManager.id, teamId: subManagerTeam.id },
+      data: { managerId: mainManager.id, teamId: operationsTeam.id },
+    });
+    await prisma.employee.update({
+      where: { id: teamLead.id },
+      data: { managerId: subManager.id, teamId: engineeringTeam.id },
     });
 
-    const subManagerReports = ['sara.javed@antrosys.com', 'fawad.khan@antrosys.com', 'bilal.hassan@antrosys.com', 'hina.baig@antrosys.com'];
-    for (const email of subManagerReports) {
-      const emp = await prisma.employee.findFirst({ where: { user: { email } } });
-      if (emp) {
+    // Auto-assign all EMPLOYEE role users to the team matching their department
+    const departmentTeamMap: Record<string, { teamId: string; managerId: string }> = {};
+    departmentTeamMap['OPERATIONS'] = { teamId: operationsTeam.id, managerId: subManager.id };
+    departmentTeamMap['ENGINEERING'] = { teamId: engineeringTeam.id, managerId: teamLead.id };
+
+    const allEmployees = await prisma.employee.findMany({
+      where: {
+        user: { role: 'EMPLOYEE' },
+        NOT: { id: { in: [mainManager.id, subManager.id, teamLead.id] } },
+      },
+      include: { user: { select: { email: true } } },
+    });
+
+    for (const emp of allEmployees) {
+      const assignment = emp.department ? departmentTeamMap[emp.department] : null;
+      if (assignment) {
         await prisma.employee.update({
           where: { id: emp.id },
-          data: { managerId: subManager.id, teamId: subManagerTeam.id },
+          data: { managerId: assignment.managerId, teamId: assignment.teamId },
         });
-      }
-    }
-
-    const mainManagerReports = ['omar.mirza@antrosys.com', 'maria.raza@antrosys.com', 'nadia.qureshi@antrosys.com'];
-    for (const email of mainManagerReports) {
-      const emp = await prisma.employee.findFirst({ where: { user: { email } } });
-      if (emp) {
+      } else {
+        // No team exists for this department (SALES, FINANCE, HR, etc.) — report to mainManager
         await prisma.employee.update({
           where: { id: emp.id },
           data: { managerId: mainManager.id },

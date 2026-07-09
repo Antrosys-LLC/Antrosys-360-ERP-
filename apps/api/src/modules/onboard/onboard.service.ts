@@ -1,3 +1,4 @@
+import { Department } from '@prisma/client';
 import { prisma } from '../../config/database';
 import bcrypt from 'bcryptjs';
 import type {
@@ -83,6 +84,32 @@ export async function getOnboardEmployee(id: string) {
 export async function createEmployee(data: CreateEmployeeBody, userId: string) {
   const { teamIds, email, ...rest } = data;
 
+  // Auto-assign team and manager based on department
+  let autoTeamId: string | undefined;
+  let autoManagerId: string | undefined;
+  if (rest.department) {
+    const deptKey = rest.department.trim().toLowerCase().replace(/\s+dept$/i, '');
+    const departmentAliases: Record<string, Department> = {
+      engineering: 'ENGINEERING',
+      operations: 'OPERATIONS',
+      sales: 'SALES',
+      finance: 'FINANCE',
+      hr: 'HR',
+      other: 'OTHER',
+    };
+    const normalizedDept = departmentAliases[deptKey];
+    if (normalizedDept) {
+      const team = await prisma.team.findFirst({
+        where: { department: normalizedDept },
+        select: { id: true, managerId: true },
+      });
+      if (team) {
+        autoTeamId = team.id;
+        if (team.managerId) autoManagerId = team.managerId;
+      }
+    }
+  }
+
   return prisma.$transaction(async (tx) => {
     const passwordHash = await bcrypt.hash('welcome123', 10);
     const user = await tx.user.create({
@@ -101,6 +128,8 @@ export async function createEmployee(data: CreateEmployeeBody, userId: string) {
             employmentStatus: (rest.employmentStatus as any) ?? 'ONBOARDING',
             joiningDate: rest.joiningDate ? new Date(rest.joiningDate) : undefined,
             phone: rest.phone ?? undefined,
+            teamId: autoTeamId,
+            managerId: autoManagerId,
           },
         },
       },
@@ -150,6 +179,35 @@ export async function updateEmployee(id: string, data: UpdateEmployeeBody) {
   const { teamIds, ...rest } = data;
   const updateData: Record<string, unknown> = { ...rest };
   if (rest.joiningDate) updateData.joiningDate = new Date(rest.joiningDate);
+
+  // When department is cleared, remove team membership but keep reporting line
+  if (rest.department !== undefined && (rest.department === null || rest.department === '')) {
+    updateData.teamId = null;
+  }
+
+  // Auto-assign team and manager based on department change
+  if (rest.department !== undefined && rest.department !== null && rest.department !== '') {
+    const deptKey = rest.department.trim().toLowerCase().replace(/\s+dept$/i, '');
+    const departmentAliases: Record<string, Department> = {
+      engineering: 'ENGINEERING',
+      operations: 'OPERATIONS',
+      sales: 'SALES',
+      finance: 'FINANCE',
+      hr: 'HR',
+      other: 'OTHER',
+    };
+    const normalizedDept = departmentAliases[deptKey];
+    if (normalizedDept) {
+      const team = await prisma.team.findFirst({
+        where: { department: normalizedDept },
+        select: { id: true, managerId: true },
+      });
+      if (team) {
+        updateData.teamId = team.id;
+        if (team.managerId) updateData.managerId = team.managerId;
+      }
+    }
+  }
 
   return prisma.$transaction(async (tx) => {
     const updated = await tx.employee.update({
