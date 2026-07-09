@@ -238,10 +238,12 @@ export default function BankFeedsDashboard() {
           </div>
 
           <Button variant="outline" size="sm" onClick={fetchAll} disabled={loading}>
-            <svg className={`w-3.5 h-3.5 mr-1 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.25 15.6" />
+            <svg className={`w-3.5 h-3.5 mr-1 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
             </svg>
-            {loading ? 'Loading...' : 'Sync All'}
+            {loading ? 'Syncing...' : 'Sync All'}
           </Button>
 
           <Button variant="default" size="sm" onClick={() => setShowConnectModal(true)}>
@@ -251,20 +253,7 @@ export default function BankFeedsDashboard() {
             Connect Bank
           </Button>
 
-          <div className="h-4 w-px bg-border mx-1"></div>
 
-          <Button variant="ghost" size="icon" className="relative">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-            </svg>
-            <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full"></span>
-          </Button>
-
-          <Button variant="ghost" size="icon">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </Button>
         </div>
       </header>
 
@@ -338,8 +327,10 @@ export default function BankFeedsDashboard() {
                           disabled={syncingId === account.id}
                           className="h-auto px-0"
                         >
-                          <svg className={`w-3 h-3 mr-0.5 ${syncingId === account.id ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.25 15.6" />
+                          <svg className={`w-3 h-3 mr-0.5 ${syncingId === account.id ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="23 4 23 10 17 10" />
+                            <polyline points="1 20 1 14 7 14" />
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
                           </svg>
                           {syncingId === account.id ? 'Syncing...' : 'Sync'}
                         </Button>
@@ -599,8 +590,8 @@ export default function BankFeedsDashboard() {
             </div>
           </section>
 
-          {/* RIGHT SIDEBAR */}
-          <div className="space-y-5 lg:col-span-1">
+          {/* RIGHT SIDEBAR — scrollable independently */}
+          <div className="lg:col-span-1 max-h-[calc(100vh-220px)] overflow-y-auto space-y-5">
 
             {/* PRIORITY EXCEPTIONS */}
             <section className="bg-card border border-border rounded-[var(--radius)] p-4 shadow-sm">
@@ -651,17 +642,17 @@ export default function BankFeedsDashboard() {
 
                         {ex.hasActions && (
                           <div className="p-2 bg-card border-t border-border/60 flex flex-col space-y-1.5">
-                            <Button variant="outline" size="sm" onClick={() => handleCreateJournal(ex.id)} className="justify-start">
-                              <span className="text-primary text-xs mr-2">+</span>
-                              <span>Create Journal Entry</span>
+                            <Button variant="outline" size="sm" onClick={() => handleCreateJournal(ex.id)} className="justify-start w-full">
+                              <span className="text-primary text-xs mr-2 shrink-0">+</span>
+                              <span className="truncate">Create Journal Entry</span>
                             </Button>
-                            <Button variant="outline" size="sm" className="justify-start">
-                              <span className="text-muted-foreground text-xs mr-2">📁</span>
-                              <span>Assign Category directly</span>
+                            <Button variant="outline" size="sm" className="justify-start w-full">
+                              <span className="text-muted-foreground text-xs mr-2 shrink-0">📁</span>
+                              <span className="truncate">Assign Category directly</span>
                             </Button>
-                            <Button variant="outline" size="sm" className="justify-start">
-                              <span className="text-muted-foreground text-xs mr-2">👤</span>
-                              <span>Mark as Personal / Dir. Loan</span>
+                            <Button variant="outline" size="sm" className="justify-start w-full">
+                              <span className="text-muted-foreground text-xs mr-2 shrink-0">👤</span>
+                              <span className="truncate">Mark as Personal / Dir. Loan</span>
                             </Button>
                           </div>
                         )}
@@ -716,7 +707,7 @@ export default function BankFeedsDashboard() {
       {selectedLine && (
         <div className="fixed inset-0 z-50 overflow-hidden" role="dialog" aria-modal="true">
           <div
-            className="absolute inset-0 bg-black/20 backdrop-blur-2xs transition-opacity"
+            className="absolute inset-0 bg-black/20"
             onClick={() => setSelectedLine(null)}
           ></div>
 
@@ -831,7 +822,7 @@ export default function BankFeedsDashboard() {
                   </div>
                 )}
 
-                <Button variant="outline" className="w-full justify-center">
+                <Button variant="outline" className="w-full justify-center" onClick={() => { setSelectedLine(null); showToast('Searching for alternative matches...'); }}>
                   <span className="mr-1">🔍</span>
                   <span>Find other match alternative</span>
                 </Button>
@@ -863,7 +854,7 @@ export default function BankFeedsDashboard() {
       {/* PRIORITY EXCEPTIONS INFO MODAL */}
       {showExceptionsInfo && (
         <div className="fixed inset-0 z-50 overflow-hidden" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/20 backdrop-blur-2xs" onClick={() => setShowExceptionsInfo(false)}></div>
+          <div className="absolute inset-0 bg-black/20" onClick={() => setShowExceptionsInfo(false)}></div>
           <div className="flex items-center justify-center min-h-full px-4">
             <div className="bg-white rounded-[var(--radius)] shadow-2xl w-full max-w-lg border border-border p-6" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-start justify-between mb-4">
@@ -956,7 +947,7 @@ function ConnectBankModal({
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-black/20 backdrop-blur-2xs" onClick={onClose}></div>
+      <div className="absolute inset-0 bg-black/20" onClick={onClose}></div>
       <div className="flex items-center justify-center min-h-full px-4">
         <div className="bg-white rounded-[var(--radius)] shadow-2xl w-full max-w-md border border-border" onClick={(e) => e.stopPropagation()}>
           <div className="px-5 py-4 border-b border-border flex items-center justify-between">
