@@ -43,7 +43,7 @@ import { employeeDashboardRoutes } from './modules/employee/EmployeeDashboard/em
 import { ledgerRoutes } from './modules/ledger/ledger.routes';
 import { currencyRoutes } from './modules/currency/currency.routes';
 import { operationHeadRoutes } from './modules/operationHead/operationHead.routes';
-import { bankFeedsRoutes } from './modules/bank_feeds/bank_feeds.routes';
+import { bankFeedsRoutes } from './modules/finance/bank_feeds/bank_feeds.routes';
 
 export async function buildApp() {
   const app = Fastify({ logger: true });

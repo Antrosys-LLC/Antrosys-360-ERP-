@@ -327,6 +327,9 @@ async function main() {
   const { seedEmployeeDashboardData } = await import('./employee_dashboard.seed');
   await seedEmployeeDashboardData();
 
+  const { seedBankFeedsData } = await import('./bank_feeds.seed');
+  await seedBankFeedsData(prisma);
+
   console.log('\n🎉 Seed completed successfully!');
 }
 

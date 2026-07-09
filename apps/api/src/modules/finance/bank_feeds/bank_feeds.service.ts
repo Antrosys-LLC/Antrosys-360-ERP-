@@ -1,11 +1,6 @@
 import { Prisma } from '@prisma/client';
-import { prisma } from '../../config/database';
+import { prisma } from '../../../config/database';
 import type { ListTransactionsQuery } from './bank_feeds.schema';
-
-const accountInclude = {
-  _count: { select: { transactions: true } },
-  connections: true,
-} as const;
 
 const transactionInclude = {
   account: {
@@ -343,7 +338,6 @@ export async function getConnections() {
   });
 
   if (connections.length === 0) {
-    // Fallback to accounts without explicit connections
     const accounts = await prisma.bankAccount.findMany();
     return accounts.map((a) => ({
       bank: `${a.bankName} (API)`,
@@ -412,7 +406,6 @@ export async function createJournalEntry(transactionId: string, userId: string) 
   if (!transaction) return null;
 
   const result = await prisma.$transaction(async (tx) => {
-    // Pick a default ledger account based on transaction type
     const defaultAccount = await tx.ledgerAccount.findFirst({
       where: transaction.transactionType === 'CREDIT'
         ? { code: '1200' }
