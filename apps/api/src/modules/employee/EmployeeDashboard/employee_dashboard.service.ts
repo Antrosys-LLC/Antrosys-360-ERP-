@@ -14,7 +14,41 @@ import {
   formatAttendanceTime,
   startOfUtcDay,
 } from '../../../shared/attendance/attendance-format';
+import { markMissingAttendanceAsAbsent } from '../../../shared/attendance/mark-absences';
 import type { CalendarQuery, CheckInBody, SubmitMoodBody, AnnouncementBody, TeamHolidayBody } from './employee_dashboard.schema';
+
+async function leaveDayNumbersForMonth(
+  employeeId: string,
+  month: number,
+  year: number,
+): Promise<Set<number>> {
+  const monthStart = new Date(Date.UTC(year, month - 1, 1));
+  const monthEnd = new Date(Date.UTC(year, month, 0));
+  const leaves = await prisma.leaveRequest.findMany({
+    where: {
+      employeeId,
+      status: LeaveRequestStatus.APPROVED,
+      startDate: { lte: monthEnd },
+      endDate: { gte: monthStart },
+    },
+    select: { startDate: true, endDate: true },
+  });
+
+  const days = new Set<number>();
+  for (const leave of leaves) {
+    const start = startOfUtcDay(leave.startDate);
+    const end = startOfUtcDay(leave.endDate);
+    for (let cursor = new Date(start); cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+      if (
+        cursor.getUTCFullYear() === year &&
+        cursor.getUTCMonth() + 1 === month
+      ) {
+        days.add(cursor.getUTCDate());
+      }
+    }
+  }
+  return days;
+}
 
 const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
   ANNUAL: 'Annual',
@@ -259,7 +293,6 @@ export async function getDashboard(userId: string) {
     latestPayslip,
     teamAnnouncements,
     upcomingHolidays,
-    monthAttendance,
     holidays,
   ] = await Promise.all([
     prisma.attendance.findUnique({
@@ -293,31 +326,39 @@ export async function getDashboard(userId: string) {
       orderBy: { date: 'asc' },
       take: 5,
     }),
-    prisma.attendance.findMany({
-      where: {
-        employeeId: employee.id,
-        date: {
-          gte: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
-          lte: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)),
-        },
-      },
-    }),
     prisma.companyHoliday.findMany({
       where: calendarHolidayWhere,
     }),
   ]);
 
   const halfDayThreshold = Number(schedule.halfDayThresholdHours);
+  const calendarMonthNum = now.getUTCMonth() + 1;
+  const calendarYearNum = now.getUTCFullYear();
+
+  await markMissingAttendanceAsAbsent({ employeeId: employee.id });
+
+  const refreshedMonthAttendance = await prisma.attendance.findMany({
+    where: {
+      employeeId: employee.id,
+      date: {
+        gte: new Date(Date.UTC(calendarYearNum, calendarMonthNum - 1, 1)),
+        lte: new Date(Date.UTC(calendarYearNum, calendarMonthNum, 0)),
+      },
+    },
+  });
+
   const attendanceMap = new Map<number, AttendanceDayRecord>(
-    monthAttendance.map((a) => [new Date(a.date).getUTCDate(), { status: a.status, hours: a.hours }]),
+    refreshedMonthAttendance.map((a) => [new Date(a.date).getUTCDate(), { status: a.status, hours: a.hours }]),
   );
+  const leaveDays = await leaveDayNumbersForMonth(employee.id, calendarMonthNum, calendarYearNum);
 
   const calendarMonth = buildAttendanceCalendarWeeks(
-    now.getUTCMonth() + 1,
-    now.getUTCFullYear(),
+    calendarMonthNum,
+    calendarYearNum,
     attendanceMap,
     holidays.map((h) => ({ date: h.date, endDate: h.endDate })),
     halfDayThreshold,
+    leaveDays,
   );
 
   const firstName = employee.preferredName || employee.firstName;
@@ -443,7 +484,9 @@ export async function getCalendar(userId: string, query: CalendarQuery) {
         ],
       };
 
-  const [attendanceRecords, holidays] = await Promise.all([
+  await markMissingAttendanceAsAbsent({ employeeId: employee.id });
+
+  const [attendanceRecords, holidays, leaveDays] = await Promise.all([
     prisma.attendance.findMany({
       where: {
         employeeId: employee.id,
@@ -451,6 +494,7 @@ export async function getCalendar(userId: string, query: CalendarQuery) {
       },
     }),
     prisma.companyHoliday.findMany({ where: holidayWhere }),
+    leaveDayNumbersForMonth(employee.id, query.month, query.year),
   ]);
 
   const attendanceMap = new Map<number, AttendanceDayRecord>(
@@ -463,6 +507,7 @@ export async function getCalendar(userId: string, query: CalendarQuery) {
     attendanceMap,
     holidays.map((h) => ({ date: h.date, endDate: h.endDate })),
     halfDayThreshold,
+    leaveDays,
   );
 }
 

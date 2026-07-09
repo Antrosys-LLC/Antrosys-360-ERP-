@@ -5,13 +5,16 @@ import {
   formatPercentChange,
   formatUsdCompact,
 } from '../../shared/currency/exchange-rate';
+import { logFinancialActivity } from '../../shared/finance/financial-activity';
 import type {
   ActivitiesQuery,
   CashflowQuery,
+  CreateEventBody,
   DashboardQuery,
   EventsQuery,
   ExportQuery,
   InvoiceStatusQuery,
+  UpdateEventBody,
 } from './cfo.schema';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
@@ -70,7 +73,7 @@ function netToActivityLevel(absNetUsd: number): number {
 }
 
 async function writeAuditLog(
-  tx: Prisma.TransactionClient,
+  tx: { auditLog: { create: (args: { data: { userId: string; action: string; metadata: Prisma.InputJsonValue } }) => Promise<unknown> } },
   userId: string,
   action: string,
   metadata: Prisma.InputJsonValue,
@@ -398,12 +401,29 @@ export async function acceptTask(taskId: string, userId: string) {
           approvedAt: new Date(),
         },
       });
-      await tx.financialActivity.create({
-        data: {
-          category: 'PAYROLL',
-          title: `Approved ${task.actionTitle}`,
-          occurredAt: new Date(),
-        },
+      await logFinancialActivity(tx, {
+        category: 'PAYROLL',
+        title: `Approved ${task.actionTitle}`,
+        metadata: { taskId, entityId: task.entityId },
+      });
+    } else if (task.entityType === 'VENDOR_EXPENSE') {
+      const payment = await tx.vendorPayment.findUnique({ where: { id: task.entityId } });
+      if (payment) {
+        await tx.vendorPayment.update({
+          where: { id: task.entityId },
+          data: { status: 'PAID', paidAt: new Date() },
+        });
+      }
+      await logFinancialActivity(tx, {
+        category: 'ACCOUNTS_PAYABLE',
+        title: `Approved ${task.actionTitle}`,
+        metadata: { taskId, entityId: task.entityId },
+      });
+    } else if (task.entityType === 'INVOICE') {
+      await logFinancialActivity(tx, {
+        category: 'INVOICE',
+        title: `Approved ${task.actionTitle}`,
+        metadata: { taskId, entityId: task.entityId },
       });
     }
 
@@ -434,6 +454,30 @@ export async function cancelTask(taskId: string, userId: string) {
       await tx.payroll.update({
         where: { id: task.entityId },
         data: { status: 'REJECTED' },
+      });
+      await logFinancialActivity(tx, {
+        category: 'PAYROLL',
+        title: `Rejected ${task.actionTitle}`,
+        metadata: { taskId, entityId: task.entityId },
+      });
+    } else if (task.entityType === 'VENDOR_EXPENSE') {
+      const payment = await tx.vendorPayment.findUnique({ where: { id: task.entityId } });
+      if (payment) {
+        await tx.vendorPayment.update({
+          where: { id: task.entityId },
+          data: { status: 'FAILED' },
+        });
+      }
+      await logFinancialActivity(tx, {
+        category: 'ACCOUNTS_PAYABLE',
+        title: `Rejected ${task.actionTitle}`,
+        metadata: { taskId, entityId: task.entityId },
+      });
+    } else if (task.entityType === 'INVOICE') {
+      await logFinancialActivity(tx, {
+        category: 'INVOICE',
+        title: `Rejected ${task.actionTitle}`,
+        metadata: { taskId, entityId: task.entityId },
       });
     }
 
@@ -531,11 +575,97 @@ export async function getEvents(query: EventsQuery) {
       }),
       title: event.title,
       subtitle: event.subtitle ?? '',
+      description: event.subtitle ?? '',
       date: event.startAt.toISOString().slice(0, 10),
+      startAt: event.startAt.toISOString(),
+      endAt: event.endAt?.toISOString() ?? null,
       unit: event.unitLabel ?? '',
       highlighted: event.isHighlighted,
     })),
   };
+}
+
+function mapEventResponse(event: {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  startAt: Date;
+  endAt: Date | null;
+  unitLabel: string | null;
+  isHighlighted: boolean;
+}) {
+  return {
+    id: event.id,
+    time: event.startAt.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    }),
+    title: event.title,
+    subtitle: event.subtitle ?? '',
+    description: event.subtitle ?? '',
+    date: event.startAt.toISOString().slice(0, 10),
+    startAt: event.startAt.toISOString(),
+    endAt: event.endAt?.toISOString() ?? null,
+    unit: event.unitLabel ?? '',
+    highlighted: event.isHighlighted,
+  };
+}
+
+export async function createEvent(userId: string, body: CreateEventBody) {
+  const event = await prisma.financialEvent.create({
+    data: {
+      title: body.title,
+      subtitle: body.description ?? null,
+      startAt: body.startAt,
+      endAt: body.endAt ?? null,
+      isHighlighted: body.isHighlighted ?? false,
+      createdByUserId: userId,
+    },
+  });
+
+  await writeAuditLog(prisma, userId, 'CFO_EVENT_CREATE', {
+    eventId: event.id,
+    title: event.title,
+  });
+
+  return mapEventResponse(event);
+}
+
+export async function updateEvent(eventId: string, userId: string, body: UpdateEventBody) {
+  const existing = await prisma.financialEvent.findUnique({ where: { id: eventId } });
+  if (!existing) return null;
+
+  const event = await prisma.financialEvent.update({
+    where: { id: eventId },
+    data: {
+      ...(body.title !== undefined ? { title: body.title } : {}),
+      ...(body.description !== undefined ? { subtitle: body.description } : {}),
+      ...(body.startAt !== undefined ? { startAt: body.startAt } : {}),
+      ...(body.endAt !== undefined ? { endAt: body.endAt } : {}),
+      ...(body.isHighlighted !== undefined ? { isHighlighted: body.isHighlighted } : {}),
+    },
+  });
+
+  await writeAuditLog(prisma, userId, 'CFO_EVENT_UPDATE', {
+    eventId: event.id,
+    title: event.title,
+  });
+
+  return mapEventResponse(event);
+}
+
+export async function deleteEvent(eventId: string, userId: string) {
+  const existing = await prisma.financialEvent.findUnique({ where: { id: eventId } });
+  if (!existing) return null;
+
+  await prisma.financialEvent.delete({ where: { id: eventId } });
+  await writeAuditLog(prisma, userId, 'CFO_EVENT_DELETE', {
+    eventId,
+    title: existing.title,
+  });
+
+  return existing;
 }
 
 export async function buildExportCsv(query: ExportQuery, userId: string) {

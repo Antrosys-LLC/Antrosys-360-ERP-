@@ -67,7 +67,15 @@ export interface EmployeeDashboardData {
   }[];
 }
 
-export type DayStatus = 'present' | 'half' | 'absent' | 'holiday' | 'today' | 'none';
+export type DayStatus =
+  | 'present'
+  | 'late'
+  | 'half'
+  | 'absent'
+  | 'leave'
+  | 'holiday'
+  | 'today'
+  | 'none';
 
 export interface CalendarMonthData {
   label: string;

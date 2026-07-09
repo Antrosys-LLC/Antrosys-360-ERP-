@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/database';
+import { logFinancialActivity } from '../../shared/finance/financial-activity';
 import type {
   CreateInvoiceBody,
   ListInvoicesQuery,
@@ -7,6 +8,35 @@ import type {
 } from './invoice.schema';
 
 type MutationAction = 'INVOICE_CREATE' | 'INVOICE_UPDATE' | 'INVOICE_DELETE' | 'INVOICE_SEND';
+
+async function ensureCfoInvoiceApprovalTask(
+  tx: Prisma.TransactionClient,
+  invoice: { id: string; invoiceNumber: string; status: string },
+  requesterUserId: string,
+) {
+  if (!['SENT', 'OVERDUE', 'PARTIALLY_PAID'].includes(invoice.status)) return;
+
+  const cfoUser = await tx.user.findFirst({ where: { role: 'CFO', isActive: true } });
+  const requester = await tx.employee.findFirst({ where: { userId: requesterUserId } });
+  if (!cfoUser || !requester) return;
+
+  const existing = await tx.approvalTask.findFirst({
+    where: { entityType: 'INVOICE', entityId: invoice.id, status: 'PENDING' },
+  });
+  if (existing) return;
+
+  await tx.approvalTask.create({
+    data: {
+      assigneeUserId: cfoUser.id,
+      requesterEmployeeId: requester.id,
+      actionTitle: `Review Invoice ${invoice.invoiceNumber}`,
+      priority: invoice.status === 'OVERDUE' ? 'HIGH' : 'MEDIUM',
+      entityType: 'INVOICE',
+      entityId: invoice.id,
+      dueAt: new Date(),
+    },
+  });
+}
 
 function toDecimal(value: number): Prisma.Decimal {
   return new Prisma.Decimal(value.toFixed(2));
@@ -207,6 +237,12 @@ export async function createInvoice(payload: CreateInvoiceBody, userId: string) 
       status: created.status,
     });
 
+    await logFinancialActivity(tx, {
+      category: 'INVOICE',
+      title: `Created invoice ${created.invoiceNumber}`,
+      metadata: { invoiceId: created.id, status: created.status },
+    });
+
     return created;
   });
 }
@@ -305,6 +341,24 @@ export async function updateInvoice(invoiceId: string, payload: UpdateInvoiceBod
       status: updated.status,
     });
 
+    if (payload.status && payload.status !== current.status) {
+      await logFinancialActivity(tx, {
+        category: 'INVOICE',
+        title: `Invoice ${updated.invoiceNumber} marked ${updated.status}`,
+        metadata: { invoiceId, previousStatus: current.status, status: updated.status },
+      });
+
+      if (updated.status === 'PAID') {
+        await logFinancialActivity(tx, {
+          category: 'INVOICE',
+          title: `Payment received for ${updated.invoiceNumber}`,
+          metadata: { invoiceId, totalDue: Number(updated.totalDue) },
+        });
+      }
+
+      await ensureCfoInvoiceApprovalTask(tx, updated, userId);
+    }
+
     return updated;
   });
 }
@@ -368,6 +422,14 @@ export async function sendInvoice(invoiceId: string, userId: string) {
       previousStatus: existing.status,
       nextStatus: 'SENT',
     });
+
+    await logFinancialActivity(tx, {
+      category: 'INVOICE',
+      title: `Sent invoice ${updated.invoiceNumber}`,
+      metadata: { invoiceId, status: 'SENT' },
+    });
+
+    await ensureCfoInvoiceApprovalTask(tx, updated, userId);
 
     return updated;
   });

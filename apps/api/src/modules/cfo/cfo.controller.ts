@@ -2,11 +2,14 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import {
   activitiesQuerySchema,
   cashflowQuerySchema,
+  createEventBodySchema,
   dashboardQuerySchema,
+  eventParamsSchema,
   eventsQuerySchema,
   exportQuerySchema,
   invoiceStatusQuerySchema,
   taskParamsSchema,
+  updateEventBodySchema,
 } from './cfo.schema';
 import * as cfoService from './cfo.service';
 
@@ -138,6 +141,61 @@ export async function getEventsHandler(request: FastifyRequest, reply: FastifyRe
 
   const events = await cfoService.getEvents(parsed.data);
   return reply.code(200).send({ status: 'success', data: events });
+}
+
+export async function createEventHandler(request: FastifyRequest, reply: FastifyReply) {
+  const parsed = createEventBodySchema.safeParse(request.body);
+  if (!parsed.success) {
+    return sendValidationError(reply, parsed.error.flatten());
+  }
+
+  if (!request.user?.id) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+
+  const event = await cfoService.createEvent(request.user.id, parsed.data);
+  return reply.code(201).send({ status: 'success', data: event });
+}
+
+export async function updateEventHandler(request: FastifyRequest, reply: FastifyReply) {
+  const params = eventParamsSchema.safeParse(request.params);
+  if (!params.success) {
+    return sendValidationError(reply, params.error.flatten());
+  }
+
+  const body = updateEventBodySchema.safeParse(request.body);
+  if (!body.success) {
+    return sendValidationError(reply, body.error.flatten());
+  }
+
+  if (!request.user?.id) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+
+  const event = await cfoService.updateEvent(params.data.eventId, request.user.id, body.data);
+  if (!event) {
+    return reply.code(404).send({ error: 'Event not found' });
+  }
+
+  return reply.code(200).send({ status: 'success', data: event });
+}
+
+export async function deleteEventHandler(request: FastifyRequest, reply: FastifyReply) {
+  const parsed = eventParamsSchema.safeParse(request.params);
+  if (!parsed.success) {
+    return sendValidationError(reply, parsed.error.flatten());
+  }
+
+  if (!request.user?.id) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+
+  const event = await cfoService.deleteEvent(parsed.data.eventId, request.user.id);
+  if (!event) {
+    return reply.code(404).send({ error: 'Event not found' });
+  }
+
+  return reply.code(200).send({ status: 'success', data: event });
 }
 
 export async function exportReportHandler(request: FastifyRequest, reply: FastifyReply) {

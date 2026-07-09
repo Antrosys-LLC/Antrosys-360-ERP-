@@ -641,13 +641,13 @@ export default function CeoDashboardPage() {
       </div>
 
       {/* Quick actions + Client pipeline + System activity + System health */}
-      <div className="grid grid-cols-4 gap-3 min-w-0">
+      <div className="grid grid-cols-4 gap-3 min-w-0 items-stretch">
         {/* Quick actions */}
-        <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-[17px] flex flex-col">
-          <span className="text-[13px] font-semibold text-[#1A1A1A] mb-3">
+        <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-3 flex flex-col h-[220px] min-h-0">
+          <span className="text-[12px] font-semibold text-[#1A1A1A] mb-2 shrink-0">
             Quick actions · CEO
           </span>
-          <div className="flex flex-col gap-1 -mx-1">
+          <div className="flex flex-col gap-0.5 -mx-0.5 overflow-y-auto min-h-0 flex-1">
             {quickActions.map((action) => {
               const Icon =
                 QUICK_ACTION_ICONS[action.id as keyof typeof QUICK_ACTION_ICONS] ??
@@ -657,15 +657,15 @@ export default function CeoDashboardPage() {
                   key={action.id}
                   type="button"
                   onClick={() => handleQuickAction(action)}
-                  className="flex items-center gap-2.5 px-1 py-2 rounded-md hover:bg-[#F8F9FC] text-left transition-colors w-full"
+                  className="flex items-center gap-2 px-1 py-1.5 rounded-md hover:bg-[#F8F9FC] text-left transition-colors w-full"
                 >
                   <div
-                    className={`size-7 rounded-md flex items-center justify-center shrink-0 ${
+                    className={`size-6 rounded-md flex items-center justify-center shrink-0 ${
                       action.tone === "urgent" ? "bg-[#FCEBEB]" : "bg-[#EEEDFE]"
                     }`}
                   >
                     <Icon
-                      size={14}
+                      size={12}
                       strokeWidth={1.8}
                       className={
                         action.tone === "urgent"
@@ -676,21 +676,21 @@ export default function CeoDashboardPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[12px] font-medium text-[#1A1A1A] truncate">
+                      <span className="text-[11px] font-medium text-[#1A1A1A] truncate">
                         {action.title}
                       </span>
                       {action.tone === "urgent" && (
-                        <span className="text-[9px] font-medium text-[#791F1F] bg-[#FCEBEB] px-1.5 py-px rounded-full shrink-0">
+                        <span className="text-[8px] font-medium text-[#791F1F] bg-[#FCEBEB] px-1 py-px rounded-full shrink-0">
                           Urgent
                         </span>
                       )}
                     </div>
-                    <span className="text-[10px] text-[#AAAAAA] truncate block">
+                    <span className="text-[9px] text-[#AAAAAA] truncate block">
                       {action.meta}
                     </span>
                   </div>
                   <ChevronRight
-                    size={14}
+                    size={12}
                     strokeWidth={1.8}
                     className="text-[#CCCCCC] shrink-0"
                   />
@@ -701,27 +701,27 @@ export default function CeoDashboardPage() {
         </div>
 
         {/* Client pipeline */}
-        <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-[17px] flex flex-col">
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-[13px] font-semibold text-[#1A1A1A]">
+        <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-3 flex flex-col h-[220px] min-h-0">
+          <div className="flex items-center justify-between mb-2 shrink-0">
+            <span className="text-[12px] font-semibold text-[#1A1A1A]">
               Client pipeline
             </span>
-            <span className="text-[10px] text-[#AAAAAA]">
+            <span className="text-[9px] text-[#AAAAAA]">
               {clientPipeline?.totalLabel ?? "—"}
             </span>
           </div>
-          <div className="flex flex-col gap-2.5 flex-1">
+          <div className="flex flex-col gap-1.5 flex-1 overflow-y-auto min-h-0">
             {(clientPipeline?.stages ?? []).map((stage) => (
               <div key={stage.label}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[11px] text-[#888888]">
+                <div className="flex items-center justify-between mb-0.5">
+                  <span className="text-[10px] text-[#888888]">
                     {stage.label}
                   </span>
-                  <span className="text-[11px] font-medium text-[#1A1A1A]">
+                  <span className="text-[10px] font-medium text-[#1A1A1A]">
                     {stage.count}
                   </span>
                 </div>
-                <div className="h-1.5 w-full rounded-full bg-[#F0F0F0] overflow-hidden">
+                <div className="h-1 w-full rounded-full bg-[#F0F0F0] overflow-hidden">
                   <div
                     className="h-full bg-[#7B68EE] rounded-full"
                     style={{ width: `${(stage.count / stage.max) * 100}%` }}
@@ -730,55 +730,55 @@ export default function CeoDashboardPage() {
               </div>
             ))}
           </div>
-          <div className="border-t border-[#E0E0E0] mt-3 pt-3">
-            <div className="flex items-center gap-4 mb-2">
+          <div className="border-t border-[#E0E0E0] mt-2 pt-2 shrink-0">
+            <div className="flex items-center gap-3 mb-1">
               {(clientPipeline?.footerStats ?? []).map((stat) => (
                 <div key={stat.label}>
-                  <span className="text-[9px] text-[#AAAAAA] block">
+                  <span className="text-[8px] text-[#AAAAAA] block">
                     {stat.label}
                   </span>
-                  <span className="text-[12px] font-semibold text-[#1A1A1A]">
+                  <span className="text-[11px] font-semibold text-[#1A1A1A]">
                     {stat.value}
                   </span>
                 </div>
               ))}
             </div>
-            <span className="text-[10px] text-[#AAAAAA]">
+            <span className="text-[9px] text-[#AAAAAA] truncate block">
               {clientPipeline?.topClientLabel ?? ""}
             </span>
           </div>
         </div>
 
         {/* System activity */}
-        <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-[17px] flex flex-col min-w-0 overflow-hidden">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[13px] font-semibold text-[#1A1A1A]">
+        <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-3 flex flex-col h-[220px] min-w-0 min-h-0 overflow-hidden">
+          <div className="flex items-center justify-between mb-2 shrink-0">
+            <span className="text-[12px] font-semibold text-[#1A1A1A]">
               System activity
             </span>
-            <span className="flex items-center gap-1 text-[10px] text-[#27500A] font-medium">
-              <CircleDot size={10} strokeWidth={2.5} />
+            <span className="flex items-center gap-1 text-[9px] text-[#27500A] font-medium">
+              <CircleDot size={9} strokeWidth={2.5} />
               Live
             </span>
           </div>
-          <div className="flex flex-col gap-3 flex-1">
+          <div className="flex flex-col gap-2 flex-1 overflow-y-auto min-h-0 pr-0.5">
             {systemActivity.map((item, idx) => (
-              <div key={idx} className="flex items-start gap-2.5 min-w-0">
+              <div key={idx} className="flex items-start gap-2 min-w-0">
                 <span
-                  className="size-1.5 rounded-full mt-1.5 shrink-0"
+                  className="size-1.5 rounded-full mt-1 shrink-0"
                   style={{ backgroundColor: activityToneDot(item.tone) }}
                 />
                 <div className="min-w-0 flex-1 overflow-hidden">
                   <span
-                    className="text-[11.5px] text-[#1A1A1A] leading-snug block break-all line-clamp-2"
+                    className="text-[10.5px] text-[#1A1A1A] leading-snug block break-all line-clamp-2"
                     title={item.title}
                   >
                     {item.title}
                   </span>
                   <div className="flex items-center justify-between gap-2 mt-0.5 min-w-0">
-                    <span className="text-[10px] text-[#AAAAAA] truncate min-w-0">
+                    <span className="text-[9px] text-[#AAAAAA] truncate min-w-0">
                       {item.meta}
                     </span>
-                    <span className="text-[10px] text-[#AAAAAA] shrink-0">
+                    <span className="text-[9px] text-[#AAAAAA] shrink-0">
                       {item.time}
                     </span>
                   </div>
@@ -789,18 +789,18 @@ export default function CeoDashboardPage() {
           <button
             type="button"
             onClick={() => router.push("/admin/audit-logs")}
-            className="text-[11px] font-medium text-[#534AB7] mt-3 pt-3 border-t border-[#E0E0E0] text-left hover:underline"
+            className="text-[10px] font-medium text-[#534AB7] mt-2 pt-2 border-t border-[#E0E0E0] text-left hover:underline shrink-0"
           >
             View full audit log →
           </button>
         </div>
 
         {/* System health */}
-        <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-[17px] flex flex-col">
-          <span className="text-[13px] font-semibold text-[#1A1A1A] mb-3">
+        <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-3 flex flex-col h-[220px] min-h-0">
+          <span className="text-[12px] font-semibold text-[#1A1A1A] mb-2 shrink-0">
             System health
           </span>
-          <div className="flex flex-col gap-2 flex-1">
+          <div className="flex flex-col gap-1.5 flex-1 overflow-y-auto min-h-0">
             {systemHealth.map((service) => (
               <div
                 key={service.label}
@@ -811,23 +811,23 @@ export default function CeoDashboardPage() {
                     className="size-1.5 rounded-full"
                     style={{ backgroundColor: statusDotColor(service.status) }}
                   />
-                  <span className="text-[11.5px] text-[#1A1A1A]">
+                  <span className="text-[10.5px] text-[#1A1A1A]">
                     {service.label}
                   </span>
                 </div>
                 <span
-                  className={`text-[9px] font-medium px-1.5 py-0.5 rounded-md ${statusBadgeClasses(service.status)}`}
+                  className={`text-[8px] font-medium px-1.5 py-0.5 rounded-md ${statusBadgeClasses(service.status)}`}
                 >
                   {service.status}
                 </span>
               </div>
             ))}
           </div>
-          <div className="border-t border-[#E0E0E0] mt-3 pt-3 flex flex-col gap-1.5">
-            <span className="text-[11px] font-medium text-[#27500A] bg-[#EAF3DE] px-2 py-1 rounded-md text-center">
+          <div className="border-t border-[#E0E0E0] mt-2 pt-2 flex flex-col gap-1 shrink-0">
+            <span className="text-[10px] font-medium text-[#27500A] bg-[#EAF3DE] px-2 py-0.5 rounded-md text-center">
               {systemUptime.pct} · {systemUptime.period}
             </span>
-            <span className="text-[10px] text-[#AAAAAA] text-center">
+            <span className="text-[9px] text-[#AAAAAA] text-center">
               {systemUptime.lastChecked}
             </span>
           </div>

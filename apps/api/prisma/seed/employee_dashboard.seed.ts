@@ -2,7 +2,6 @@ import {
   PrismaClient,
   LeaveType,
   LeaveRequestStatus,
-  Department,
 } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -158,45 +157,17 @@ export async function seedEmployeeDashboardData() {
     }
   }
 
-  const announcementSpecs = [
-    {
-      email: 'fawad.khan@antrosys.com',
-      title: 'Engineering All-Hands',
-      content: 'Q3 Engineering All-Hands meeting schedule update',
-      hoursAgo: 2,
-    },
-    {
-      email: 'bilal.hassan@antrosys.com',
-      title: 'Firewall Protocol',
-      content: 'Please review the new firewall deployment protocol',
-      hoursAgo: 26,
-    },
-    {
-      email: 'hina.baig@antrosys.com',
-      title: 'Office Maintenance',
-      content: 'Office maintenance scheduled for the 3rd floor next week',
-      hoursAgo: 72,
-    },
+  // One-time cleanup: remove previously seeded demo team announcements.
+  const demoAnnouncementContents = [
+    'Q3 Engineering All-Hands meeting schedule update',
+    'Please review the new firewall deployment protocol',
+    'Office maintenance scheduled for the 3rd floor next week',
   ];
-
-  for (const spec of announcementSpecs) {
-    const author = await prisma.employee.findFirst({ where: { user: { email: spec.email } } });
-    if (!author) continue;
-
-    const existing = await prisma.announcement.findFirst({
-      where: { authorId: author.id, content: spec.content },
-    });
-    if (existing) continue;
-
-    await prisma.announcement.create({
-      data: {
-        title: spec.title,
-        content: spec.content,
-        authorId: author.id,
-        department: Department.ENGINEERING,
-        createdAt: new Date(Date.now() - spec.hoursAgo * 60 * 60 * 1000),
-      },
-    });
+  const cleaned = await prisma.announcement.deleteMany({
+    where: { content: { in: demoAnnouncementContents } },
+  });
+  if (cleaned.count > 0) {
+    console.log(`  🧹 Removed ${cleaned.count} demo team announcement(s)`);
   }
 
   console.log(`  ✅ Employee dashboard seed complete (${teamCount} team members under Sara)`);

@@ -40,9 +40,20 @@ export interface CfoEvent {
   time: string;
   title: string;
   subtitle: string;
+  description?: string;
   date: string;
+  startAt?: string;
+  endAt?: string | null;
   unit: string;
   highlighted: boolean;
+}
+
+export interface CfoEventInput {
+  title: string;
+  description?: string | null;
+  startAt: string;
+  endAt?: string | null;
+  isHighlighted?: boolean;
 }
 
 export interface CfoDashboardData {
@@ -101,6 +112,26 @@ export async function fetchCfoEvents(calendarOffset: number) {
       events: CfoEvent[];
     };
   }>('/cfo/events', { params: { calendarOffset } });
+  return data.data;
+}
+
+export async function createCfoEvent(body: CfoEventInput) {
+  const { data } = await apiClient.post<{ status: string; data: CfoEvent }>('/cfo/events', body);
+  return data.data;
+}
+
+export async function updateCfoEvent(eventId: string, body: Partial<CfoEventInput>) {
+  const { data } = await apiClient.patch<{ status: string; data: CfoEvent }>(
+    `/cfo/events/${eventId}`,
+    body,
+  );
+  return data.data;
+}
+
+export async function deleteCfoEvent(eventId: string) {
+  const { data } = await apiClient.delete<{ status: string; data: CfoEvent }>(
+    `/cfo/events/${eventId}`,
+  );
   return data.data;
 }
 

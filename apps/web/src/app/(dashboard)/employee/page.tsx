@@ -44,13 +44,17 @@ const LEAVE_ICONS = {
 function dayBgColor(status: DayStatus): string {
   switch (status) {
     case 'present':
-      return '#EEEDFE';
+      return '#C4BDF8';
+    case 'late':
+      return '#FBBF24';
     case 'half':
       return '#86EFAC';
     case 'absent':
       return '#F8B4B4';
+    case 'leave':
+      return '#93C5FD';
     case 'holiday':
-      return '#FDE68A';
+      return '#BFDBFE';
     case 'today':
       return '#7B68EE';
     default:
@@ -248,11 +252,14 @@ export default function EmployeeDashboardPage() {
 
   const handleAttendanceToggle = () => {
     if (attendanceActionPending || hasCheckedOut) return;
-    setAttendanceActionPending(true);
     if (!hasCheckedIn) {
+      setAttendanceActionPending(true);
       checkInMutation.mutate();
       return;
     }
+    const confirmed = window.confirm('Check out for today? This will finalize your attendance hours.');
+    if (!confirmed) return;
+    setAttendanceActionPending(true);
     checkOutMutation.mutate();
   };
 

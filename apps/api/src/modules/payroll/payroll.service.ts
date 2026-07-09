@@ -17,6 +17,7 @@ import {
   toPayrollDecimal,
   upsertPayslipFromLineItem,
 } from '../../shared/payroll/payroll-calc';
+import { logFinancialActivity } from '../../shared/finance/financial-activity';
 import type {
   ApproveLinesBody,
   DashboardQuery,
@@ -717,12 +718,10 @@ export async function submitForApproval(payrollId: string, userId: string) {
       });
     }
 
-    await tx.financialActivity.create({
-      data: {
-        category: 'PAYROLL',
-        title: `Submitted ${payroll.batchNumber} for approval`,
-        occurredAt: new Date(),
-      },
+    await logFinancialActivity(tx, {
+      category: 'PAYROLL',
+      title: `Submitted ${payroll.batchNumber} for approval`,
+      metadata: { payrollId, batchNumber: payroll.batchNumber },
     });
   });
 
@@ -886,12 +885,10 @@ export async function disbursePayroll(payrollId: string) {
       data: { status: 'PAID', paidAt: new Date() },
     });
 
-    await tx.financialActivity.create({
-      data: {
-        category: 'PAYROLL',
-        title: `Disbursed payroll ${payroll.batchNumber}`,
-        occurredAt: new Date(),
-      },
+    await logFinancialActivity(tx, {
+      category: 'PAYROLL',
+      title: `Disbursed payroll ${payroll.batchNumber}`,
+      metadata: { payrollId, batchNumber: payroll.batchNumber },
     });
   });
 
