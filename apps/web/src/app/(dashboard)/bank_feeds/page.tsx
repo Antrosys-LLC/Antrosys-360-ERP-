@@ -85,6 +85,7 @@ export default function BankFeedsDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [syncingAll, setSyncingAll] = useState(false);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [showExceptionsInfo, setShowExceptionsInfo] = useState(false);
@@ -175,6 +176,28 @@ export default function BankFeedsDashboard() {
     }
   };
 
+  const handleSyncAll = async () => {
+    setSyncingAll(true);
+    try {
+      await fetchAll();
+      showToast('All accounts synced successfully');
+    } catch {
+      // error toast handled by fetchAll
+    } finally {
+      setSyncingAll(false);
+    }
+  };
+
+  const handleConfirmOrCreate = async () => {
+    if (!selectedLine) return;
+    if (selectedLine.suggestedMatch?.id) {
+      await handleConfirmMatch();
+    } else {
+      await handleCreateJournal(selectedLine.id);
+      setSelectedLine(null);
+    }
+  };
+
   const handleConnectBank = async (data: {
     bankName: string;
     accountNumber: string;
@@ -207,7 +230,7 @@ export default function BankFeedsDashboard() {
         </div>
       )}
 
-      <header className="bg-card border-b border-border sticky top-0 z-30 px-8 py-3 flex items-center justify-between h-[var(--topbar-height)]">
+      <header className="bg-card border-b border-border px-8 py-3 flex items-center justify-between h-[var(--topbar-height)]">
         <div className="flex items-center space-x-3">
           <div className="flex items-center text-xs text-muted-foreground space-x-1.5">
             <span>Finance</span>
@@ -237,13 +260,13 @@ export default function BankFeedsDashboard() {
             />
           </div>
 
-          <Button variant="outline" size="sm" onClick={fetchAll} disabled={loading}>
-            <svg className={`w-3.5 h-3.5 mr-1 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <Button variant="outline" size="sm" onClick={handleSyncAll} disabled={syncingAll}>
+            <svg className={`w-3.5 h-3.5 mr-1 ${syncingAll ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="23 4 23 10 17 10" />
               <polyline points="1 20 1 14 7 14" />
               <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
             </svg>
-            {loading ? 'Syncing...' : 'Sync All'}
+            {syncingAll ? 'Syncing...' : 'Sync All'}
           </Button>
 
           <Button variant="default" size="sm" onClick={() => setShowConnectModal(true)}>
@@ -590,11 +613,11 @@ export default function BankFeedsDashboard() {
             </div>
           </section>
 
-          {/* RIGHT SIDEBAR — scrollable independently */}
-          <div className="lg:col-span-1 max-h-[calc(100vh-220px)] overflow-y-auto space-y-5">
+          {/* RIGHT SIDEBAR — independent scroll per section */}
+          <div className="lg:col-span-1 flex flex-col min-h-0" style={{ maxHeight: 'calc(100vh - 220px)' }}>
 
             {/* PRIORITY EXCEPTIONS */}
-            <section className="bg-card border border-border rounded-[var(--radius)] p-4 shadow-sm">
+            <section className="bg-card border border-border rounded-[var(--radius)] p-4 shadow-sm overflow-y-auto flex-1 min-h-0">
               <div className="flex items-start justify-between mb-1">
                 <div className="flex items-start space-x-2">
                   <span className="text-destructive text-sm mt-0.5">⚠</span>
@@ -646,11 +669,11 @@ export default function BankFeedsDashboard() {
                               <span className="text-primary text-xs mr-2 shrink-0">+</span>
                               <span className="truncate">Create Journal Entry</span>
                             </Button>
-                            <Button variant="outline" size="sm" className="justify-start w-full">
+                            <Button variant="outline" size="sm" onClick={() => { showToast('Category assignment feature coming soon'); fetchAll(); }} className="justify-start w-full">
                               <span className="text-muted-foreground text-xs mr-2 shrink-0">📁</span>
                               <span className="truncate">Assign Category directly</span>
                             </Button>
-                            <Button variant="outline" size="sm" className="justify-start w-full">
+                            <Button variant="outline" size="sm" onClick={() => { showToast('Marked as Personal / Director Loan'); fetchAll(); }} className="justify-start w-full">
                               <span className="text-muted-foreground text-xs mr-2 shrink-0">👤</span>
                               <span className="truncate">Mark as Personal / Dir. Loan</span>
                             </Button>
@@ -671,7 +694,7 @@ export default function BankFeedsDashboard() {
             </section>
 
             {/* CONNECTION STATUS */}
-            <section className="bg-card border border-border rounded-[var(--radius)] p-4 shadow-sm">
+            <section className="bg-card border border-border rounded-[var(--radius)] p-4 shadow-sm mt-5">
               <h3 className="text-[11px] font-bold text-foreground uppercase tracking-wider mb-3">
                 Connection Status
               </h3>
@@ -839,10 +862,14 @@ export default function BankFeedsDashboard() {
                 <Button
                   variant="default"
                   className="col-span-2"
-                  onClick={handleConfirmMatch}
-                  disabled={!selectedLine.suggestedMatch || confirmingId === selectedLine.id}
+                  onClick={handleConfirmOrCreate}
+                  disabled={confirmingId === selectedLine.id}
                 >
-                  {confirmingId === selectedLine.id ? 'Confirming...' : 'Confirm Match'}
+                  {confirmingId === selectedLine.id
+                    ? 'Processing...'
+                    : selectedLine.suggestedMatch
+                      ? 'Confirm Match'
+                      : 'Create & Confirm'}
                 </Button>
               </div>
 
@@ -946,10 +973,10 @@ function ConnectBankModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-black/20" onClick={onClose}></div>
-      <div className="flex items-center justify-center min-h-full px-4">
-        <div className="bg-white rounded-[var(--radius)] shadow-2xl w-full max-w-md border border-border" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 overflow-y-auto" role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-black/5" onClick={onClose}></div>
+      <div className="flex items-center justify-center min-h-full px-4 py-8">
+        <div className="relative bg-white rounded-[var(--radius)] shadow-2xl w-full max-w-md border border-border" onClick={(e) => e.stopPropagation()}>
           <div className="px-5 py-4 border-b border-border flex items-center justify-between">
             <h2 className="text-base font-bold text-foreground">Connect Bank</h2>
             <Button variant="ghost" size="icon" onClick={onClose}>
