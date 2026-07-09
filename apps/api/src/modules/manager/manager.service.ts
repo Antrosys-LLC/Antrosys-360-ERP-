@@ -111,7 +111,7 @@ export async function getDashboardData(userId: string, userRole: string) {
     
     if (managedTeam) {
       teamEmployees = await prisma.employee.findMany({
-        where: { teamId: managedTeam.id, isActive: true },
+        where: { teamId: managedTeam.id, isActive: true, id: { not: employee.id } },
         include: { user: { select: { email: true } } }
       });
     }
@@ -539,7 +539,7 @@ export async function postAnnouncement(userId: string, userRole: string, payload
       });
       if (managedTeam) {
         teamEmployees = await tx.employee.findMany({
-          where: { teamId: managedTeam.id, isActive: true },
+        where: { teamId: managedTeam.id, isActive: true, id: { not: employee.id } },
         });
       }
     } else {
@@ -767,7 +767,7 @@ export async function generateKpiReportCsv(userId: string, userRole: string, tea
 
   const today = getTodayUtc();
   const managedTeam =
-    userRole === 'MANAGER' || userRole === 'SUB_MANAGER'
+    userRole === 'SUB_MANAGER'
       ? await prisma.team.findUnique({ where: { managerId: employee.id } })
       : null;
 
