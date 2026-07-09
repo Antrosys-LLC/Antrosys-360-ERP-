@@ -735,6 +735,7 @@ export default function ManagerDashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [announcementOpen, setAnnouncementOpen] = useState(false);
+  const [approveAllConfirmOpen, setApproveAllConfirmOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedKpiTeamId, setSelectedKpiTeamId] = useState<string | null>(null);
 
@@ -868,7 +869,7 @@ export default function ManagerDashboard() {
 
   const handleQuickAction = async (actionName: string) => {
     if (actionName === 'Approve all leave') {
-      approveAllMutation.mutate();
+      setApproveAllConfirmOpen(true);
       return;
     }
     if (actionName === 'Post team announcement') {
@@ -1267,6 +1268,43 @@ export default function ManagerDashboard() {
           onSubmit={(title, content) => announcementMutation.mutate({ title, content })}
           isSubmitting={announcementMutation.isPending}
         />
+      )}
+
+      {/* Approve All Leave Confirmation */}
+      {approveAllConfirmOpen && (
+        <>
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={() => setApproveAllConfirmOpen(false)} />
+          <div className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm rounded-xl border bg-card p-6 shadow-2xl">
+            <h3 className="font-semibold text-foreground text-lg mb-2">Approve All Leave Requests</h3>
+            <p className="text-sm text-muted-foreground mb-6">
+              Are you sure you want to approve all pending leave requests? This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setApproveAllConfirmOpen(false)}
+                disabled={approveAllMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  approveAllMutation.mutate();
+                  setApproveAllConfirmOpen(false);
+                }}
+                disabled={approveAllMutation.isPending}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                {approveAllMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <ClipboardCheck className="h-4 w-4 mr-2" />
+                )}
+                Approve All
+              </Button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

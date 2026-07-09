@@ -220,48 +220,6 @@ async function main() {
     }
   }
 
-  console.log('📅 Seeding daily attendance logs...');
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-
-  const attendanceData: {
-    email: string;
-    checkIn: string | null;
-    status: 'PRESENT' | 'ABSENT' | 'LATE' | 'LEAVE';
-    hours: number;
-  }[] = [
-    { email: 'sara.javed@antrosys.com', checkIn: '08:45', status: 'PRESENT', hours: 4.2 },
-    { email: 'omar.mirza@antrosys.com', checkIn: '09:02', status: 'PRESENT', hours: 3.9 },
-    { email: 'bilal.hassan@antrosys.com', checkIn: null, status: 'ABSENT', hours: 0 },
-    { email: 'hina.baig@antrosys.com', checkIn: null, status: 'LEAVE', hours: 0 },
-    { email: 'fawad.khan@antrosys.com', checkIn: '10:15', status: 'LATE', hours: 2.7 },
-    { email: 'nadia.qureshi@antrosys.com', checkIn: '08:50', status: 'PRESENT', hours: 4.1 },
-    { email: 'maria.raza@antrosys.com', checkIn: '08:55', status: 'PRESENT', hours: 4.0 },
-  ];
-
-  for (const item of attendanceData) {
-    const emp = await prisma.employee.findFirst({ where: { user: { email: item.email } } });
-    if (emp) {
-      let checkInDate = null;
-      if (item.checkIn) {
-        const [h, m] = item.checkIn.split(':').map(Number);
-        checkInDate = new Date();
-        checkInDate.setHours(h, m, 0, 0);
-      }
-      await prisma.attendance.upsert({
-        where: { employeeId_date: { employeeId: emp.id, date: today } },
-        update: {},
-        create: {
-          employeeId: emp.id,
-          date: today,
-          status: item.status,
-          checkIn: checkInDate,
-          hours: item.hours,
-        },
-      });
-    }
-  }
-
   console.log('✈️ Seeding leave requests...');
   const leaveData: {
     email: string;
@@ -317,6 +275,8 @@ async function main() {
   }
 
   console.log('📊 Seeding KPIs and Mood Pulse metrics...');
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
   await prisma.departmentKpi.upsert({
     where: { department: 'Operations' },
     update: {},

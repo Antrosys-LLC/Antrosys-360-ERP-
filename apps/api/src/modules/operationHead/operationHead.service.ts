@@ -7,6 +7,7 @@ import {
 } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { incrementLeaveBalanceOnApproval } from '../../shared/leaveBalance/increment-leave-balance';
+import { notifyUsersByRoles } from '../../shared/notifications/notify-by-role';
 import type {
   DashboardQuery,
   DeptFilter,
@@ -220,7 +221,7 @@ export async function getDashboard(query: DashboardQuery) {
   const today = getTodayUtc();
   const employeeWhere = buildEmployeeWhere(query.department);
 
-  const [employees, attendancesToday, pendingLeaves, pendingOpsLeaves, opsLeaveQueue] = await Promise.all([
+  const [employees, attendancesToday, opsPendingLeaves, opsLeaveQueue, recentManpowerRequests] = await Promise.all([
     prisma.employee.findMany({
       where: employeeWhere,
       select: {
@@ -236,16 +237,22 @@ export async function getDashboard(query: DashboardQuery) {
       where: { date: today, employee: employeeWhere },
     }),
     prisma.leaveRequest.findMany({
-      where: { status: { in: ['PENDING', 'PENDING_OPS_HEAD'] } },
+      where: { status: 'PENDING_OPS_HEAD' },
       select: { type: true },
     }),
-    prisma.leaveRequest.count({ where: { status: 'PENDING_OPS_HEAD' } }),
     prisma.leaveRequest.findMany({
       where: { status: 'PENDING_OPS_HEAD' },
       orderBy: { createdAt: 'asc' },
       take: 5,
       include: {
         employee: { select: { firstName: true, lastName: true } },
+      },
+    }),
+    prisma.manpowerRequest.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      include: {
+        requestedBy: { select: { email: true } },
       },
     }),
   ]);
@@ -267,10 +274,11 @@ export async function getDashboard(query: DashboardQuery) {
 
   const attendanceRatePct = total > 0 ? Math.round(((present + late) / total) * 100) : 0;
 
-  const leaveTypeCounts: Record<string, number> = { Annual: 0, Sick: 0, Casual: 0 };
-  for (const leave of pendingLeaves) {
+  const leaveTypeCounts: Record<string, number> = { Annual: 0, Sick: 0, Casual: 0, Other: 0 };
+  for (const leave of opsPendingLeaves) {
     const label = leaveTypeLabel(leave.type);
     if (label in leaveTypeCounts) leaveTypeCounts[label]++;
+    else leaveTypeCounts.Other++;
   }
 
   const attendanceDots = employees.slice(0, 20).map((emp) => {
@@ -324,7 +332,7 @@ export async function getDashboard(query: DashboardQuery) {
     },
     pendingLeave: {
       label: 'Pending leave',
-      value: pendingLeaves.length,
+      value: opsPendingLeaves.length,
       valueColor: '#C2840A',
       types: [
         { label: 'Annual', count: leaveTypeCounts.Annual },
@@ -357,7 +365,15 @@ export async function getDashboard(query: DashboardQuery) {
       reason: req.reason,
     })),
     manpowerGapsDetail: manpowerGaps.detail,
-    pendingOpsHeadCount: pendingOpsLeaves,
+    pendingOpsHeadCount: opsPendingLeaves.length,
+    recentManpowerRequests: recentManpowerRequests.map((req) => ({
+      id: req.id,
+      department: req.department.charAt(0) + req.department.slice(1).toLowerCase(),
+      headcount: req.additionalHeadcount,
+      status: req.status,
+      notes: req.notes,
+      createdAt: req.createdAt.toISOString(),
+    })),
   };
 }
 
@@ -609,37 +625,36 @@ export async function overrideAttendanceStatus(
 
 export async function raiseManpowerRequest(body: RaiseManpowerRequestBody, userId: string) {
   return prisma.$transaction(async (tx) => {
-    const existing = await tx.departmentHeadcountPlan.findUnique({
-      where: { department: body.department },
+    const request = await tx.manpowerRequest.create({
+      data: {
+        department: body.department,
+        additionalHeadcount: body.additionalHeadcount,
+        notes: body.notes,
+        requestedByUserId: userId,
+      },
     });
 
-    const plan = existing
-      ? await tx.departmentHeadcountPlan.update({
-          where: { department: body.department },
-          data: { targetHeadcount: existing.targetHeadcount + body.additionalHeadcount },
-        })
-      : await tx.departmentHeadcountPlan.create({
-          data: {
-            department: body.department,
-            targetHeadcount: body.additionalHeadcount,
-            criticalGapThreshold: 2,
-          },
-        });
+    await notifyUsersByRoles(
+      tx,
+      ['HR_HEAD'],
+      'New Manpower Request',
+      `${body.additionalHeadcount} headcount requested for ${body.department.replace('_', ' ')}${body.notes ? `: ${body.notes}` : ''}`,
+    );
 
     await tx.auditLog.create({
       data: {
         userId,
         action: 'OPS_HEAD_RAISE_MANPOWER_REQUEST',
         metadata: {
+          requestId: request.id,
           department: body.department,
           additionalHeadcount: body.additionalHeadcount,
-          newTarget: plan.targetHeadcount,
           notes: body.notes,
         },
       },
     });
 
-    return plan;
+    return request;
   });
 }
 

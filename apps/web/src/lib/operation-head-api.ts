@@ -47,6 +47,14 @@ export interface OpsDashboardData {
   }[];
   manpowerGapsDetail: { dept: string; level: 'Critical' | 'Standard'; count: number }[];
   pendingOpsHeadCount: number;
+  recentManpowerRequests: {
+    id: string;
+    department: string;
+    headcount: number;
+    status: string;
+    notes: string | null;
+    createdAt: string;
+  }[];
 }
 
 export interface OpsLeaveRequest {

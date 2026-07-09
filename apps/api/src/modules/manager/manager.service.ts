@@ -1,6 +1,7 @@
 import { AttendanceStatus, LeaveRequestStatus } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { incrementLeaveBalanceOnApproval } from '../../shared/leaveBalance/increment-leave-balance';
+import { notifyUsersByRoles } from '../../shared/notifications/notify-by-role';
 import { PostAnnouncementInput } from './manager.schema';
 import {
   buildAttendanceTable,
@@ -249,8 +250,6 @@ export async function getDashboardData(userId: string, userRole: string) {
     };
   });
 
-  const departmentName = employee.department || 'Operations';
-
   const announcements = await prisma.announcement.findMany({
     take: 50,
     orderBy: { createdAt: 'desc' },
@@ -272,17 +271,26 @@ export async function getDashboardData(userId: string, userRole: string) {
     createdAt: ann.createdAt.toISOString(),
   }));
 
-  // 10. Fetch weekly mood pulse stats
-  const weeklyMood = await prisma.teamMoodPulse.findFirst({
-    where: { department: departmentName },
-    orderBy: { date: 'desc' },
-  });
+  // 10. Fetch weekly mood pulse from team check-out moods
+  const weekStart = new Date();
+  weekStart.setUTCDate(weekStart.getUTCDate() - 6);
+  weekStart.setUTCHours(0, 0, 0, 0);
+
+  const teamMemberIds = teamEmployees.map((e) => e.id);
+  const weeklyMoods = teamMemberIds.length > 0
+    ? await prisma.employeeDailyMood.findMany({
+        where: {
+          employeeId: { in: teamMemberIds },
+          date: { gte: weekStart },
+        },
+      })
+    : [];
 
   const moodPulse = {
-    happy: weeklyMood?.happy || 4,
-    neutral: weeklyMood?.neutral || 3,
-    stressed: weeklyMood?.stressed || 2,
-    unknown: weeklyMood?.unknown || 1,
+    happy: weeklyMoods.filter((m) => m.mood === 'HAPPY').length,
+    neutral: weeklyMoods.filter((m) => m.mood === 'NEUTRAL').length,
+    stressed: weeklyMoods.filter((m) => m.mood === 'STRESSED').length,
+    unknown: Math.max(0, teamMemberIds.length - weeklyMoods.length),
   };
 
   const { presentCount, absentCount } = teamSchedule;
@@ -369,6 +377,15 @@ export async function updateLeaveStatus(leaveId: string, status: 'APPROVED' | 'R
       });
     }
 
+    if (nextStatus === 'PENDING_OPS_HEAD') {
+      await notifyUsersByRoles(
+        tx,
+        ['OPERATIONS_HEAD'],
+        'Leave Pending Operations Review',
+        `${leave.employee.firstName} ${leave.employee.lastName}'s ${leave.type} leave (${leave.durationDays} day(s)) requires your approval.`,
+      );
+    }
+
     // Write audit log
     await tx.auditLog.create({
       data: {
@@ -423,37 +440,60 @@ export async function approveAllLeaves(userId: string, userRole: string) {
       return { count: 0 };
     }
 
-    const updated = await tx.leaveRequest.updateMany({
-      where: {
-        id: { in: pendingLeaves.map((l) => l.id) },
-      },
-      data: {
-        status: 'APPROVED',
-        approvedById: employee.id,
-      },
-    });
+    let approvedCount = 0;
 
     for (const leave of pendingLeaves) {
-      await incrementLeaveBalanceOnApproval(tx, {
-        employeeId: leave.employeeId,
-        leaveType: leave.type,
-        startDate: leave.startDate,
-        durationDays: leave.durationDays,
+      const isFinalApproval = !leave.requiresOpsHeadApproval;
+      const nextStatus: LeaveRequestStatus =
+        leave.requiresOpsHeadApproval ? 'PENDING_OPS_HEAD' : 'APPROVED';
+
+      await tx.leaveRequest.update({
+        where: { id: leave.id },
+        data: {
+          status: nextStatus,
+          approvedById: isFinalApproval ? employee.id : null,
+          managerApprovedById: leave.requiresOpsHeadApproval ? employee.id : undefined,
+          managerApprovedAt: leave.requiresOpsHeadApproval ? new Date() : undefined,
+        },
       });
+
+      if (isFinalApproval) {
+        await incrementLeaveBalanceOnApproval(tx, {
+          employeeId: leave.employeeId,
+          leaveType: leave.type,
+          startDate: leave.startDate,
+          durationDays: leave.durationDays,
+        });
+      }
+
+      if (nextStatus === 'PENDING_OPS_HEAD') {
+        await notifyUsersByRoles(
+          tx,
+          ['OPERATIONS_HEAD'],
+          'Leave Pending Operations Review',
+          `${leave.employee.firstName} ${leave.employee.lastName}'s ${leave.type} leave (${leave.durationDays} day(s)) requires your approval.`,
+        );
+      }
 
       await tx.auditLog.create({
         data: {
           userId,
-          action: 'LEAVE_APPROVED_ALL',
+          action:
+            nextStatus === 'PENDING_OPS_HEAD'
+              ? 'MANAGER_ESCALATE_LEAVE_TO_OPS_HEAD'
+              : 'LEAVE_APPROVED_ALL',
           metadata: {
             leaveId: leave.id,
             employeeId: leave.employeeId,
+            status: nextStatus,
           },
         },
       });
+
+      approvedCount++;
     }
 
-    return { count: updated.count };
+    return { count: approvedCount };
   });
 }
 

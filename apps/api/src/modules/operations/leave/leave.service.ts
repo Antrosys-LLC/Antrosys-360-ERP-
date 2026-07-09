@@ -2,6 +2,7 @@ import { LeaveType, LeaveRequestStatus, Prisma } from "@prisma/client";
 import { prisma } from "../../../config/database";
 import { DEFAULT_LEAVE_QUOTA } from "../../../shared/leaveBalance/leave-quota.constants";
 import { incrementLeaveBalanceOnApproval } from "../../../shared/leaveBalance/increment-leave-balance";
+import { notifyUsersByRoles } from "../../../shared/notifications/notify-by-role";
 import { requiresOpsHeadApproval as checkOpsHeadRequired } from "../../../shared/leaveBalance/requires-ops-head-approval";
 import type {
   CreateLeaveRequestBody,
@@ -307,6 +308,15 @@ export async function updateLeaveStatus(
         startDate: existing.startDate,
         durationDays: existing.durationDays,
       });
+    }
+
+    if (nextStatus === "PENDING_OPS_HEAD") {
+      await notifyUsersByRoles(
+        tx,
+        ["OPERATIONS_HEAD"],
+        "Leave Pending Operations Review",
+        `${existing.employee.firstName} ${existing.employee.lastName}'s ${existing.type} leave (${existing.durationDays} day(s)) requires your approval.`,
+      );
     }
 
     await tx.auditLog.create({
