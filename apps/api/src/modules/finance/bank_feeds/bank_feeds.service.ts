@@ -277,12 +277,12 @@ export async function getReconciliationHealth() {
   });
 
   const [totalLines, autoMatched, needsReview, unmatched] = await Promise.all([
-    prisma.bankTransaction.count(),
-    prisma.bankTransaction.count({ where: { confidenceScore: { gte: 95 } } }),
+    prisma.bankTransaction.count({ where: { matchStatus: { not: 'REJECTED' } } }),
+    prisma.bankTransaction.count({ where: { confidenceScore: { gte: 95 }, matchStatus: { not: 'REJECTED' } } }),
     prisma.bankTransaction.count({
-      where: { confidenceScore: { gte: 1, lt: 95 } },
+      where: { confidenceScore: { gte: 1, lt: 95 }, matchStatus: { not: 'REJECTED' } },
     }),
-    prisma.bankTransaction.count({ where: { confidenceScore: 0 } }),
+    prisma.bankTransaction.count({ where: { confidenceScore: 0, matchStatus: { not: 'REJECTED' } } }),
   ]);
 
   const total = totalLines || 1;
@@ -302,7 +302,7 @@ export async function getReconciliationHealth() {
 
 export async function getPriorityExceptions() {
   const exceptions = await prisma.bankTransaction.findMany({
-    where: { confidenceScore: 0 },
+    where: { confidenceScore: 0, matchStatus: { not: 'REJECTED' } },
     include: {
       account: { select: { id: true, bankName: true } },
     },
