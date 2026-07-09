@@ -1417,10 +1417,11 @@ model LedgerEntry {
   currencyCode    String          @default("PKR") @db.VarChar(3)
   voidedAt        DateTime?
   voidedByUserId  String?
-  createdByUserId String
-  createdBy       User            @relation("LedgerEntriesCreated", fields: [createdByUserId], references: [id])
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  createdByUserId  String
+  createdBy        User            @relation("LedgerEntriesCreated", fields: [createdByUserId], references: [id])
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  bankTransactions BankTransaction[]
 
   @@index([date])
   @@index([accountId])
@@ -1447,5 +1448,91 @@ model LedgerPeriodSummary {
 
   @@index([periodStart])
   @@map("ledger_period_summaries")
+}
+
+// =========================================================================
+// Bank Feeds Module
+// =========================================================================
+
+model BankAccount {
+  id            String             @id @default(cuid())
+  bankName      String
+  accountNumber String
+  accountType   String             // "Primary" | "Payroll" | "Forex"
+  currencyCode  String             @default("PKR") @db.VarChar(3)
+  balance       Decimal            @default(0) @db.Decimal(16, 2)
+  status        String             @default("Live") // "Live" | "Delayed"
+  isSyncable    Boolean            @default(true)
+  syncLabel     String?
+  lastSyncedAt  DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  transactions  BankTransaction[]
+  connections   BankConnection[]
+
+  @@map("bank_accounts")
+}
+
+model BankTransaction {
+  id               String        @id @default(cuid())
+  accountId        String
+  account          BankAccount   @relation(fields: [accountId], references: [id])
+  transactionDate  DateTime      @db.Date
+  description      String
+  reference        String?
+  amount           Decimal       @db.Decimal(16, 2)
+  transactionType  String        // "CREDIT" | "DEBIT"
+  currencyCode     String        @default("PKR") @db.VarChar(3)
+  extraBadge       String?
+  subAmountLabel   String?
+
+  // Matching
+  confidenceScore  Int           @default(0)
+  matchStatus      String        @default("UNMATCHED") // "UNMATCHED" | "PENDING_REVIEW" | "MATCHED" | "REJECTED"
+  matchReasons     Json?
+
+  // Linked ledger match
+  matchedEntryId   String?
+  matchedEntry     LedgerEntry?  @relation(fields: [matchedEntryId], references: [id])
+  matchedById      String?
+  matchedAt        DateTime?
+
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([accountId])
+  @@index([transactionDate])
+  @@index([matchStatus])
+  @@index([confidenceScore])
+  @@map("bank_transactions")
+}
+
+model BankReconciliationPeriod {
+  id          String   @id @default(cuid())
+  periodLabel String   @unique
+  startDate   DateTime @db.Date
+  endDate     DateTime @db.Date
+  totalLines  Int      @default(0)
+  autoMatched Int      @default(0)
+  needsReview Int      @default(0)
+  unmatched   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("bank_reconciliation_periods")
+}
+
+model BankConnection {
+  id              String      @id @default(cuid())
+  accountId       String      @unique
+  account         BankAccount @relation(fields: [accountId], references: [id])
+  provider        String      // "API" | "SFTP"
+  scheduleType    String      // "Real-time" | "Hourly" | "Daily EOD"
+  status          String      @default("ACTIVE") // "ACTIVE" | "DEGRADED" | "DOWN"
+  lastConnectedAt DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@map("bank_connections")
 }
 
