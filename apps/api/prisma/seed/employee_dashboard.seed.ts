@@ -1,6 +1,5 @@
 import {
   PrismaClient,
-  AttendanceStatus,
   LeaveType,
   LeaveRequestStatus,
   Department,
@@ -116,73 +115,47 @@ export async function seedEmployeeDashboardData() {
   });
 
   await prisma.companyHoliday.deleteMany({});
+  const saraTeam = await prisma.team.findFirst({
+    where: { manager: { user: { email: 'sub_manager@antrosys.com' } } },
+  });
   await prisma.companyHoliday.createMany({
     data: [
       {
         title: 'Independence Day',
         date: utcDate(year, 5, 26),
         isNational: true,
+        teamId: saraTeam?.id,
       },
       {
         title: 'Eid-ul-Adha',
         date: utcDate(year, 6, 5),
         endDate: utcDate(year, 6, 6),
         isNational: true,
+        teamId: saraTeam?.id,
       },
       {
         title: 'National Holiday',
         date: utcDate(year, 8, 14),
         isNational: true,
+        teamId: saraTeam?.id,
       },
     ],
   });
 
-  const monthYear = year;
-
-  const attendancePattern: { day: number; status: AttendanceStatus; hours: number }[] = [
-    { day: 1, status: AttendanceStatus.PRESENT, hours: 8 },
-    { day: 4, status: AttendanceStatus.PRESENT, hours: 8 },
-    { day: 5, status: AttendanceStatus.PRESENT, hours: 8 },
-    { day: 6, status: AttendanceStatus.PRESENT, hours: 8 },
-    { day: 7, status: AttendanceStatus.HALF_DAY, hours: 3.5 },
-    { day: 8, status: AttendanceStatus.PRESENT, hours: 8.5 },
-    { day: 11, status: AttendanceStatus.PRESENT, hours: 8 },
-    { day: 12, status: AttendanceStatus.PRESENT, hours: 8 },
-    { day: 13, status: AttendanceStatus.PRESENT, hours: 8 },
-    { day: 18, status: AttendanceStatus.ABSENT, hours: 0 },
+  const demoEmails = [
+    'sara.javed@antrosys.com',
+    'fawad.khan@antrosys.com',
+    'bilal.hassan@antrosys.com',
+    'hina.baig@antrosys.com',
+    'omar.mirza@antrosys.com',
+    'maria.raza@antrosys.com',
+    'nadia.qureshi@antrosys.com',
   ];
-
-  for (const entry of attendancePattern) {
-    const date = utcDate(monthYear, month, entry.day);
-    const checkIn = new Date(date);
-    checkIn.setUTCHours(8, 45, 0, 0);
-    const checkOut =
-      entry.hours > 0
-        ? new Date(checkIn.getTime() + entry.hours * 60 * 60 * 1000)
-        : null;
-    const overtime = Math.max(0, entry.hours - 8);
-
-    await prisma.attendance.upsert({
-      where: { employeeId_date: { employeeId: sara.id, date } },
-      update: {
-        status: entry.status,
-        hours: entry.hours,
-        overtimeHours: overtime,
-        checkIn: entry.hours > 0 ? checkIn : null,
-        checkOut,
-        checkInLocation: 'Office · Floor 3',
-      },
-      create: {
-        employeeId: sara.id,
-        date,
-        status: entry.status,
-        hours: entry.hours,
-        overtimeHours: overtime,
-        checkIn: entry.hours > 0 ? checkIn : null,
-        checkOut,
-        checkInLocation: 'Office · Floor 3',
-      },
-    });
+  for (const email of demoEmails) {
+    const emp = await prisma.employee.findFirst({ where: { user: { email } } });
+    if (emp) {
+      await prisma.attendance.deleteMany({ where: { employeeId: emp.id } });
+    }
   }
 
   const announcementSpecs = [

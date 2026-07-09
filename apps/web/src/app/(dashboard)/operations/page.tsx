@@ -161,6 +161,7 @@ export default function OperationsHeadDashboardPage() {
     todayAttendanceRows,
     leaveApprovals,
     manpowerGapsDetail,
+    recentManpowerRequests,
   } = data;
 
   const handleRaiseRequest = () => {
@@ -353,10 +354,10 @@ export default function OperationsHeadDashboardPage() {
       </div>
 
       {/* Main grid */}
-      <div className="grid grid-cols-[1.7fr_1fr_1fr] gap-3 items-start">
+      <div className="grid grid-cols-[1.7fr_1fr_1fr] gap-3 items-stretch">
         {/* Today's attendance */}
-        <div className="bg-white border border-[#E0E0E0] rounded-[10px] overflow-hidden">
-          <div className="flex items-center justify-between px-[17px] py-3.5 border-b border-[#E0E0E0]">
+        <div className="bg-white border border-[#E0E0E0] rounded-[10px] overflow-hidden flex flex-col min-h-0">
+          <div className="flex items-center justify-between px-[17px] py-3.5 border-b border-[#E0E0E0] shrink-0">
             <span className="text-[13px] font-semibold text-[#1A1A1A]">
               Today&apos;s attendance
             </span>
@@ -368,34 +369,35 @@ export default function OperationsHeadDashboardPage() {
             </span>
           </div>
 
-          <div className="px-[17px] pt-3.5 flex items-center gap-2">
-            {deptFilters.map((filter) => (
-              <button
-                key={filter}
-                type="button"
-                onClick={() => setActiveFilter(filter)}
-                className={`text-[11px] font-medium px-3 py-1.5 rounded-full border transition-colors ${
-                  activeFilter === filter
-                    ? "bg-[#F0F0F0] border-[#D8D8D8] text-[#1A1A1A]"
-                    : "bg-white border-[#E0E0E0] text-[#888888] hover:bg-[#F8F9FC]"
-                }`}
-              >
-                {filter}
-              </button>
-            ))}
-          </div>
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <div className="px-[17px] pt-3.5 flex items-center gap-2">
+              {deptFilters.map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  onClick={() => setActiveFilter(filter)}
+                  className={`text-[11px] font-medium px-3 py-1.5 rounded-full border transition-colors ${
+                    activeFilter === filter
+                      ? "bg-[#F0F0F0] border-[#D8D8D8] text-[#1A1A1A]"
+                      : "bg-white border-[#E0E0E0] text-[#888888] hover:bg-[#F8F9FC]"
+                  }`}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
 
-          <div className="px-[17px] pt-4 flex flex-wrap gap-2">
-            {attendanceDots.map((status, idx) => (
-              <span
-                key={idx}
-                className="size-3.5 rounded-full"
-                style={{ backgroundColor: dotColor(status) }}
-              />
-            ))}
-          </div>
+            <div className="px-[17px] pt-4 flex flex-wrap gap-2">
+              {attendanceDots.map((status, idx) => (
+                <span
+                  key={idx}
+                  className="size-3.5 rounded-full"
+                  style={{ backgroundColor: dotColor(status) }}
+                />
+              ))}
+            </div>
 
-          <table className="w-full mt-4">
+            <table className="w-full mt-4">
             <thead>
               <tr className="border-t border-[#E0E0E0] bg-[#F8F9FC]">
                 <th className="text-left text-[10px] font-semibold text-[#888888] uppercase tracking-wide px-[17px] py-2.5">
@@ -495,16 +497,17 @@ export default function OperationsHeadDashboardPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
 
         {/* Leave approvals */}
-        <div className="bg-white border border-[#E0E0E0] rounded-[10px] overflow-hidden">
-          <div className="px-[17px] py-3.5 border-b border-[#E0E0E0]">
+        <div className="bg-white border border-[#E0E0E0] rounded-[10px] overflow-hidden flex flex-col min-h-0">
+          <div className="px-[17px] py-3.5 border-b border-[#E0E0E0] shrink-0">
             <span className="text-[13px] font-semibold text-[#1A1A1A]">
               Leave approvals
             </span>
           </div>
-          <div className="p-[17px] flex flex-col gap-2.5">
+          <div className="p-[17px] flex flex-col gap-2.5 flex-1 overflow-y-auto min-h-0">
             {leaveApprovals.length === 0 ? (
               <p className="text-[12px] text-[#888888] text-center py-4">
                 No leaves pending Operations review
@@ -576,7 +579,7 @@ export default function OperationsHeadDashboardPage() {
               Manpower gaps
             </span>
           </div>
-          <div className="px-[17px] py-2 flex flex-col">
+          <div className="px-[17px] py-2 flex flex-col flex-1">
             {manpowerGapsDetail.map((gap, idx) => (
               <div
                 key={gap.dept}
@@ -604,6 +607,35 @@ export default function OperationsHeadDashboardPage() {
                 </span>
               </div>
             ))}
+            {recentManpowerRequests.length > 0 && (
+              <div className="border-t border-[#E0E0E0] pt-3 mt-1">
+                <span className="text-[10px] font-semibold text-[#888888] uppercase tracking-wide block mb-2">
+                  Recent requests
+                </span>
+                <div className="flex flex-col gap-2">
+                  {recentManpowerRequests.map((req) => (
+                    <div
+                      key={req.id}
+                      className="bg-[#F8F9FC] border border-[#E0E0E0] rounded-md px-2.5 py-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-medium text-[#1A1A1A]">
+                          {req.department} · +{req.headcount}
+                        </span>
+                        <span className="text-[9px] font-medium text-[#534AB7] bg-[#EEEDFE] px-1.5 py-0.5 rounded">
+                          {req.status}
+                        </span>
+                      </div>
+                      {req.notes && (
+                        <p className="text-[10px] text-[#888888] mt-1 line-clamp-1">
+                          {req.notes}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <div className="px-[17px] pb-[17px] pt-2 mt-auto">
             <button

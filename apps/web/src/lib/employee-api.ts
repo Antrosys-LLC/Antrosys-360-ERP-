@@ -11,6 +11,7 @@ export interface EmployeeDashboardData {
     teamSize: number;
     location: string;
   };
+  canManageTeam: boolean;
   attendanceToday: {
     currentTime: string;
     location: string;
@@ -20,6 +21,7 @@ export interface EmployeeDashboardData {
     overtime: string;
     hasCheckedIn: boolean;
     hasCheckedOut: boolean;
+    needsMood?: boolean;
   };
   leaveBalances: {
     type: string;
@@ -46,10 +48,12 @@ export interface EmployeeDashboardData {
   } | null;
   teamAnnouncements: {
     id: string;
+    title?: string;
     initials: string;
     name: string;
     message: string;
     time: string;
+    isOwn?: boolean;
   }[];
   calendarMonth: CalendarMonthData;
   upcomingHolidays: {
@@ -59,6 +63,7 @@ export interface EmployeeDashboardData {
     title: string;
     subtitle: string;
     highlighted: boolean;
+    dateIso: string;
   }[];
 }
 
@@ -79,6 +84,7 @@ export interface AttendanceActionResult {
   hasCheckedIn: boolean;
   hasCheckedOut: boolean;
   location: string | null;
+  needsMood?: boolean;
 }
 
 export async function fetchEmployeeDashboard() {
@@ -110,6 +116,42 @@ export async function employeeCheckOut() {
     {},
   );
   return data.data;
+}
+
+export async function submitEmployeeMood(mood: 'HAPPY' | 'NEUTRAL' | 'STRESSED') {
+  const { data } = await apiClient.post<{ status: string; data: { mood: string; submitted: boolean } }>(
+    '/employee/dashboard/mood',
+    { mood },
+  );
+  return data.data;
+}
+
+export async function createTeamAnnouncement(body: { title: string; content: string }) {
+  const { data } = await apiClient.post('/employee/dashboard/announcements', body);
+  return data.data;
+}
+
+export async function updateTeamAnnouncement(id: string, body: { title: string; content: string }) {
+  const { data } = await apiClient.patch(`/employee/dashboard/announcements/${id}`, body);
+  return data.data;
+}
+
+export async function deleteTeamAnnouncement(id: string) {
+  await apiClient.delete(`/employee/dashboard/announcements/${id}`);
+}
+
+export async function createTeamHoliday(body: { title: string; date: string; endDate?: string }) {
+  const { data } = await apiClient.post('/employee/dashboard/holidays', body);
+  return data.data;
+}
+
+export async function updateTeamHoliday(id: string, body: { title: string; date: string; endDate?: string }) {
+  const { data } = await apiClient.patch(`/employee/dashboard/holidays/${id}`, body);
+  return data.data;
+}
+
+export async function deleteTeamHoliday(id: string) {
+  await apiClient.delete(`/employee/dashboard/holidays/${id}`);
 }
 
 export async function downloadEmployeePayslip(payslipId: string) {

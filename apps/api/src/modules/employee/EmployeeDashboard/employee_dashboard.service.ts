@@ -1,5 +1,6 @@
-import { Prisma, AttendanceStatus, LeaveType, LeaveRequestStatus } from '@prisma/client';
+import { Prisma, AttendanceStatus, LeaveType, LeaveRequestStatus, Role } from '@prisma/client';
 import { prisma } from '../../../config/database';
+import { DEFAULT_LEAVE_QUOTA } from '../../../shared/leaveBalance/leave-quota.constants';
 import { formatCurrency } from '../../../shared/currency/exchange-rate';
 import { buildPayslipPdf } from '../../../shared/pdf/payslip-pdf';
 import { payslipPeriodLabel } from '../../../shared/payslip/payslip-period-label';
@@ -13,7 +14,7 @@ import {
   formatAttendanceTime,
   startOfUtcDay,
 } from '../../../shared/attendance/attendance-format';
-import type { CalendarQuery, CheckInBody } from './employee_dashboard.schema';
+import type { CalendarQuery, CheckInBody, SubmitMoodBody, AnnouncementBody, TeamHolidayBody } from './employee_dashboard.schema';
 
 const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
   ANNUAL: 'Annual',
@@ -141,65 +142,85 @@ async function getTeamMemberIds(managerEmployeeId: string): Promise<string[]> {
   return reports.map((r) => r.id);
 }
 
+async function getTeamLeaveBalances(employeeId: string) {
+  const year = new Date().getFullYear();
+  const month = new Date().getMonth() + 1;
+  const types: LeaveType[] = ['ANNUAL', 'SICK', 'CASUAL'];
+
+  const balances = await Promise.all(
+    types.map(async (leaveType) => {
+      const existing = await prisma.leaveBalance.findUnique({
+        where: { employeeId_leaveType_year_month: { employeeId, leaveType, year, month } },
+      });
+      if (existing) return existing;
+      return prisma.leaveBalance.create({
+        data: {
+          employeeId,
+          leaveType,
+          year,
+          month,
+          allocatedDays: DEFAULT_LEAVE_QUOTA[leaveType],
+          usedDays: 0,
+          pendingDays: 0,
+        },
+      });
+    }),
+  );
+
+  return balances;
+}
+
+function canManageTeamContent(role: Role): boolean {
+  return role === 'MANAGER' || role === 'SUB_MANAGER';
+}
+
+async function resolveManagedTeam(employeeId: string) {
+  return prisma.team.findUnique({ where: { managerId: employeeId } });
+}
+
+async function requireTeamManager(userId: string) {
+  const employee = await resolveEmployeeForUser(userId);
+  if (!canManageTeamContent(employee.user.role)) {
+    throw new Error('Unauthorized: Only managers can perform this action');
+  }
+  const managedTeam = await resolveManagedTeam(employee.id);
+  if (!managedTeam) {
+    throw new Error('Unauthorized: No team assigned to manage');
+  }
+  return { employee, managedTeam };
+}
+
 export async function getDashboard(userId: string) {
   const employee = await resolveEmployeeForUser(userId);
   const schedule = await getWorkScheduleConfig();
   const today = startOfUtcDay(new Date());
   const now = new Date();
-  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth() + 1;
+  const canManageTeam = canManageTeamContent(employee.user.role);
+  const managedTeam = canManageTeam ? await resolveManagedTeam(employee.id) : null;
+  const teamIdForContent = managedTeam?.id ?? employee.teamId;
 
   const teamSize = (await getTeamMemberIds(employee.id)).length;
 
-  const [
-    todayAttendance,
-    leaveBalances,
-    pendingLeave,
-    latestPayslip,
-    teamAnnouncements,
-    upcomingHolidays,
-    monthAttendance,
-    holidays,
-  ] = await Promise.all([
-    prisma.attendance.findUnique({
-      where: { employeeId_date: { employeeId: employee.id, date: today } },
-    }),
-    prisma.leaveBalance.findMany({
-      where: { employeeId: employee.id, year, leaveType: { in: ['ANNUAL', 'SICK', 'CASUAL'] } },
-    }),
-    prisma.leaveRequest.findFirst({
-      where: { employeeId: employee.id, status: LeaveRequestStatus.PENDING },
-      orderBy: { createdAt: 'desc' },
-    }),
-    prisma.employeePayslip.findFirst({
-      where: { employeeId: employee.id },
-      orderBy: { periodStart: 'desc' },
-    }),
-    prisma.announcement.findMany({
-      where: {
-        author: { managerId: employee.id },
-      },
-      include: {
-        author: { select: { firstName: true, lastName: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 5,
-    }),
-    prisma.companyHoliday.findMany({
-      where: { date: { gte: today } },
-      orderBy: { date: 'asc' },
-      take: 5,
-    }),
-    prisma.attendance.findMany({
-      where: {
-        employeeId: employee.id,
-        date: {
-          gte: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
-          lte: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)),
-        },
-      },
-    }),
-    prisma.companyHoliday.findMany({
-      where: {
+  const announcementWhere: Prisma.AnnouncementWhereInput = managedTeam
+    ? {
+        OR: [
+          { author: { teamId: managedTeam.id } },
+          { authorId: employee.id },
+        ],
+      }
+    : employee.teamId
+      ? { author: { teamId: employee.teamId } }
+      : { author: { managerId: employee.id } };
+
+  const holidayWhere: Prisma.CompanyHolidayWhereInput = {
+    date: { gte: today },
+    ...(teamIdForContent ? { teamId: teamIdForContent } : {}),
+  };
+
+  const calendarHolidayWhere: Prisma.CompanyHolidayWhereInput = teamIdForContent
+    ? {
+        teamId: teamIdForContent,
         OR: [
           {
             date: {
@@ -213,7 +234,76 @@ export async function getDashboard(userId: string) {
             },
           },
         ],
+      }
+    : {
+        OR: [
+          {
+            date: {
+              gte: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
+              lte: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)),
+            },
+          },
+          {
+            endDate: {
+              gte: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
+            },
+          },
+        ],
+      };
+
+  const [
+    todayAttendance,
+    leaveBalances,
+    pendingLeave,
+    todayMood,
+    latestPayslip,
+    teamAnnouncements,
+    upcomingHolidays,
+    monthAttendance,
+    holidays,
+  ] = await Promise.all([
+    prisma.attendance.findUnique({
+      where: { employeeId_date: { employeeId: employee.id, date: today } },
+    }),
+    getTeamLeaveBalances(employee.id),
+    prisma.leaveRequest.findFirst({
+      where: {
+        employeeId: employee.id,
+        status: { in: [LeaveRequestStatus.PENDING, LeaveRequestStatus.PENDING_OPS_HEAD] },
       },
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.employeeDailyMood.findUnique({
+      where: { employeeId_date: { employeeId: employee.id, date: today } },
+    }),
+    prisma.employeePayslip.findFirst({
+      where: { employeeId: employee.id },
+      orderBy: { periodStart: 'desc' },
+    }),
+    prisma.announcement.findMany({
+      where: announcementWhere,
+      include: {
+        author: { select: { firstName: true, lastName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+    }),
+    prisma.companyHoliday.findMany({
+      where: holidayWhere,
+      orderBy: { date: 'asc' },
+      take: 5,
+    }),
+    prisma.attendance.findMany({
+      where: {
+        employeeId: employee.id,
+        date: {
+          gte: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
+          lte: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)),
+        },
+      },
+    }),
+    prisma.companyHoliday.findMany({
+      where: calendarHolidayWhere,
     }),
   ]);
 
@@ -249,6 +339,7 @@ export async function getDashboard(userId: string) {
       teamSize,
       location: employee.location ?? '—',
     },
+    canManageTeam,
     attendanceToday: {
       currentTime: formatTime(now),
       location: todayAttendance?.checkInLocation ?? employee.location ?? 'Office',
@@ -258,13 +349,13 @@ export async function getDashboard(userId: string) {
       overtime: formatOvertime(overtimeHours),
       hasCheckedIn: Boolean(todayAttendance?.checkIn),
       hasCheckedOut: Boolean(todayAttendance?.checkOut),
+      needsMood: Boolean(todayAttendance?.checkOut && !todayMood),
     },
     leaveBalances: defaultBalances.map((type) => {
       const balance = balanceByType.get(type);
-      const allocated = balance ? Number(balance.allocatedDays) : 0;
+      const allocated = balance ? Number(balance.allocatedDays) : DEFAULT_LEAVE_QUOTA[type];
       const used = balance ? Number(balance.usedDays) : 0;
-      const pending = balance ? Number(balance.pendingDays) : 0;
-      const available = Math.max(0, allocated - used - pending);
+      const available = Math.max(0, allocated - used);
       const styling = LEAVE_TYPE_ICONS[type];
       return {
         type: LEAVE_TYPE_LABELS[type],
@@ -279,7 +370,7 @@ export async function getDashboard(userId: string) {
           id: pendingLeave.id,
           title: `${LEAVE_TYPE_LABELS[pendingLeave.type]} Request`,
           dateRange: `${pendingLeave.startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${pendingLeave.endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · ${pendingLeave.startDate.toLocaleDateString('en-US', { weekday: 'long' })}`,
-          status: `${pendingLeave.durationDays} day${pendingLeave.durationDays === 1 ? '' : 's'}`,
+          status: pendingLeave.status === LeaveRequestStatus.PENDING_OPS_HEAD ? 'Pending Ops Review' : 'Pending',
         }
       : null,
     latestPayslip: latestPayslip
@@ -300,10 +391,12 @@ export async function getDashboard(userId: string) {
       : null,
     teamAnnouncements: teamAnnouncements.map((ann) => ({
       id: ann.id,
+      title: ann.title,
       initials: `${ann.author.firstName[0] ?? ''}${ann.author.lastName[0] ?? ''}`.toUpperCase(),
       name: `${ann.author.firstName} ${ann.author.lastName}`,
       message: ann.content,
       time: relativeTime(ann.createdAt),
+      isOwn: ann.authorId === employee.id,
     })),
     calendarMonth,
     upcomingHolidays: upcomingHolidays.map((holiday, idx) => {
@@ -319,6 +412,7 @@ export async function getDashboard(userId: string) {
         title: holiday.title,
         subtitle,
         highlighted: idx === 0,
+        dateIso: d.toISOString().slice(0, 10),
       };
     }),
   };
@@ -328,9 +422,26 @@ export async function getCalendar(userId: string, query: CalendarQuery) {
   const employee = await resolveEmployeeForUser(userId);
   const schedule = await getWorkScheduleConfig();
   const halfDayThreshold = Number(schedule.halfDayThresholdHours);
+  const managedTeam = await resolveManagedTeam(employee.id);
+  const teamIdForContent = managedTeam?.id ?? employee.teamId;
 
   const monthStart = new Date(Date.UTC(query.year, query.month - 1, 1));
   const monthEnd = new Date(Date.UTC(query.year, query.month, 0));
+
+  const holidayWhere: Prisma.CompanyHolidayWhereInput = teamIdForContent
+    ? {
+        teamId: teamIdForContent,
+        OR: [
+          { date: { gte: monthStart, lte: monthEnd } },
+          { endDate: { gte: monthStart }, date: { lte: monthEnd } },
+        ],
+      }
+    : {
+        OR: [
+          { date: { gte: monthStart, lte: monthEnd } },
+          { endDate: { gte: monthStart }, date: { lte: monthEnd } },
+        ],
+      };
 
   const [attendanceRecords, holidays] = await Promise.all([
     prisma.attendance.findMany({
@@ -339,14 +450,7 @@ export async function getCalendar(userId: string, query: CalendarQuery) {
         date: { gte: monthStart, lte: monthEnd },
       },
     }),
-    prisma.companyHoliday.findMany({
-      where: {
-        OR: [
-          { date: { gte: monthStart, lte: monthEnd } },
-          { endDate: { gte: monthStart }, date: { lte: monthEnd } },
-        ],
-      },
-    }),
+    prisma.companyHoliday.findMany({ where: holidayWhere }),
   ]);
 
   const attendanceMap = new Map<number, AttendanceDayRecord>(
@@ -478,8 +582,142 @@ export async function checkOut(userId: string) {
       hasCheckedIn: true,
       hasCheckedOut: true,
       location: record.checkInLocation ?? employee.location ?? 'Office',
+      needsMood: true,
     };
   });
+}
+
+export async function submitDailyMood(userId: string, body: SubmitMoodBody) {
+  const employee = await resolveEmployeeForUser(userId);
+  const today = startOfUtcDay(new Date());
+
+  const attendance = await prisma.attendance.findUnique({
+    where: { employeeId_date: { employeeId: employee.id, date: today } },
+  });
+
+  if (!attendance?.checkOut) {
+    throw new Error('Must check out before submitting mood');
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const moodRecord = await tx.employeeDailyMood.upsert({
+      where: { employeeId_date: { employeeId: employee.id, date: today } },
+      create: {
+        employeeId: employee.id,
+        date: today,
+        mood: body.mood,
+      },
+      update: { mood: body.mood },
+    });
+
+    await writeAuditLog(tx, userId, 'EMPLOYEE_SUBMIT_MOOD', {
+      employeeId: employee.id,
+      mood: body.mood,
+      date: today.toISOString(),
+    });
+
+    return { mood: moodRecord.mood, submitted: true };
+  });
+}
+
+export async function createTeamAnnouncement(userId: string, body: AnnouncementBody) {
+  const { employee, managedTeam } = await requireTeamManager(userId);
+
+  return prisma.$transaction(async (tx) => {
+    const announcement = await tx.announcement.create({
+      data: {
+        title: body.title,
+        content: body.content,
+        authorId: employee.id,
+        department: managedTeam.department ?? employee.department ?? undefined,
+      },
+    });
+
+    const teamMembers = await tx.employee.findMany({
+      where: { teamId: managedTeam.id, isActive: true },
+      select: { userId: true },
+    });
+
+    for (const member of teamMembers) {
+      await tx.notification.create({
+        data: {
+          userId: member.userId,
+          title: 'New Team Announcement',
+          message: `${employee.firstName} posted: "${body.title}"`,
+        },
+      });
+    }
+
+    return announcement;
+  });
+}
+
+export async function updateTeamAnnouncement(userId: string, announcementId: string, body: AnnouncementBody) {
+  const { employee } = await requireTeamManager(userId);
+
+  const existing = await prisma.announcement.findUnique({ where: { id: announcementId } });
+  if (!existing || existing.authorId !== employee.id) {
+    throw new Error('Announcement not found or unauthorized');
+  }
+
+  return prisma.announcement.update({
+    where: { id: announcementId },
+    data: { title: body.title, content: body.content },
+  });
+}
+
+export async function deleteTeamAnnouncement(userId: string, announcementId: string) {
+  const { employee } = await requireTeamManager(userId);
+
+  const existing = await prisma.announcement.findUnique({ where: { id: announcementId } });
+  if (!existing || existing.authorId !== employee.id) {
+    throw new Error('Announcement not found or unauthorized');
+  }
+
+  return prisma.announcement.delete({ where: { id: announcementId } });
+}
+
+export async function createTeamHoliday(userId: string, body: TeamHolidayBody) {
+  const { managedTeam } = await requireTeamManager(userId);
+
+  return prisma.companyHoliday.create({
+    data: {
+      title: body.title,
+      date: body.date,
+      endDate: body.endDate,
+      teamId: managedTeam.id,
+      isNational: false,
+    },
+  });
+}
+
+export async function updateTeamHoliday(userId: string, holidayId: string, body: TeamHolidayBody) {
+  const { managedTeam } = await requireTeamManager(userId);
+
+  const existing = await prisma.companyHoliday.findUnique({ where: { id: holidayId } });
+  if (!existing || existing.teamId !== managedTeam.id) {
+    throw new Error('Holiday not found or unauthorized');
+  }
+
+  return prisma.companyHoliday.update({
+    where: { id: holidayId },
+    data: {
+      title: body.title,
+      date: body.date,
+      endDate: body.endDate,
+    },
+  });
+}
+
+export async function deleteTeamHoliday(userId: string, holidayId: string) {
+  const { managedTeam } = await requireTeamManager(userId);
+
+  const existing = await prisma.companyHoliday.findUnique({ where: { id: holidayId } });
+  if (!existing || existing.teamId !== managedTeam.id) {
+    throw new Error('Holiday not found or unauthorized');
+  }
+
+  return prisma.companyHoliday.delete({ where: { id: holidayId } });
 }
 
 export async function downloadPayslip(userId: string, payslipId: string) {
