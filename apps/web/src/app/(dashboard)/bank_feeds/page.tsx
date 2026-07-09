@@ -179,10 +179,11 @@ export default function BankFeedsDashboard() {
   const handleSyncAll = async () => {
     setSyncingAll(true);
     try {
-      await fetchAll();
+      await Promise.all(accounts.map((a) => apiClient.post(`/finance/bank-feeds/accounts/${a.id}/sync`)));
       showToast('All accounts synced successfully');
-    } catch {
-      // error toast handled by fetchAll
+      fetchAll();
+    } catch (err: any) {
+      showToast(err?.response?.data?.error || 'Sync failed', 'error');
     } finally {
       setSyncingAll(false);
     }
@@ -613,11 +614,11 @@ export default function BankFeedsDashboard() {
             </div>
           </section>
 
-          {/* RIGHT SIDEBAR — independent scroll per section */}
-          <div className="lg:col-span-1 flex flex-col min-h-0" style={{ maxHeight: 'calc(100vh - 220px)' }}>
+          {/* RIGHT SIDEBAR */}
+          <div className="lg:col-span-1 flex flex-col space-y-5">
 
             {/* PRIORITY EXCEPTIONS */}
-            <section className="bg-card border border-border rounded-[var(--radius)] p-4 shadow-sm overflow-y-auto flex-1 min-h-0">
+            <section className="bg-card border border-border rounded-[var(--radius)] p-4 shadow-sm">
               <div className="flex items-start justify-between mb-1">
                 <div className="flex items-start space-x-2">
                   <span className="text-destructive text-sm mt-0.5">⚠</span>
@@ -665,17 +666,17 @@ export default function BankFeedsDashboard() {
 
                         {ex.hasActions && (
                           <div className="p-2 bg-card border-t border-border/60 flex flex-col space-y-1.5">
-                            <Button variant="outline" size="sm" onClick={() => handleCreateJournal(ex.id)} className="justify-start w-full">
+                            <Button variant="outline" size="sm" onClick={() => handleCreateJournal(ex.id)} className="justify-start w-full whitespace-nowrap">
                               <span className="text-primary text-xs mr-2 shrink-0">+</span>
-                              <span className="truncate">Create Journal Entry</span>
+                              <span>Create Journal Entry</span>
                             </Button>
-                            <Button variant="outline" size="sm" onClick={() => { showToast('Category assignment feature coming soon'); fetchAll(); }} className="justify-start w-full">
+                            <Button variant="outline" size="sm" onClick={() => handleCreateJournal(ex.id)} className="justify-start w-full whitespace-nowrap">
                               <span className="text-muted-foreground text-xs mr-2 shrink-0">📁</span>
-                              <span className="truncate">Assign Category directly</span>
+                              <span>Assign Category directly</span>
                             </Button>
-                            <Button variant="outline" size="sm" onClick={() => { showToast('Marked as Personal / Director Loan'); fetchAll(); }} className="justify-start w-full">
+                            <Button variant="outline" size="sm" onClick={() => handleCreateJournal(ex.id)} className="justify-start w-full whitespace-nowrap">
                               <span className="text-muted-foreground text-xs mr-2 shrink-0">👤</span>
-                              <span className="truncate">Mark as Personal / Dir. Loan</span>
+                              <span>Mark as Personal / Dir. Loan</span>
                             </Button>
                           </div>
                         )}
@@ -694,7 +695,7 @@ export default function BankFeedsDashboard() {
             </section>
 
             {/* CONNECTION STATUS */}
-            <section className="bg-card border border-border rounded-[var(--radius)] p-4 shadow-sm mt-5">
+            <section className="bg-card border border-border rounded-[var(--radius)] p-4 shadow-sm">
               <h3 className="text-[11px] font-bold text-foreground uppercase tracking-wider mb-3">
                 Connection Status
               </h3>
