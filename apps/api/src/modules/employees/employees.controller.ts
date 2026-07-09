@@ -13,6 +13,7 @@ import {
 } from './employees.schema';
 import * as employeesService from './employees.service';
 import { buildOfficeAccessForEmployee } from './office-access';
+import { canUserEditEmployee } from './employees.scope';
 
 // ============================================================================
 // GET /employees – List all employees
@@ -237,7 +238,9 @@ export async function getEmployeeHandler(request: FastifyRequest, reply: Fastify
     officeAccess: await buildOfficeAccessForEmployee(employee),
   };
 
-  return reply.code(200).send({ status: 'success', data });
+  const canEdit = await canUserEditEmployee(request.user.id, request.user.role, employee.id);
+
+  return reply.code(200).send({ status: 'success', data, canEdit });
 }
 
 // ============================================================================

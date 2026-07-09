@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import {
   listEmployeesHandler,
   getEmployeeHandler,
@@ -13,6 +13,15 @@ import {
   getEmployeeAttendanceHandler,
   exportEmployeeAttendanceHandler,
 } from './employees.controller';
+import { canUserEditEmployee } from './employees.scope';
+
+async function requireScope(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { id: string };
+  const allowed = await canUserEditEmployee(request.user.id, request.user.role, id);
+  if (!allowed) {
+    return reply.code(403).send({ error: 'Insufficient permissions to edit this employee' });
+  }
+}
 
 export async function employeesRoutes(fastify: FastifyInstance) {
   // Ensure all routes under this plugin require a valid JWT
@@ -42,24 +51,24 @@ export async function employeesRoutes(fastify: FastifyInstance) {
 
   // Update employee personal data
   fastify.put('/:id', {
-    preHandler: [fastify.requirePermission('hr:write')],
+    preHandler: [fastify.requirePermission('hr:write'), requireScope],
     handler: updateEmployeeHandler,
   });
 
   fastify.put('/:id/employment', {
-    preHandler: [fastify.requirePermission('hr:write')],
+    preHandler: [fastify.requirePermission('hr:write'), requireScope],
     handler: updateEmployeeEmploymentHandler,
   });
 
   // Add or update an employee skill
   fastify.post('/:id/skills', {
-    preHandler: [fastify.requirePermission('hr:write')],
+    preHandler: [fastify.requirePermission('hr:write'), requireScope],
     handler: upsertSkillHandler,
   });
 
   // Delete an employee skill
   fastify.delete('/:id/skills/:skillId', {
-    preHandler: [fastify.requirePermission('hr:write')],
+    preHandler: [fastify.requirePermission('hr:write'), requireScope],
     handler: deleteSkillHandler,
   });
 

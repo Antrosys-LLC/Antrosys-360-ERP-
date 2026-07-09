@@ -16,7 +16,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { usePermission } from '@/hooks/usePermission';
 
 type ProfileLoadError = 'missing_id' | 'not_found' | 'forbidden' | 'network';
 
@@ -434,7 +433,7 @@ function EmployeeDashboardContent() {
   const tabParam = searchParams.get('tab');
   const idParam = searchParams.get('id') ?? searchParams.get('employeeId');
   const { toast } = useToast();
-  const canEditProfile = usePermission('hr:write');
+  const [canEditProfile, setCanEditProfile] = useState(false);
 
   const employeesDirectoryHref = '/hr/employees';
   const employeesDirectoryLabel = 'Employees';
@@ -677,6 +676,7 @@ function EmployeeDashboardContent() {
       const { default: apiClient } = await import('@/lib/api-client');
       const response = await apiClient.get(`/employees/${idParam}`);
       const data = response.data.data;
+      setCanEditProfile(response.data.canEdit === true);
 
       setEmployeeHeaderData(data.headerData);
       setPersonalInformation(data.personalInformation);
