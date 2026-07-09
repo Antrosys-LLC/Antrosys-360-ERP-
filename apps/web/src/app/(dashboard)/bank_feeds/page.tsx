@@ -156,10 +156,12 @@ export default function BankFeedsDashboard() {
 
   const handleRejectMatch = async () => {
     if (!selectedLine) return;
+    const lineId = selectedLine.id;
     try {
-      await apiClient.post(`/finance/bank-feeds/transactions/${selectedLine.id}/reject`);
+      await apiClient.post(`/finance/bank-feeds/transactions/${lineId}/reject`);
       showToast('Match rejected');
       setSelectedLine(null);
+      setBankLines((prev) => prev.filter((l) => l.id !== lineId));
       fetchAll();
     } catch (err: any) {
       showToast(err?.response?.data?.error || 'Failed to reject match', 'error');
@@ -292,10 +294,10 @@ export default function BankFeedsDashboard() {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="flex gap-5 overflow-x-auto pb-2">
             {loading
               ? Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="bg-card border border-border rounded-[var(--radius)] p-4 shadow-sm animate-pulse">
+                  <div key={i} className="bg-card border border-border rounded-[var(--radius)] p-4 shadow-sm animate-pulse min-w-[300px] flex-shrink-0">
                     <div className="h-4 bg-muted rounded w-3/4 mb-3"></div>
                     <div className="h-8 bg-muted rounded w-1/2 mb-3"></div>
                     <div className="h-3 bg-muted rounded w-2/3"></div>
@@ -304,7 +306,7 @@ export default function BankFeedsDashboard() {
               : accounts.map((account) => (
                   <article
                     key={account.id}
-                    className={`bg-card border rounded-[var(--radius)] p-4 shadow-sm relative overflow-hidden transition-all hover:shadow-md ${
+                    className={`bg-card border rounded-[var(--radius)] p-4 shadow-sm relative overflow-hidden transition-all hover:shadow-md min-w-[300px] flex-shrink-0 ${
                       account.statusVariant === 'success' ? 'border-l-[3px] border-l-[#7B6AE6]' :
                       'border-l-[3px] border-l-[#F59E0B]'
                     }`}
