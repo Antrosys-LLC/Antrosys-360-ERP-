@@ -1,107 +1,319 @@
 import React from 'react';
+import { 
+  ChevronDown, 
+  Barcode, 
+  Download, 
+  Plus, 
+  LayoutGrid, 
+  List, 
+  MapPin,
+  Laptop,
+  Mouse,
+  Armchair,
+  Book,
+  Printer,
+  AlertTriangle,
+  Bell,
+  ArrowRight
+} from 'lucide-react';
 
 // ============================================================================
 // MOCK DATA
 // ============================================================================
 
-const kpiData = [
-  { id: 1, title: 'Total Revenue', value: '$1.24M', trend: '+12.5%', isPositive: true },
-  { id: 2, title: 'Active Projects', value: '142', trend: '+5.2%', isPositive: true },
-  { id: 3, title: 'Profit Margin', value: '24.8%', trend: '-1.4%', isPositive: false },
-  { id: 4, title: 'Pending Invoices', value: '38', trend: '-8.1%', isPositive: true }, // Less pending is good
+const dashboardStats = {
+  totalValue: '18,420,000',
+  lowStock: 14,
+  outOfStock: 3,
+  turnoverRatio: '4.2x'
+};
+
+const filterCategories = [
+  { id: 'all', label: 'All', active: true },
+  { id: 'office', label: 'Office equipment', active: false },
+  { id: 'hardware', label: 'IT hardware', active: false },
+  { id: 'furniture', label: 'Furniture', active: false },
+  { id: 'consumables', label: 'Consumables', active: false },
 ];
 
-const chartData = [
-  { month: 'Jan', revenue: 45, expenses: 30 },
-  { month: 'Feb', revenue: 52, expenses: 32 },
-  { month: 'Mar', revenue: 48, expenses: 35 },
-  { month: 'Apr', revenue: 61, expenses: 38 },
-  { month: 'May', revenue: 59, expenses: 40 },
-  { month: 'Jun', revenue: 75, expenses: 42 },
+const inventoryItems = [
+  { 
+    id: 1, 
+    name: 'MacBook Pro 14"', 
+    sku: 'IT-MBP-14', 
+    category: 'IT hardware', 
+    location: 'HQ - Floor 3', 
+    qty: 4, 
+    status: 'warning',
+    icon: Laptop 
+  },
+  { 
+    id: 2, 
+    name: 'Logitech MX Master 3S', 
+    sku: 'IT-PER-MX3', 
+    category: 'IT hardware', 
+    location: 'Branch A', 
+    qty: 0, 
+    status: 'critical',
+    hasAlert: true,
+    icon: Mouse 
+  },
+  { 
+    id: 3, 
+    name: 'Ergo Office Chair V2', 
+    sku: 'FN-CHR-E2', 
+    category: 'Furniture', 
+    location: 'HQ - Storage', 
+    qty: 45, 
+    status: 'normal',
+    icon: Armchair 
+  },
+  { 
+    id: 4, 
+    name: 'A4 Notebooks (Ruled)', 
+    sku: 'CS-NB-A4', 
+    category: 'Consumables', 
+    location: 'Branch B', 
+    qty: 340, 
+    status: 'normal',
+    icon: Book 
+  },
+  { 
+    id: 5, 
+    name: 'HP LaserJet Toner Black', 
+    sku: 'CS-TN-HPB', 
+    category: 'Consumables', 
+    location: 'HQ - Storage', 
+    qty: 18, 
+    status: 'normal',
+    icon: Printer 
+  },
 ];
 
-const recentTransactions = [
-  { id: 'TRX-8291', date: '2026-07-10', department: 'Enterprise Sales', amount: '$14,200.00', status: 'Completed' },
-  { id: 'TRX-8292', date: '2026-07-09', department: 'Marketing', amount: '$1,850.00', status: 'Pending' },
-  { id: 'TRX-8293', date: '2026-07-08', department: 'IT Infrastructure', amount: '$22,400.00', status: 'Completed' },
-  { id: 'TRX-8294', date: '2026-07-08', department: 'Human Resources', amount: '$850.00', status: 'Failed' },
-  { id: 'TRX-8295', date: '2026-07-07', department: 'Enterprise Sales', amount: '$5,100.00', status: 'Completed' },
+const reorderRecommendations = [
+  { id: 1, name: 'MacBook Pro 14"', current: 4, toAdd: 10, selected: true },
+  { id: 2, name: 'Logitech MX Master', current: 0, toAdd: 20, selected: true },
+  { id: 3, name: 'Dell U2720Q Monitor', current: 2, toAdd: 5, selected: true },
 ];
+
+const itemDetails = {
+  name: 'MacBook Pro 14"',
+  sku: 'IT-MBP-14',
+  supplier: 'TechStore Pk',
+  unitCost: '550,000',
+  leadTime: '14 days',
+  stockLevelPercent: 20
+};
 
 // ============================================================================
 // DUMB COMPONENTS
 // ============================================================================
 
-const StatCard = ({ title, value, trend, isPositive }: { title: string; value: string; trend: string; isPositive: boolean }) => (
-  <div className="bg-card text-card-foreground border border-border p-6 rounded-[var(--radius)] shadow-sm flex flex-col justify-between">
-    <h3 className="text-sm font-medium text-muted-foreground mb-2">{title}</h3>
-    <div className="flex items-baseline justify-between">
-      <span className="text-3xl font-bold">{value}</span>
-      <span className={`text-sm font-medium ${isPositive ? 'text-primary' : 'text-destructive'}`}>
-        {trend}
-      </span>
+const HeaderActions = () => (
+  <div className="flex items-center gap-3">
+    <button className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-[var(--radius)] text-sm font-medium hover:bg-muted/50 transition-colors">
+      All Locations <ChevronDown className="w-4 h-4 text-muted-foreground" />
+    </button>
+    <button className="p-2 bg-card border border-border rounded-[var(--radius)] text-muted-foreground hover:text-foreground transition-colors">
+      <Barcode className="w-4 h-4" />
+    </button>
+    <button className="p-2 bg-card border border-border rounded-[var(--radius)] text-muted-foreground hover:text-foreground transition-colors">
+      <Download className="w-4 h-4" />
+    </button>
+    <button className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-[var(--radius)] text-sm font-medium hover:opacity-90 transition-opacity">
+      <Plus className="w-4 h-4" /> Add item
+    </button>
+  </div>
+);
+
+const StatsCard = ({ stats }: { stats: typeof dashboardStats }) => (
+  <div className="bg-card border border-border rounded-[var(--radius)] p-6 shadow-sm">
+    <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="border-r border-border pr-4">
+        <p className="text-sm font-medium text-muted-foreground mb-1">Total stock value</p>
+        <div className="flex items-baseline gap-1">
+          <span className="text-sm font-medium text-muted-foreground">PKR</span>
+          <span className="text-2xl font-semibold text-foreground">{stats.totalValue}</span>
+        </div>
+      </div>
+      <div className="border-r border-border px-4">
+        <p className="text-sm font-medium text-muted-foreground mb-1">Low stock alerts</p>
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-[#F5A623]" />
+          <span className="text-2xl font-semibold text-foreground">{stats.lowStock}</span>
+        </div>
+      </div>
+      <div className="border-r border-border px-4">
+        <p className="text-sm font-medium text-muted-foreground mb-1">Out of stock</p>
+        <div className="inline-flex items-center justify-center w-8 h-8 rounded-full border-2 border-destructive text-destructive text-lg font-semibold">
+          {stats.outOfStock}
+        </div>
+      </div>
+      <div className="pl-4">
+        <p className="text-sm font-medium text-muted-foreground mb-1">Turnover ratio</p>
+        <span className="text-2xl font-semibold text-foreground">{stats.turnoverRatio}</span>
+      </div>
+    </div>
+    
+    {/* Segmented Progress Bar */}
+    <div className="h-2 w-full flex gap-1 rounded-full overflow-hidden">
+      <div className="h-full bg-primary" style={{ width: '65%' }} />
+      <div className="h-full bg-[#F5A623]" style={{ width: '20%' }} />
+      <div className="h-full bg-destructive" style={{ width: '5%' }} />
+      <div className="h-full bg-[#4A90E2]" style={{ width: '10%' }} />
     </div>
   </div>
 );
 
-const TransactionTable = ({ data }: { data: typeof recentTransactions }) => (
-  <div className="bg-card border border-border rounded-[var(--radius)] overflow-x-auto shadow-sm">
+const FilterSection = ({ filters }: { filters: typeof filterCategories }) => (
+  <div className="flex items-center justify-between mb-4 mt-6">
+    <div className="flex gap-2">
+      {filters.map(filter => (
+        <button
+          key={filter.id}
+          className={`px-4 py-1.5 rounded-full text-sm font-medium border ${
+            filter.active 
+              ? 'bg-secondary text-secondary-foreground border-secondary' 
+              : 'bg-card text-muted-foreground border-border hover:bg-muted/50'
+          } transition-colors`}
+        >
+          {filter.label}
+        </button>
+      ))}
+    </div>
+    <div className="flex bg-card border border-border rounded-[var(--radius)] overflow-hidden">
+      <button className="p-2 border-r border-border text-muted-foreground hover:bg-muted/50"><LayoutGrid className="w-4 h-4" /></button>
+      <button className="p-2 border-r border-border bg-secondary/50 text-foreground"><List className="w-4 h-4" /></button>
+      <button className="p-2 text-muted-foreground hover:bg-muted/50"><MapPin className="w-4 h-4" /></button>
+    </div>
+  </div>
+);
+
+const InventoryTable = ({ items }: { items: typeof inventoryItems }) => (
+  <div className="bg-card border border-border rounded-[var(--radius)] overflow-hidden shadow-sm">
     <table className="w-full text-sm text-left">
-      <thead className="bg-muted text-muted-foreground text-xs uppercase border-b border-border">
+      <thead className="text-xs font-semibold text-muted-foreground uppercase border-b border-border bg-card">
         <tr>
-          <th className="px-6 py-4 font-medium">Transaction ID</th>
-          <th className="px-6 py-4 font-medium">Date</th>
-          <th className="px-6 py-4 font-medium">Department</th>
-          <th className="px-6 py-4 font-medium text-right">Amount</th>
-          <th className="px-6 py-4 font-medium text-center">Status</th>
+          <th className="px-6 py-4">ITEM</th>
+          <th className="px-6 py-4">SKU</th>
+          <th className="px-6 py-4">CATEGORY</th>
+          <th className="px-6 py-4">LOCATION</th>
+          <th className="px-6 py-4 text-right">QTY</th>
         </tr>
       </thead>
       <tbody>
-        {data.map((row) => (
-          <tr key={row.id} className="border-b border-border last:border-0 hover:bg-secondary/20 transition-colors">
-            <td className="px-6 py-4 font-medium text-foreground">{row.id}</td>
-            <td className="px-6 py-4 text-muted-foreground">{row.date}</td>
-            <td className="px-6 py-4 text-muted-foreground">{row.department}</td>
-            <td className="px-6 py-4 text-right font-medium">{row.amount}</td>
-            <td className="px-6 py-4 flex justify-center">
-              <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
-                row.status === 'Completed' ? 'bg-primary/10 text-primary border-primary/20' :
-                row.status === 'Pending' ? 'bg-accent text-accent-foreground border-border' :
-                'bg-destructive/10 text-destructive border-destructive/20'
-              }`}>
-                {row.status}
-              </span>
-            </td>
-          </tr>
-        ))}
+        {items.map((row) => {
+          const Icon = row.icon;
+          const isCritical = row.status === 'critical';
+          const isWarning = row.status === 'warning';
+          
+          return (
+            <tr key={row.id} className={`border-b border-border relative ${isCritical ? 'bg-destructive/5' : isWarning ? 'bg-[#F5A623]/5' : ''}`}>
+              {/* Colored status line marker */}
+              <div className={`absolute left-0 top-0 bottom-0 w-1 ${
+                isCritical ? 'bg-destructive' : isWarning ? 'bg-[#F5A623]' : 'bg-transparent'
+              }`} />
+              
+              <td className="px-6 py-4 flex items-center gap-3">
+                <div className={`p-2 rounded-[var(--radius)] ${isCritical ? 'bg-destructive/10 text-destructive' : isWarning ? 'bg-[#F5A623]/10 text-[#F5A623]' : 'bg-muted text-muted-foreground'}`}>
+                  <Icon className="w-4 h-4" />
+                </div>
+                <span className="font-medium text-foreground flex items-center gap-2">
+                  {row.name}
+                  {row.hasAlert && <AlertTriangle className="w-4 h-4 text-destructive" />}
+                </span>
+              </td>
+              <td className="px-6 py-4 text-muted-foreground font-mono">{row.sku}</td>
+              <td className="px-6 py-4 text-muted-foreground">{row.category}</td>
+              <td className="px-6 py-4 text-muted-foreground">{row.location}</td>
+              <td className={`px-6 py-4 text-right font-semibold ${isCritical ? 'text-destructive' : isWarning ? 'text-[#F5A623]' : 'text-foreground'}`}>
+                {row.qty}
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   </div>
 );
 
-const ChartPlaceholder = ({ data }: { data: typeof chartData }) => (
-  <div className="bg-card border border-border rounded-[var(--radius)] p-6 shadow-sm h-80 flex flex-col">
-    <h3 className="text-lg font-medium text-foreground mb-6">Revenue vs Expenses (H1)</h3>
-    <div className="flex-1 flex items-end justify-between gap-2 mt-auto border-b border-border pb-2">
-      {data.map((d, i) => (
-        <div key={i} className="flex flex-col items-center gap-2 w-full group">
-          <div className="w-full flex justify-center gap-1 h-48 items-end">
-            {/* Revenue Bar */}
-            <div 
-              className="bg-primary rounded-t-sm w-1/3 transition-all group-hover:opacity-80" 
-              style={{ height: `${d.revenue}%` }}
-              title={`Revenue: ${d.revenue}k`}
-            />
-            {/* Expenses Bar */}
-            <div 
-              className="bg-secondary rounded-t-sm w-1/3 border border-border transition-all group-hover:opacity-80" 
-              style={{ height: `${d.expenses}%` }}
-              title={`Expenses: ${d.expenses}k`}
-            />
+const ReorderRecommendations = ({ items }: { items: typeof reorderRecommendations }) => (
+  <div className="bg-card border border-border rounded-[var(--radius)] p-5 shadow-sm">
+    <div className="flex items-center gap-2 mb-4">
+      <Bell className="w-5 h-5 text-[#F5A623]" />
+      <h3 className="font-semibold text-foreground">Reorder recommendations</h3>
+    </div>
+    
+    <div className="space-y-3 mb-6">
+      {items.map(item => (
+        <div key={item.id} className="border border-border rounded-[var(--radius)] p-3 bg-muted/20">
+          <div className="flex justify-between items-start mb-2">
+            <h4 className="font-medium text-sm text-foreground">{item.name}</h4>
+            <input type="checkbox" defaultChecked={item.selected} className="accent-primary w-4 h-4 rounded border-border" />
           </div>
-          <span className="text-xs text-muted-foreground">{d.month}</span>
+          <div className="flex justify-between items-center text-xs">
+            <span className="text-muted-foreground">Cur: <strong className={item.current === 0 ? 'text-destructive' : 'text-[#F5A623]'}>{item.current}</strong></span>
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">+</span>
+              <input 
+                type="number" 
+                defaultValue={item.toAdd} 
+                className="w-14 text-center border border-border rounded bg-card py-1 text-foreground"
+              />
+            </div>
+          </div>
         </div>
       ))}
+    </div>
+
+    <div className="border-t border-border pt-4">
+      <div className="flex justify-between items-center mb-4 text-sm">
+        <span className="text-muted-foreground">5 selected</span>
+        <span className="text-foreground">Est. total: <strong>PKR 7,762,500</strong></span>
+      </div>
+      <button className="w-full py-2 bg-secondary text-secondary-foreground font-medium rounded-[var(--radius)] flex items-center justify-center gap-2 hover:opacity-90 transition-opacity text-sm">
+        Generate PO <ArrowRight className="w-4 h-4" />
+      </button>
+    </div>
+  </div>
+);
+
+const ItemDetails = ({ details }: { details: typeof itemDetails }) => (
+  <div className="bg-card border border-border rounded-[var(--radius)] p-5 shadow-sm">
+    <div className="flex items-start gap-4 mb-6">
+      <div className="p-3 bg-[#F5A623]/10 text-[#F5A623] rounded-[var(--radius)]">
+        <Laptop className="w-6 h-6" />
+      </div>
+      <div>
+        <h3 className="font-semibold text-foreground">{details.name}</h3>
+        <span className="inline-block mt-1 px-2 py-0.5 bg-muted text-muted-foreground text-xs font-mono rounded-[var(--radius)] border border-border">
+          {details.sku}
+        </span>
+      </div>
+    </div>
+    
+    <div className="border-t border-border pt-6 grid grid-cols-[auto_1fr] gap-6 items-center">
+      {/* Circular Progress Placeholder */}
+      <div className="relative w-16 h-16 rounded-full border-4 border-muted flex items-center justify-center">
+        {/* Simple visual hack for the dashed circle shown in design */}
+        <div className="absolute inset-0 rounded-full border-4 border-[#F5A623] opacity-50" style={{ clipPath: 'polygon(0 0, 50% 0, 50% 100%, 0 100%)' }} />
+        <span className="text-xs font-semibold text-foreground">{details.stockLevelPercent}%</span>
+      </div>
+      
+      <div className="text-sm space-y-2">
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">Supplier</span>
+          <span className="font-medium text-foreground">{details.supplier}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">Unit cost</span>
+          <span className="font-medium text-foreground">{details.unitCost}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">Lead time</span>
+          <span className="font-medium text-foreground">{details.leadTime}</span>
+        </div>
+      </div>
     </div>
   </div>
 );
@@ -110,72 +322,45 @@ const ChartPlaceholder = ({ data }: { data: typeof chartData }) => (
 // MAIN PAGE COMPONENT
 // ============================================================================
 
-export default function BusinessIntelligenceDashboard() {
+export default function InventoryDashboard() {
   return (
     <main className="erp-content">
-      {/* Header Section */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+      {/* Page Header */}
+      <header className="flex flex-col md:flex-row md:items-center justify-between mb-6 pb-4 border-b border-border">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Business Intelligence</h1>
-          <p className="text-muted-foreground text-sm mt-1">Real-time financial and operational overview.</p>
-        </div>
-        <button className="bg-primary text-primary-foreground px-4 py-2 rounded-[var(--radius)] text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-2">
-          <svg className="w-4 h-4 fill-current" viewBox="0 0 20 20">
-            <path d="M13 8V2H7v6H2l8 8 8-8h-5zM0 18h20v2H0v-2z" />
-          </svg>
-          Export Report
-        </button>
-      </header>
-
-      {/* KPIs */}
-      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
-        {kpiData.map((kpi) => (
-          <StatCard
-            key={kpi.id}
-            title={kpi.title}
-            value={kpi.value}
-            trend={kpi.trend}
-            isPositive={kpi.isPositive}
-          />
-        ))}
-      </section>
-
-      {/* Main Content Grid */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        {/* Chart taking up 2/3 width on large screens */}
-        <div className="lg:col-span-2">
-          <ChartPlaceholder data={chartData} />
+          <nav className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
+            <span>Operations</span>
+            <ChevronDown className="w-3 h-3 -rotate-90" />
+            <span className="text-foreground">Inventory</span>
+          </nav>
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-bold text-foreground">Inventory management</h1>
+            <span className="text-sm text-muted-foreground">
+              1,247 SKUs • 3 locations • May 2026
+            </span>
+          </div>
         </div>
         
-        {/* Secondary Info / Insights taking up 1/3 width */}
-        <div className="bg-card border border-border rounded-[var(--radius)] p-6 shadow-sm">
-          <h3 className="text-lg font-medium text-foreground mb-4">Key Insights</h3>
-          <ul className="space-y-4">
-            <li className="flex items-start gap-3 pb-4 border-b border-border">
-              <div className="w-2 h-2 rounded-full bg-primary mt-1.5" />
-              <div>
-                <p className="text-sm font-medium text-foreground">Revenue target exceeded</p>
-                <p className="text-xs text-muted-foreground mt-1">Q2 revenue is 12.5% higher than projected.</p>
-              </div>
-            </li>
-            <li className="flex items-start gap-3 pb-4 border-b border-border">
-              <div className="w-2 h-2 rounded-full bg-destructive mt-1.5" />
-              <div>
-                <p className="text-sm font-medium text-foreground">Infrastructure costs rising</p>
-                <p className="text-xs text-muted-foreground mt-1">Server costs increased by 4% this month.</p>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </section>
+        <HeaderActions />
+      </header>
 
-      {/* Data Table */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-medium text-foreground">Recent Transactions</h2>
+      {/* Main Layout Grid */}
+      <div className="flex flex-col lg:flex-row gap-6">
+        
+        {/* Left Column - Main Content */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <StatsCard stats={dashboardStats} />
+          <FilterSection filters={filterCategories} />
+          <InventoryTable items={inventoryItems} />
         </div>
-        <TransactionTable data={recentTransactions} />
-      </section>
+
+        {/* Right Column - Sidebars */}
+        <aside className="w-full lg:w-[340px] flex flex-col gap-6 shrink-0">
+          <ReorderRecommendations items={reorderRecommendations} />
+          <ItemDetails details={itemDetails} />
+        </aside>
+        
+      </div>
     </main>
   );
 }
