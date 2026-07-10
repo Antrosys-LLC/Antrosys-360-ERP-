@@ -17,7 +17,7 @@ import {
   AlertTriangle,
   Bell,
   ArrowRight,
-  X // Added X icon for the close button
+  X
 } from 'lucide-react';
 
 // ============================================================================
@@ -72,11 +72,24 @@ const reorderRecommendations = [
 // COMPONENTS
 // ============================================================================
 
-const HeaderActions = () => (
+const HeaderActions = ({ onOpenReorder }: { onOpenReorder: () => void }) => (
   <div className="flex flex-wrap items-center gap-3">
     <button className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-[var(--radius)] text-sm font-medium hover:bg-muted/50 transition-colors shrink-0">
       All Locations <ChevronDown className="w-4 h-4 text-muted-foreground" />
     </button>
+    
+    {/* New Button to trigger Reorder Sidebar */}
+    <button 
+      onClick={onOpenReorder}
+      className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-[var(--radius)] text-sm font-medium hover:bg-muted/50 transition-colors shrink-0 relative"
+    >
+      <Bell className="w-4 h-4 text-[#F5A623]" /> 
+      Reorders
+      <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-white">
+        3
+      </span>
+    </button>
+
     <div className="flex gap-2 shrink-0">
       <button className="p-2 bg-card border border-border rounded-[var(--radius)] text-muted-foreground hover:text-foreground transition-colors">
         <Barcode className="w-4 h-4" />
@@ -219,48 +232,68 @@ const InventoryTable = ({ items, selectedItemId, onRowClick }: InventoryTablePro
   </div>
 );
 
-const ReorderRecommendations = ({ items }: { items: typeof reorderRecommendations }) => (
-  <div className="bg-card border border-border rounded-[var(--radius)] p-5 shadow-sm w-full">
-    <div className="flex items-center gap-2 mb-4">
-      <Bell className="w-5 h-5 text-[#F5A623] shrink-0" />
-      <h3 className="font-semibold text-foreground">Reorder recommendations</h3>
-    </div>
-    
-    <div className="space-y-3 mb-6">
-      {items.map(item => (
-        <div key={item.id} className="border border-border rounded-[var(--radius)] p-3 bg-muted/20">
-          <div className="flex justify-between items-start mb-2 gap-2">
-            <h4 className="font-medium text-sm text-foreground leading-tight">{item.name}</h4>
-            <input type="checkbox" defaultChecked={item.selected} className="accent-primary w-4 h-4 rounded border-border shrink-0" />
+// ============================================================================
+// SIDEBAR COMPONENTS
+// ============================================================================
+
+const ReorderSidebar = ({ items, onClose }: { items: typeof reorderRecommendations, onClose: () => void }) => {
+  return (
+    <>
+      {/* Invisible backdrop to capture outside clicks without blurring */}
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      
+      <div className="fixed inset-y-0 right-0 w-full sm:w-[400px] bg-background border-l border-border shadow-2xl z-50 p-6 flex flex-col animate-in slide-in-from-right duration-300">
+        
+        <div className="flex items-center justify-between mb-6 pb-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <Bell className="w-5 h-5 text-[#F5A623]" />
+            <h2 className="text-lg font-semibold text-foreground">Reorder alerts</h2>
           </div>
-          <div className="flex justify-between items-center text-xs">
-            <span className="text-muted-foreground">Cur: <strong className={item.current === 0 ? 'text-destructive' : 'text-[#F5A623]'}>{item.current}</strong></span>
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">+</span>
-              <input 
-                type="number" 
-                defaultValue={item.toAdd} 
-                className="w-14 text-center border border-border rounded bg-card py-1 text-foreground"
-              />
-            </div>
-          </div>
+          <button 
+            onClick={onClose} 
+            className="p-2 -mr-2 text-muted-foreground hover:bg-muted hover:text-foreground rounded-full transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
-      ))}
-    </div>
+        
+        <div className="flex-1 overflow-y-auto space-y-3 mb-6 pr-2">
+          {items.map(item => (
+            <div key={item.id} className="border border-border rounded-[var(--radius)] p-3 bg-muted/20">
+              <div className="flex justify-between items-start mb-2 gap-2">
+                <h4 className="font-medium text-sm text-foreground leading-tight">{item.name}</h4>
+                <input type="checkbox" defaultChecked={item.selected} className="accent-primary w-4 h-4 rounded border-border shrink-0" />
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-muted-foreground">Cur: <strong className={item.current === 0 ? 'text-destructive' : 'text-[#F5A623]'}>{item.current}</strong></span>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">+</span>
+                  <input 
+                    type="number" 
+                    defaultValue={item.toAdd} 
+                    className="w-14 text-center border border-border rounded bg-card py-1 text-foreground"
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
 
-    <div className="border-t border-border pt-4">
-      <div className="flex justify-between items-center mb-4 text-sm">
-        <span className="text-muted-foreground">5 selected</span>
-        <span className="text-foreground">Est. total: <strong>PKR 7,762,500</strong></span>
+        <div className="border-t border-border pt-4 mt-auto">
+          <div className="flex justify-between items-center mb-4 text-sm">
+            <span className="text-muted-foreground">3 selected</span>
+            <span className="text-foreground">Est. total: <strong>PKR 7,762,500</strong></span>
+          </div>
+          <button className="w-full py-2.5 bg-secondary text-secondary-foreground font-medium rounded-[var(--radius)] flex items-center justify-center gap-2 hover:opacity-90 transition-opacity text-sm">
+            Generate PO <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+
       </div>
-      <button className="w-full py-2 bg-secondary text-secondary-foreground font-medium rounded-[var(--radius)] flex items-center justify-center gap-2 hover:opacity-90 transition-opacity text-sm">
-        Generate PO <ArrowRight className="w-4 h-4" />
-      </button>
-    </div>
-  </div>
-);
+    </>
+  );
+};
 
-// Converted into an off-canvas drawer/sidebar
 const ItemDetailsSidebar = ({ item, onClose }: { item: typeof inventoryItems[0], onClose: () => void }) => {
   const Icon = item.icon;
   const isCritical = item.status === 'critical';
@@ -268,16 +301,11 @@ const ItemDetailsSidebar = ({ item, onClose }: { item: typeof inventoryItems[0],
 
   return (
     <>
-      {/* Backdrop overlay */}
-      <div 
-        className="fixed inset-0 bg-background/60 backdrop-blur-sm z-40 animate-in fade-in duration-200" 
-        onClick={onClose}
-      />
+      {/* Invisible backdrop to capture outside clicks without blurring */}
+      <div className="fixed inset-0 z-40" onClick={onClose} />
       
-      {/* Drawer */}
       <div className="fixed inset-y-0 right-0 w-full sm:w-[400px] bg-background border-l border-border shadow-2xl z-50 p-6 overflow-y-auto animate-in slide-in-from-right duration-300">
         
-        {/* Header */}
         <div className="flex items-center justify-between mb-8 pb-4 border-b border-border">
           <h2 className="text-lg font-semibold text-foreground">Item Details</h2>
           <button 
@@ -288,7 +316,6 @@ const ItemDetailsSidebar = ({ item, onClose }: { item: typeof inventoryItems[0],
           </button>
         </div>
 
-        {/* Content Card (from original design) */}
         <div className="bg-card border border-border rounded-xl p-5 shadow-sm w-full">
           <div className="flex items-start gap-4 mb-6">
             <div className={`p-3 rounded-[var(--radius)] shrink-0 ${isCritical ? 'bg-destructive/10 text-destructive' : isWarning ? 'bg-[#F5A623]/10 text-[#F5A623]' : 'bg-primary/10 text-primary'}`}>
@@ -339,7 +366,20 @@ const ItemDetailsSidebar = ({ item, onClose }: { item: typeof inventoryItems[0],
 
 export default function InventoryDashboard() {
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
+  const [isReorderOpen, setIsReorderOpen] = useState(false);
+
   const selectedItem = inventoryItems.find(item => item.id === selectedItemId);
+
+  // Helper handlers to ensure only one sidebar opens at a time
+  const handleOpenReorder = () => {
+    setSelectedItemId(null);
+    setIsReorderOpen(true);
+  };
+
+  const handleRowClick = (id: number) => {
+    setIsReorderOpen(false);
+    setSelectedItemId(id);
+  };
 
   return (
     <div className="w-full bg-background min-h-screen">
@@ -359,29 +399,30 @@ export default function InventoryDashboard() {
               </span>
             </div>
           </div>
-          <HeaderActions />
+          <HeaderActions onOpenReorder={handleOpenReorder} />
         </header>
 
-        <div className="flex flex-col xl:flex-row gap-6 pb-12">
-          <div className="flex-1 flex flex-col min-w-0 w-full">
-            <StatsCard stats={dashboardStats} />
-            <FilterSection filters={filterCategories} />
-            <InventoryTable 
-              items={inventoryItems} 
-              selectedItemId={selectedItemId}
-              onRowClick={(id) => setSelectedItemId(id)} 
-            />
-          </div>
-
-          <aside className="w-full xl:w-[340px] shrink-0">
-            {/* The right column is now static and won't grow downwards when an item is clicked */}
-            <ReorderRecommendations items={reorderRecommendations} />
-          </aside>
+        {/* Removed the split-column layout entirely. Now it spans full width. */}
+        <div className="pb-12 w-full">
+          <StatsCard stats={dashboardStats} />
+          <FilterSection filters={filterCategories} />
+          <InventoryTable 
+            items={inventoryItems} 
+            selectedItemId={selectedItemId}
+            onRowClick={handleRowClick} 
+          />
         </div>
         
       </div>
 
-      {/* Render the Drawer at the root level so it covers everything */}
+      {/* Sidebars rendered outside main layout flow */}
+      {isReorderOpen && (
+        <ReorderSidebar 
+          items={reorderRecommendations} 
+          onClose={() => setIsReorderOpen(false)} 
+        />
+      )}
+
       {selectedItem && (
         <ItemDetailsSidebar 
           item={selectedItem} 
