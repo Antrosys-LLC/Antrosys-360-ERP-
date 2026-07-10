@@ -78,7 +78,6 @@ const HeaderActions = ({ onOpenReorder }: { onOpenReorder: () => void }) => (
       All Locations <ChevronDown className="w-4 h-4 text-muted-foreground" />
     </button>
     
-    {/* New Button to trigger Reorder Sidebar */}
     <button 
       onClick={onOpenReorder}
       className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-[var(--radius)] text-sm font-medium hover:bg-muted/50 transition-colors shrink-0 relative"
@@ -239,7 +238,6 @@ const InventoryTable = ({ items, selectedItemId, onRowClick }: InventoryTablePro
 const ReorderSidebar = ({ items, onClose }: { items: typeof reorderRecommendations, onClose: () => void }) => {
   return (
     <>
-      {/* Invisible backdrop to capture outside clicks without blurring */}
       <div className="fixed inset-0 z-40" onClick={onClose} />
       
       <div className="fixed inset-y-0 right-0 w-full sm:w-[400px] bg-background border-l border-border shadow-2xl z-50 p-6 flex flex-col animate-in slide-in-from-right duration-300">
@@ -299,9 +297,14 @@ const ItemDetailsSidebar = ({ item, onClose }: { item: typeof inventoryItems[0],
   const isCritical = item.status === 'critical';
   const isWarning = item.status === 'warning';
 
+  // Mathematical variables for accurate SVG circle rendering
+  const percent = item.details.stockLevelPercent;
+  const radius = 28;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (percent / 100) * circumference;
+
   return (
     <>
-      {/* Invisible backdrop to capture outside clicks without blurring */}
       <div className="fixed inset-0 z-40" onClick={onClose} />
       
       <div className="fixed inset-y-0 right-0 w-full sm:w-[400px] bg-background border-l border-border shadow-2xl z-50 p-6 overflow-y-auto animate-in slide-in-from-right duration-300">
@@ -330,12 +333,29 @@ const ItemDetailsSidebar = ({ item, onClose }: { item: typeof inventoryItems[0],
           </div>
           
           <div className="border-t border-border pt-6 grid grid-cols-[auto_1fr] gap-6 items-center">
-            <div className="relative w-16 h-16 rounded-full border-4 border-muted flex items-center justify-center shrink-0">
-              <div 
-                className={`absolute inset-0 rounded-full border-4 opacity-50 ${isCritical ? 'border-destructive' : isWarning ? 'border-[#F5A623]' : 'border-primary'}`} 
-                style={{ clipPath: `polygon(0 0, ${item.details.stockLevelPercent > 50 ? '100%' : '50%'} 0, 50% 100%, 0 100%)` }} 
-              />
-              <span className="text-xs font-semibold text-foreground">{item.details.stockLevelPercent}%</span>
+            
+            {/* ACCURATE SVG CIRCULAR PROGRESS INDICATOR */}
+            <div className="relative w-16 h-16 flex items-center justify-center shrink-0">
+              <svg className="w-full h-full absolute inset-0 -rotate-90 transform" viewBox="0 0 64 64">
+                <circle
+                  cx="32"
+                  cy="32"
+                  r={radius}
+                  className="stroke-muted fill-none"
+                  strokeWidth="6"
+                />
+                <circle
+                  cx="32"
+                  cy="32"
+                  r={radius}
+                  className={`fill-none opacity-80 ${isCritical ? 'stroke-destructive' : isWarning ? 'stroke-[#F5A623]' : 'stroke-primary'}`}
+                  strokeWidth="6"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={strokeDashoffset}
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span className="text-xs font-semibold text-foreground relative z-10">{percent}%</span>
             </div>
             
             <div className="text-sm space-y-2 min-w-0">
@@ -370,7 +390,6 @@ export default function InventoryDashboard() {
 
   const selectedItem = inventoryItems.find(item => item.id === selectedItemId);
 
-  // Helper handlers to ensure only one sidebar opens at a time
   const handleOpenReorder = () => {
     setSelectedItemId(null);
     setIsReorderOpen(true);
@@ -402,7 +421,6 @@ export default function InventoryDashboard() {
           <HeaderActions onOpenReorder={handleOpenReorder} />
         </header>
 
-        {/* Removed the split-column layout entirely. Now it spans full width. */}
         <div className="pb-12 w-full">
           <StatsCard stats={dashboardStats} />
           <FilterSection filters={filterCategories} />
@@ -415,7 +433,6 @@ export default function InventoryDashboard() {
         
       </div>
 
-      {/* Sidebars rendered outside main layout flow */}
       {isReorderOpen && (
         <ReorderSidebar 
           items={reorderRecommendations} 
