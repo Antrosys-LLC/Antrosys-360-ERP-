@@ -16,7 +16,8 @@ import {
   Printer,
   AlertTriangle,
   Bell,
-  ArrowRight
+  ArrowRight,
+  X // Added X icon for the close button
 } from 'lucide-react';
 
 // ============================================================================
@@ -93,8 +94,6 @@ const HeaderActions = () => (
 const StatsCard = ({ stats }: { stats: typeof dashboardStats }) => (
   <div className="bg-card border border-border rounded-xl p-6 shadow-sm w-full mb-6">
     <div className="grid grid-cols-1 md:grid-cols-4 gap-6 md:gap-0 mb-8">
-      
-      {/* Column 1 */}
       <div className="flex flex-col md:pr-6 md:border-r border-border/60 pb-4 md:pb-0">
         <p className="text-[13px] font-medium text-muted-foreground mb-3">Total stock value</p>
         <div className="flex flex-col">
@@ -104,8 +103,6 @@ const StatsCard = ({ stats }: { stats: typeof dashboardStats }) => (
           </span>
         </div>
       </div>
-      
-      {/* Column 2 */}
       <div className="flex flex-col md:px-6 md:border-r border-border/60 pb-4 md:pb-0">
         <p className="text-[13px] font-medium text-muted-foreground mb-3">Low stock alerts</p>
         <div className="flex items-center gap-2 mt-1">
@@ -113,8 +110,6 @@ const StatsCard = ({ stats }: { stats: typeof dashboardStats }) => (
           <span className="text-[24px] font-medium text-foreground leading-none">{stats.lowStock}</span>
         </div>
       </div>
-      
-      {/* Column 3 */}
       <div className="flex flex-col md:px-6 md:border-r border-border/60 pb-4 md:pb-0">
         <p className="text-[13px] font-medium text-muted-foreground mb-3">Out of stock</p>
         <div className="mt-1">
@@ -123,18 +118,14 @@ const StatsCard = ({ stats }: { stats: typeof dashboardStats }) => (
           </div>
         </div>
       </div>
-      
-      {/* Column 4 */}
       <div className="flex flex-col md:pl-6 pb-4 md:pb-0">
         <p className="text-[13px] font-medium text-muted-foreground mb-3">Turnover ratio</p>
         <div className="mt-1">
           <span className="text-[24px] font-medium text-foreground leading-none">{stats.turnoverRatio}</span>
         </div>
       </div>
-
     </div>
     
-    {/* Segmented Progress Bar - Pill shapes with gaps */}
     <div className="h-2.5 w-full flex gap-1.5">
       <div className="h-full bg-[#7C3AED] rounded-full" style={{ width: '70%' }} />
       <div className="h-full bg-[#F5A623] rounded-full" style={{ width: '15%' }} />
@@ -269,50 +260,76 @@ const ReorderRecommendations = ({ items }: { items: typeof reorderRecommendation
   </div>
 );
 
-const ItemDetails = ({ item }: { item: typeof inventoryItems[0] }) => {
+// Converted into an off-canvas drawer/sidebar
+const ItemDetailsSidebar = ({ item, onClose }: { item: typeof inventoryItems[0], onClose: () => void }) => {
   const Icon = item.icon;
   const isCritical = item.status === 'critical';
   const isWarning = item.status === 'warning';
 
   return (
-    <div className="bg-card border border-border rounded-[var(--radius)] p-5 shadow-sm w-full animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <div className="flex items-start gap-4 mb-6">
-        <div className={`p-3 rounded-[var(--radius)] shrink-0 ${isCritical ? 'bg-destructive/10 text-destructive' : isWarning ? 'bg-[#F5A623]/10 text-[#F5A623]' : 'bg-primary/10 text-primary'}`}>
-          <Icon className="w-6 h-6" />
-        </div>
-        <div className="min-w-0">
-          <h3 className="font-semibold text-foreground truncate">{item.name}</h3>
-          <span className="inline-block mt-1 px-2 py-0.5 bg-muted text-muted-foreground text-xs font-mono rounded-[var(--radius)] border border-border">
-            {item.sku}
-          </span>
-        </div>
-      </div>
+    <>
+      {/* Backdrop overlay */}
+      <div 
+        className="fixed inset-0 bg-background/60 backdrop-blur-sm z-40 animate-in fade-in duration-200" 
+        onClick={onClose}
+      />
       
-      <div className="border-t border-border pt-6 grid grid-cols-[auto_1fr] gap-6 items-center">
-        <div className="relative w-16 h-16 rounded-full border-4 border-muted flex items-center justify-center shrink-0">
-          <div 
-            className={`absolute inset-0 rounded-full border-4 opacity-50 ${isCritical ? 'border-destructive' : isWarning ? 'border-[#F5A623]' : 'border-primary'}`} 
-            style={{ clipPath: `polygon(0 0, ${item.details.stockLevelPercent > 50 ? '100%' : '50%'} 0, 50% 100%, 0 100%)` }} 
-          />
-          <span className="text-xs font-semibold text-foreground">{item.details.stockLevelPercent}%</span>
+      {/* Drawer */}
+      <div className="fixed inset-y-0 right-0 w-full sm:w-[400px] bg-background border-l border-border shadow-2xl z-50 p-6 overflow-y-auto animate-in slide-in-from-right duration-300">
+        
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8 pb-4 border-b border-border">
+          <h2 className="text-lg font-semibold text-foreground">Item Details</h2>
+          <button 
+            onClick={onClose} 
+            className="p-2 -mr-2 text-muted-foreground hover:bg-muted hover:text-foreground rounded-full transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Content Card (from original design) */}
+        <div className="bg-card border border-border rounded-xl p-5 shadow-sm w-full">
+          <div className="flex items-start gap-4 mb-6">
+            <div className={`p-3 rounded-[var(--radius)] shrink-0 ${isCritical ? 'bg-destructive/10 text-destructive' : isWarning ? 'bg-[#F5A623]/10 text-[#F5A623]' : 'bg-primary/10 text-primary'}`}>
+              <Icon className="w-6 h-6" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="font-semibold text-foreground truncate">{item.name}</h3>
+              <span className="inline-block mt-1 px-2 py-0.5 bg-muted text-muted-foreground text-xs font-mono rounded-[var(--radius)] border border-border">
+                {item.sku}
+              </span>
+            </div>
+          </div>
+          
+          <div className="border-t border-border pt-6 grid grid-cols-[auto_1fr] gap-6 items-center">
+            <div className="relative w-16 h-16 rounded-full border-4 border-muted flex items-center justify-center shrink-0">
+              <div 
+                className={`absolute inset-0 rounded-full border-4 opacity-50 ${isCritical ? 'border-destructive' : isWarning ? 'border-[#F5A623]' : 'border-primary'}`} 
+                style={{ clipPath: `polygon(0 0, ${item.details.stockLevelPercent > 50 ? '100%' : '50%'} 0, 50% 100%, 0 100%)` }} 
+              />
+              <span className="text-xs font-semibold text-foreground">{item.details.stockLevelPercent}%</span>
+            </div>
+            
+            <div className="text-sm space-y-2 min-w-0">
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground shrink-0">Supplier</span>
+                <span className="font-medium text-foreground truncate">{item.details.supplier}</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground shrink-0">Unit cost</span>
+                <span className="font-medium text-foreground truncate">{item.details.unitCost}</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground shrink-0">Lead time</span>
+                <span className="font-medium text-foreground truncate">{item.details.leadTime}</span>
+              </div>
+            </div>
+          </div>
         </div>
         
-        <div className="text-sm space-y-2 min-w-0">
-          <div className="flex justify-between gap-2">
-            <span className="text-muted-foreground shrink-0">Supplier</span>
-            <span className="font-medium text-foreground truncate">{item.details.supplier}</span>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span className="text-muted-foreground shrink-0">Unit cost</span>
-            <span className="font-medium text-foreground truncate">{item.details.unitCost}</span>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span className="text-muted-foreground shrink-0">Lead time</span>
-            <span className="font-medium text-foreground truncate">{item.details.leadTime}</span>
-          </div>
-        </div>
       </div>
-    </div>
+    </>
   );
 };
 
@@ -326,7 +343,7 @@ export default function InventoryDashboard() {
 
   return (
     <div className="w-full bg-background min-h-screen">
-      <div className="w-full max-w-[1600px] mx-auto">
+      <div className="w-full max-w-[1600px] mx-auto relative">
         
         <header className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 mb-6 pb-4 border-b border-border">
           <div className="min-w-0">
@@ -347,9 +364,7 @@ export default function InventoryDashboard() {
 
         <div className="flex flex-col xl:flex-row gap-6 pb-12">
           <div className="flex-1 flex flex-col min-w-0 w-full">
-            {/* The newly updated component */}
             <StatsCard stats={dashboardStats} />
-            
             <FilterSection filters={filterCategories} />
             <InventoryTable 
               items={inventoryItems} 
@@ -358,13 +373,21 @@ export default function InventoryDashboard() {
             />
           </div>
 
-          <aside className="w-full xl:w-[340px] flex flex-col md:flex-row xl:flex-col gap-6 shrink-0">
+          <aside className="w-full xl:w-[340px] shrink-0">
+            {/* The right column is now static and won't grow downwards when an item is clicked */}
             <ReorderRecommendations items={reorderRecommendations} />
-            {selectedItem && <ItemDetails item={selectedItem} />}
           </aside>
         </div>
         
       </div>
+
+      {/* Render the Drawer at the root level so it covers everything */}
+      {selectedItem && (
+        <ItemDetailsSidebar 
+          item={selectedItem} 
+          onClose={() => setSelectedItemId(null)} 
+        />
+      )}
     </div>
   );
 }
