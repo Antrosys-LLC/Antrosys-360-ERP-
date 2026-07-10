@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useState } from 'react';
 import { 
   ChevronDown, 
@@ -37,7 +38,6 @@ const filterCategories = [
   { id: 'consumables', label: 'Consumables', active: false },
 ];
 
-// Enriched mock data to hold unique details for the side panel
 const inventoryItems = [
   { 
     id: 1, name: 'MacBook Pro 14"', sku: 'IT-MBP-14', category: 'IT hardware', location: 'HQ - Floor 3', qty: 4, status: 'warning', icon: Laptop,
@@ -91,47 +91,61 @@ const HeaderActions = () => (
 );
 
 const StatsCard = ({ stats }: { stats: typeof dashboardStats }) => (
-  <div className="bg-card border border-border rounded-[var(--radius)] p-6 shadow-sm w-full">
-    <div className="grid grid-cols-2 xl:grid-cols-4 gap-y-6 gap-x-4 mb-6">
-      <div className="flex flex-col min-w-0">
-        <p className="text-sm font-medium text-muted-foreground mb-1 truncate">Total stock value</p>
-        <div className="flex items-baseline gap-1 truncate">
-          <span className="text-sm font-medium text-muted-foreground">PKR</span>
-          <span className="text-2xl font-semibold text-foreground truncate" title={stats.totalValue}>
+  <div className="bg-card border border-border rounded-xl p-6 shadow-sm w-full mb-6">
+    <div className="grid grid-cols-1 md:grid-cols-4 gap-6 md:gap-0 mb-8">
+      
+      {/* Column 1 */}
+      <div className="flex flex-col md:pr-6 md:border-r border-border/60 pb-4 md:pb-0">
+        <p className="text-[13px] font-medium text-muted-foreground mb-3">Total stock value</p>
+        <div className="flex flex-col">
+          <span className="text-base font-medium text-foreground leading-tight">PKR</span>
+          <span className="text-[26px] font-mono leading-tight tracking-tight text-foreground mt-1">
             {stats.totalValue}
           </span>
         </div>
       </div>
-      <div className="flex flex-col min-w-0 xl:pl-4 xl:border-l border-border">
-        <p className="text-sm font-medium text-muted-foreground mb-1 truncate">Low stock alerts</p>
-        <div className="flex items-center gap-2">
+      
+      {/* Column 2 */}
+      <div className="flex flex-col md:px-6 md:border-r border-border/60 pb-4 md:pb-0">
+        <p className="text-[13px] font-medium text-muted-foreground mb-3">Low stock alerts</p>
+        <div className="flex items-center gap-2 mt-1">
           <div className="w-2 h-2 rounded-full bg-[#F5A623] shrink-0" />
-          <span className="text-2xl font-semibold text-foreground truncate">{stats.lowStock}</span>
+          <span className="text-[24px] font-medium text-foreground leading-none">{stats.lowStock}</span>
         </div>
       </div>
-      <div className="flex flex-col min-w-0 xl:pl-4 xl:border-l border-border">
-        <p className="text-sm font-medium text-muted-foreground mb-1 truncate">Out of stock</p>
-        <div className="inline-flex items-center justify-center w-8 h-8 rounded-full border-2 border-destructive text-destructive text-lg font-semibold shrink-0">
-          {stats.outOfStock}
+      
+      {/* Column 3 */}
+      <div className="flex flex-col md:px-6 md:border-r border-border/60 pb-4 md:pb-0">
+        <p className="text-[13px] font-medium text-muted-foreground mb-3">Out of stock</p>
+        <div className="mt-1">
+          <div className="inline-flex items-center justify-center w-10 h-10 rounded-full border-[2px] border-destructive text-destructive text-xl font-medium shrink-0">
+            {stats.outOfStock}
+          </div>
         </div>
       </div>
-      <div className="flex flex-col min-w-0 xl:pl-4 xl:border-l border-border">
-        <p className="text-sm font-medium text-muted-foreground mb-1 truncate">Turnover ratio</p>
-        <span className="text-2xl font-semibold text-foreground truncate">{stats.turnoverRatio}</span>
+      
+      {/* Column 4 */}
+      <div className="flex flex-col md:pl-6 pb-4 md:pb-0">
+        <p className="text-[13px] font-medium text-muted-foreground mb-3">Turnover ratio</p>
+        <div className="mt-1">
+          <span className="text-[24px] font-medium text-foreground leading-none">{stats.turnoverRatio}</span>
+        </div>
       </div>
+
     </div>
     
-    <div className="h-2 w-full flex gap-1 rounded-full overflow-hidden">
-      <div className="h-full bg-primary" style={{ width: '65%' }} />
-      <div className="h-full bg-[#F5A623]" style={{ width: '20%' }} />
-      <div className="h-full bg-destructive" style={{ width: '5%' }} />
-      <div className="h-full bg-[#4A90E2]" style={{ width: '10%' }} />
+    {/* Segmented Progress Bar - Pill shapes with gaps */}
+    <div className="h-2.5 w-full flex gap-1.5">
+      <div className="h-full bg-[#7C3AED] rounded-full" style={{ width: '70%' }} />
+      <div className="h-full bg-[#F5A623] rounded-full" style={{ width: '15%' }} />
+      <div className="h-full bg-destructive rounded-full" style={{ width: '5%' }} />
+      <div className="h-full bg-[#60A5FA] rounded-full" style={{ width: '10%' }} />
     </div>
   </div>
 );
 
 const FilterSection = ({ filters }: { filters: typeof filterCategories }) => (
-  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 mt-6">
+  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
     <div className="flex gap-2 overflow-x-auto min-w-0 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {filters.map(filter => (
         <button
@@ -307,17 +321,13 @@ const ItemDetails = ({ item }: { item: typeof inventoryItems[0] }) => {
 // ============================================================================
 
 export default function InventoryDashboard() {
-  // State to track which row is clicked. Null means no item is currently selected.
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
-
-  // Find the full item data based on the selected ID
   const selectedItem = inventoryItems.find(item => item.id === selectedItemId);
 
   return (
     <div className="w-full bg-background min-h-screen">
       <div className="w-full max-w-[1600px] mx-auto">
         
-        {/* Page Header */}
         <header className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 mb-6 pb-4 border-b border-border">
           <div className="min-w-0">
             <nav className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
@@ -332,16 +342,14 @@ export default function InventoryDashboard() {
               </span>
             </div>
           </div>
-          
           <HeaderActions />
         </header>
 
-        {/* Main Layout Grid */}
         <div className="flex flex-col xl:flex-row gap-6 pb-12">
-          
-          {/* Left Column - Main Content */}
           <div className="flex-1 flex flex-col min-w-0 w-full">
+            {/* The newly updated component */}
             <StatsCard stats={dashboardStats} />
+            
             <FilterSection filters={filterCategories} />
             <InventoryTable 
               items={inventoryItems} 
@@ -350,16 +358,10 @@ export default function InventoryDashboard() {
             />
           </div>
 
-          {/* Right Column - Sidebars */}
           <aside className="w-full xl:w-[340px] flex flex-col md:flex-row xl:flex-col gap-6 shrink-0">
             <ReorderRecommendations items={reorderRecommendations} />
-            
-            {/* Conditionally render the Item Details card only if an item is selected */}
-            {selectedItem && (
-              <ItemDetails item={selectedItem} />
-            )}
+            {selectedItem && <ItemDetails item={selectedItem} />}
           </aside>
-          
         </div>
         
       </div>
