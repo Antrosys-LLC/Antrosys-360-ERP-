@@ -204,6 +204,108 @@ const LocationDropdown = ({
   );
 };
 
+const LocationFieldDropdown = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [locations, setLocations] = useState<string[]>([]);
+  const [customLocations, setCustomLocations] = useState<string[]>([]);
+  const [isAdding, setIsAdding] = useState(false);
+  const [newLocation, setNewLocation] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  const LOCATIONS_STORAGE_KEY = 'inventory_custom_locations';
+
+  useEffect(() => {
+    const stored = localStorage.getItem(LOCATIONS_STORAGE_KEY);
+    if (stored) {
+      try { setCustomLocations(JSON.parse(stored)); } catch { /* ignore */ }
+    }
+    apiClient.get('/inventory/locations').then(res => {
+      setLocations(res.data.data || []);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setIsOpen(false);
+        setIsAdding(false);
+        setNewLocation('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleAddLocation = () => {
+    if (!newLocation.trim()) return;
+    const updated = [...new Set([...customLocations, newLocation.trim()])];
+    setCustomLocations(updated);
+    localStorage.setItem(LOCATIONS_STORAGE_KEY, JSON.stringify(updated));
+    onChange(newLocation.trim());
+    setIsAdding(false);
+    setNewLocation('');
+    setIsOpen(false);
+  };
+
+  const allLocations = [...new Set([...locations, ...customLocations])];
+
+  return (
+    <div className="relative" ref={ref}>
+      <label className="block text-xs font-medium text-muted-foreground mb-1">Location *</label>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm border border-border rounded-[var(--radius)] bg-card text-left ${value ? 'text-foreground' : 'text-muted-foreground'}`}
+      >
+        {value || 'Select location'}
+        <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+      </button>
+      {isOpen && (
+        <div className="absolute top-full left-0 mt-1 w-full bg-card border border-border rounded-[var(--radius)] shadow-lg z-30 py-1">
+          {allLocations.length === 0 && !isAdding && (
+            <p className="px-3 py-2 text-xs text-muted-foreground">No locations yet</p>
+          )}
+          {allLocations.map(loc => (
+            <button
+              key={loc}
+              type="button"
+              onClick={() => { onChange(loc); setIsOpen(false); }}
+              className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/50 transition-colors ${value === loc ? 'bg-muted/30 font-medium' : ''}`}
+            >
+              {loc}
+            </button>
+          ))}
+          <div className="border-t border-border my-1" />
+          {isAdding ? (
+            <div className="px-3 py-2 flex gap-2">
+              <input
+                type="text"
+                value={newLocation}
+                onChange={(e) => setNewLocation(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddLocation()}
+                placeholder="Location name"
+                className="flex-1 px-2 py-1 text-xs border border-border rounded bg-background text-foreground"
+                autoFocus
+              />
+              <button type="button" onClick={handleAddLocation} className="px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:opacity-90">
+                Add
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsAdding(true)}
+              className="w-full text-left px-3 py-2 text-sm text-primary hover:bg-muted/50 transition-colors"
+            >
+              + Add location
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const AddItemModal = ({
   isOpen,
   onClose,
@@ -220,23 +322,21 @@ const AddItemModal = ({
     minStockLevel: 10, maxStockLevel: 100, supplier: '', unitCost: 0, leadTime: '',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!form.name || !form.sku || !form.categoryId || !form.supplier || !form.leadTime) return;
+    setError(null);
+    if (!form.name || !form.sku || !form.categoryId || !form.supplier || !form.leadTime || !form.location || form.unitCost <= 0) return;
     setSubmitting(true);
     try {
-      await apiClient.post('/inventory', {
-        ...form,
-        unitCost: Number(form.unitCost),
-        qty: Number(form.qty),
-        minStockLevel: Number(form.minStockLevel),
-        maxStockLevel: Number(form.maxStockLevel),
-      });
+      await apiClient.post('/inventory', form);
       onSuccess();
       onClose();
       setForm({ name: '', sku: '', categoryId: '', location: '', qty: 0, minStockLevel: 10, maxStockLevel: 100, supplier: '', unitCost: 0, leadTime: '' });
-    } catch (err) {
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed to create item';
+      setError(msg);
       console.error('Failed to create item', err);
     } finally {
       setSubmitting(false);
@@ -257,6 +357,11 @@ const AddItemModal = ({
             </button>
           </div>
           <form onSubmit={handleSubmit} className="p-5 space-y-4">
+            {error && (
+              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-[var(--radius)] text-sm text-destructive">
+                {error}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-muted-foreground mb-1">Name *</label>
@@ -273,10 +378,7 @@ const AddItemModal = ({
                   {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Location</label>
-                <input type="text" value={form.location} onChange={e => setForm(p => ({...p, location: e.target.value}))} className="w-full px-3 py-2 text-sm border border-border rounded-[var(--radius)] bg-card text-foreground" placeholder="e.g. HQ - Floor 3" />
-              </div>
+              <LocationFieldDropdown value={form.location} onChange={(v) => setForm(p => ({...p, location: v}))} />
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">Supplier *</label>
                 <input type="text" value={form.supplier} onChange={e => setForm(p => ({...p, supplier: e.target.value}))} required className="w-full px-3 py-2 text-sm border border-border rounded-[var(--radius)] bg-card text-foreground" placeholder="Supplier name" />
@@ -568,7 +670,7 @@ const InventoryMapView = ({ items, onItemClick }: { items: InventoryItem[]; onIt
   );
 };
 
-const ReorderSidebar = ({ items, onClose }: { items: ReorderItem[]; onClose: () => void }) => {
+const ReorderSidebar = ({ items, onClose, poResult, onPoGenerated }: { items: ReorderItem[]; onClose: () => void; poResult: { poNumber: string; grandTotal: number } | null; onPoGenerated: (result: { poNumber: string; grandTotal: number }) => void }) => {
   const [selected, setSelected] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(items.map((i) => [i.id, true]))
   );
@@ -576,7 +678,6 @@ const ReorderSidebar = ({ items, onClose }: { items: ReorderItem[]; onClose: () 
     Object.fromEntries(items.map((i) => [i.id, i.recommendedOrder]))
   );
   const [generating, setGenerating] = useState(false);
-  const [poResult, setPoResult] = useState<{ poNumber: string; grandTotal: number } | null>(null);
   const [poError, setPoError] = useState<string | null>(null);
 
   const selectedCount = Object.values(selected).filter(Boolean).length;
@@ -600,7 +701,7 @@ const ReorderSidebar = ({ items, onClose }: { items: ReorderItem[]; onClose: () 
           totalCost: (quantities[i.id] || i.recommendedOrder) * i.unitCost,
         })),
       });
-      setPoResult(res.data.data);
+      onPoGenerated(res.data.data);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed to generate PO. Check your connection and permissions.';
       setPoError(msg);
@@ -812,6 +913,7 @@ export default function InventoryDashboard() {
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [isBarcodeSearch, setIsBarcodeSearch] = useState(false);
   const [barcodeQuery, setBarcodeQuery] = useState('');
+  const [poResult, setPoResult] = useState<{ poNumber: string; grandTotal: number } | null>(null);
 
   const fetchDashboard = useCallback(async (location?: string) => {
     try {
@@ -970,7 +1072,7 @@ export default function InventoryDashboard() {
             >
               <Bell className="w-4 h-4 text-[#F5A623]" /> 
               Reorders
-              {reorderItems.length > 0 && (
+              {reorderItems.length > 0 && !poResult && (
                 <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-white">
                   {reorderItems.length}
                 </span>
@@ -1059,6 +1161,8 @@ export default function InventoryDashboard() {
         <ReorderSidebar
           items={reorderItems}
           onClose={() => setIsReorderOpen(false)}
+          poResult={poResult}
+          onPoGenerated={setPoResult}
         />
       )}
 

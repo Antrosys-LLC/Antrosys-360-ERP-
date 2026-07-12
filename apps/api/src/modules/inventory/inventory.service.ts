@@ -1,5 +1,5 @@
 import { prisma } from '../../config/database';
-import type { ListItemsQuery, CreateItemBody, UpdateItemBody, ListCategoriesQuery, CreateCategoryBody } from './inventory.schema';
+import type { ListItemsQuery, CreateItemBody, UpdateItemBody, ListCategoriesQuery, CreateCategoryBody, CreatePurchaseOrderBody } from './inventory.schema';
 
 type ItemWithCategory = {
   id: string;
@@ -259,7 +259,7 @@ export async function listLocations() {
   return items.map((i) => i.location);
 }
 
-export async function createPurchaseOrder(data: import('./inventory.schema').CreatePurchaseOrderBody, userId: string) {
+export async function createPurchaseOrder(data: CreatePurchaseOrderBody, userId: string) {
   const poNumber = `PO-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
   const grandTotal = data.items.reduce((sum, i) => sum + i.totalCost, 0);
 

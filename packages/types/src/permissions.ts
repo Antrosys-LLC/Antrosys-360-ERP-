@@ -76,6 +76,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'bank_feeds:read',
     'bank_feeds:write',
     'inventory:read',
+    'inventory:write',
   ],
 
   [Role.OPERATIONS_HEAD]: [

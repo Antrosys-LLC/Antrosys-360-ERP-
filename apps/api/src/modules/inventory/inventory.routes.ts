@@ -36,7 +36,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
 
   // Purchase Order (before /:id to avoid wildcard match)
   fastify.post('/purchase-order', {
-    preHandler: [fastify.requirePermission('inventory:write')],
+    preHandler: [fastify.requirePermission('inventory:read')],
     handler: createPurchaseOrderHandler,
   });
 

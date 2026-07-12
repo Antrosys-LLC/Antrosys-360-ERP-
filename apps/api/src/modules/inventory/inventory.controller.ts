@@ -7,6 +7,7 @@ import {
   listCategoriesQuerySchema,
   createCategoryBodySchema,
   dashboardQuerySchema,
+  createPurchaseOrderBodySchema,
 } from './inventory.schema';
 import * as inventoryService from './inventory.service';
 
@@ -122,6 +123,12 @@ export async function createPurchaseOrderHandler(request: FastifyRequest, reply:
     return reply.code(400).send({ error: 'Validation failed', details: parsed.error.flatten() });
   }
 
-  const po = await inventoryService.createPurchaseOrder(parsed.data, request.user.id);
-  return reply.code(201).send({ status: 'success', data: po });
+  try {
+    const po = await inventoryService.createPurchaseOrder(parsed.data, request.user.id);
+    return reply.code(201).send({ status: 'success', data: po });
+  } catch (err) {
+    request.log.error({ err }, 'Failed to create purchase order');
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return reply.code(500).send({ error: message });
+  }
 }
