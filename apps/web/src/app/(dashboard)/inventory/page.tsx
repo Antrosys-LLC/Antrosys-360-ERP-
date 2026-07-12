@@ -576,7 +576,7 @@ const ReorderSidebar = ({ items, onClose }: { items: ReorderItem[]; onClose: () 
     Object.fromEntries(items.map((i) => [i.id, i.recommendedOrder]))
   );
   const [generating, setGenerating] = useState(false);
-  const [poResult, setPoResult] = useState<{ poNumber: string; grandTotal: number; items: { itemName: string; quantity: number }[] } | null>(null);
+  const [poResult, setPoResult] = useState<{ poNumber: string; grandTotal: number } | null>(null);
 
   const selectedCount = Object.values(selected).filter(Boolean).length;
   const estimatedTotal = items
@@ -606,32 +606,6 @@ const ReorderSidebar = ({ items, onClose }: { items: ReorderItem[]; onClose: () 
     }
   };
 
-  const handleDownloadPO = () => {
-    if (!poResult) return;
-    const headers = ['Item', 'SKU', 'Quantity', 'Unit Cost', 'Total'];
-    const rows = poResult.items.map(i => {
-      const item = items.find(it => it.name === i.itemName);
-      const qty = item ? (quantities[item.id] || item.recommendedOrder) : i.quantity;
-      return `"${i.itemName}","${item?.sku || ''}",${qty},${item?.unitCost || 0},${(qty * (item?.unitCost || 0)).toFixed(2)}`;
-    });
-    const csvContent = [
-      `PO Number,${poResult.poNumber}`,
-      `Created,${new Date().toLocaleString()}`,
-      '',
-      headers.join(','),
-      ...rows,
-      '',
-      `Grand Total,,,PKR ${poResult.grandTotal.toLocaleString()}`,
-    ].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${poResult.poNumber}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
@@ -651,72 +625,67 @@ const ReorderSidebar = ({ items, onClose }: { items: ReorderItem[]; onClose: () 
           </button>
         </div>
         
-        {poResult ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-center px-4">
-            <div className="w-16 h-16 rounded-full bg-primary/10 text-primary flex items-center justify-center mb-4">
-              <Package className="w-8 h-8" />
+        {poResult && (
+          <div className="mb-4 p-3 bg-primary/10 border border-primary/20 rounded-[var(--radius)] flex items-start gap-3">
+            <div className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center shrink-0 mt-0.5">
+              <Package className="w-4 h-4" />
             </div>
-            <h3 className="text-lg font-semibold text-foreground mb-1">Purchase Order Created</h3>
-            <p className="text-sm text-muted-foreground mb-1">PO Number: <strong className="text-foreground font-mono">{poResult.poNumber}</strong></p>
-            <p className="text-xs text-muted-foreground mb-6">Grand Total: <strong>PKR {poResult.grandTotal.toLocaleString()}</strong></p>
-            <div className="flex gap-3">
-              <button onClick={handleDownloadPO} className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-[var(--radius)] hover:opacity-90 transition-opacity flex items-center gap-2">
-                <Download className="w-4 h-4" /> Download PO
-              </button>
-              <button onClick={() => setPoResult(null)} className="px-4 py-2 text-sm font-medium border border-border rounded-[var(--radius)] hover:bg-muted/50 transition-colors">
-                Back
-              </button>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">PO Generated Successfully</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                PO <strong className="text-foreground font-mono">{poResult.poNumber}</strong> — PKR {poResult.grandTotal.toLocaleString()}
+              </p>
             </div>
           </div>
-        ) : (
-          <>
-            <div className="flex-1 overflow-y-auto space-y-3 mb-6 pr-2">
-              {items.map(item => (
-                <div key={item.id} className="border border-border rounded-[var(--radius)] p-3 bg-muted/20">
-                  <div className="flex justify-between items-start mb-2 gap-2">
-                    <h4 className="font-medium text-sm text-foreground leading-tight">{item.name}</h4>
-                    <input
-                      type="checkbox"
-                      checked={selected[item.id] ?? true}
-                      onChange={() => setSelected(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
-                      className="accent-primary w-4 h-4 rounded border-border shrink-0"
-                    />
-                  </div>
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-muted-foreground">Cur: <strong className={item.current === 0 ? 'text-destructive' : 'text-[#F5A623]'}>{item.current}</strong></span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">+</span>
-                      <input 
-                        type="number" 
-                        value={quantities[item.id] ?? item.recommendedOrder}
-                        onChange={(e) => setQuantities(prev => ({ ...prev, [item.id]: parseInt(e.target.value) || 0 }))}
-                        className="w-14 text-center border border-border rounded bg-card py-1 text-foreground"
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="border-t border-border pt-4 mt-auto">
-              <div className="flex justify-between items-center mb-4 text-sm">
-                <span className="text-muted-foreground">{selectedCount} selected</span>
-                <span className="text-foreground">Est. total: <strong>PKR {estimatedTotal.toLocaleString()}</strong></span>
-              </div>
-              <button
-                onClick={handleGeneratePO}
-                disabled={generating || selectedCount === 0}
-                className="w-full py-2.5 bg-secondary text-secondary-foreground font-medium rounded-[var(--radius)] flex items-center justify-center gap-2 hover:opacity-90 transition-opacity text-sm disabled:opacity-50"
-              >
-                {generating ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</>
-                ) : (
-                  <>Generate PO <ArrowRight className="w-4 h-4" /></>
-                )}
-              </button>
-            </div>
-          </>
         )}
+
+        <div className="flex-1 overflow-y-auto space-y-3 mb-6 pr-2">
+          {items.map(item => (
+            <div key={item.id} className="border border-border rounded-[var(--radius)] p-3 bg-muted/20">
+              <div className="flex justify-between items-start mb-2 gap-2">
+                <h4 className="font-medium text-sm text-foreground leading-tight">{item.name}</h4>
+                <input
+                  type="checkbox"
+                  checked={selected[item.id] ?? true}
+                  onChange={() => setSelected(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                  className="accent-primary w-4 h-4 rounded border-border shrink-0"
+                />
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-muted-foreground">Cur: <strong className={item.current === 0 ? 'text-destructive' : 'text-[#F5A623]'}>{item.current}</strong></span>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">+</span>
+                  <input 
+                    type="number" 
+                    value={quantities[item.id] ?? item.recommendedOrder}
+                    onChange={(e) => setQuantities(prev => ({ ...prev, [item.id]: parseInt(e.target.value) || 0 }))}
+                    className="w-14 text-center border border-border rounded bg-card py-1 text-foreground"
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="border-t border-border pt-4 mt-auto">
+          <div className="flex justify-between items-center mb-4 text-sm">
+            <span className="text-muted-foreground">{selectedCount} selected</span>
+            <span className="text-foreground">Est. total: <strong>PKR {estimatedTotal.toLocaleString()}</strong></span>
+          </div>
+          <button
+            onClick={handleGeneratePO}
+            disabled={generating || selectedCount === 0 || !!poResult}
+            className="w-full py-2.5 bg-secondary text-secondary-foreground font-medium rounded-[var(--radius)] flex items-center justify-center gap-2 hover:opacity-90 transition-opacity text-sm disabled:opacity-40"
+          >
+            {generating ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</>
+            ) : poResult ? (
+              <><Package className="w-4 h-4" /> PO Generated</>
+            ) : (
+              <>Generate PO <ArrowRight className="w-4 h-4" /></>
+            )}
+          </button>
+        </div>
 
       </div>
     </>
@@ -933,15 +902,9 @@ export default function InventoryDashboard() {
     URL.revokeObjectURL(url);
   };
 
-  const handleBarcodeSearch = () => {
-    if (isBarcodeSearch && barcodeQuery.trim()) {
-      refreshItems(activeCategory !== 'all' ? activeCategory : undefined, selectedLocation || undefined, barcodeQuery.trim());
-      setIsBarcodeSearch(false);
-      setBarcodeQuery('');
-    } else {
-      setIsBarcodeSearch(true);
-    }
-  };
+  const displayItems = isBarcodeSearch && barcodeQuery.trim()
+    ? items.filter(item => item.sku.toLowerCase().includes(barcodeQuery.toLowerCase()))
+    : items;
 
   const handleRefresh = () => {
     refreshItems(activeCategory !== 'all' ? activeCategory : undefined, selectedLocation || undefined);
@@ -1007,15 +970,19 @@ export default function InventoryDashboard() {
                     value={barcodeQuery}
                     onChange={(e) => setBarcodeQuery(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleBarcodeSearch();
                       if (e.key === 'Escape') { setIsBarcodeSearch(false); setBarcodeQuery(''); }
                     }}
                     placeholder="Search by SKU..."
                     className="w-28 py-2 text-xs bg-transparent text-foreground outline-none border-none"
                     autoFocus
                   />
+                  {barcodeQuery && (
+                    <span className="text-[10px] text-muted-foreground shrink-0 font-mono">
+                      {displayItems.length}
+                    </span>
+                  )}
                   <button
-                    onClick={() => { setIsBarcodeSearch(false); setBarcodeQuery(''); handleRefresh(); }}
+                    onClick={() => { setIsBarcodeSearch(false); setBarcodeQuery(''); }}
                     className="p-1 text-muted-foreground hover:text-foreground"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -1058,16 +1025,16 @@ export default function InventoryDashboard() {
           />
           {viewMode === 'list' && (
             <InventoryTable
-              items={items}
+              items={displayItems}
               selectedItemId={selectedItemId}
               onRowClick={handleRowClick}
             />
           )}
           {viewMode === 'grid' && (
-            <InventoryGrid items={items} onItemClick={handleRowClick} />
+            <InventoryGrid items={displayItems} onItemClick={handleRowClick} />
           )}
           {viewMode === 'map' && (
-            <InventoryMapView items={items} onItemClick={handleRowClick} />
+            <InventoryMapView items={displayItems} onItemClick={handleRowClick} />
           )}
         </div>
         
