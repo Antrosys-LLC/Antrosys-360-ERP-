@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ChevronDown, 
   Barcode, 
@@ -17,62 +17,86 @@ import {
   AlertTriangle,
   Bell,
   ArrowRight,
-  X
+  X,
+  Package,
+  Monitor,
+  HardDrive,
+  Sofa,
+  PenTool,
+  Wrench,
+  Shirt,
+  Cpu,
+  Smartphone,
+  Headphones,
+  Camera,
+  Watch,
+  Dumbbell,
+  Car,
+  Bike,
+  Utensils,
+  GlassWater,
+  Shrub,
+  Gem,
+  Gift,
+  Loader2,
 } from 'lucide-react';
+import apiClient from '@/lib/api-client';
 
-// ============================================================================
-// MOCK DATA
-// ============================================================================
+interface DashboardStats {
+  totalValue: string;
+  lowStock: number;
+  outOfStock: number;
+  turnoverRatio: string;
+  stockDistribution: { label: string; percent: number; color: string }[];
+  totalSkuCount: number;
+  locationCount: number;
+}
 
-const dashboardStats = {
-  totalValue: '18,420,000',
-  lowStock: 14,
-  outOfStock: 3,
-  turnoverRatio: '4.2x'
+interface InventoryItem {
+  id: string;
+  name: string;
+  sku: string;
+  category: string;
+  categoryId: string;
+  location: string;
+  qty: number;
+  minStockLevel: number;
+  maxStockLevel: number;
+  supplier: string;
+  unitCost: number;
+  leadTime: string;
+  stockLevelPercent: number;
+  status: 'normal' | 'low_stock' | 'out_of_stock';
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface Category {
+  id: string;
+  name: string;
+}
+
+interface ReorderItem {
+  id: string;
+  name: string;
+  sku: string;
+  current: number;
+  recommendedOrder: number;
+  unitCost: number;
+}
+
+const categoryIconMap: Record<string, React.ElementType> = {
+  'IT hardware': Laptop,
+  'Office equipment': Monitor,
+  'Furniture': Armchair,
+  'Consumables': Book,
 };
 
-const filterCategories = [
-  { id: 'all', label: 'All', active: true },
-  { id: 'office', label: 'Office equipment', active: false },
-  { id: 'hardware', label: 'IT hardware', active: false },
-  { id: 'furniture', label: 'Furniture', active: false },
-  { id: 'consumables', label: 'Consumables', active: false },
-];
+function getItemIcon(category: string): React.ElementType {
+  return categoryIconMap[category] || Package;
+}
 
-const inventoryItems = [
-  { 
-    id: 1, name: 'MacBook Pro 14"', sku: 'IT-MBP-14', category: 'IT hardware', location: 'HQ - Floor 3', qty: 4, status: 'warning', icon: Laptop,
-    details: { supplier: 'TechStore Pk', unitCost: '550,000', leadTime: '14 days', stockLevelPercent: 20 } 
-  },
-  { 
-    id: 2, name: 'Logitech MX Master 3S', sku: 'IT-PER-MX3', category: 'IT hardware', location: 'Branch A', qty: 0, status: 'critical', hasAlert: true, icon: Mouse,
-    details: { supplier: 'LogiDist PK', unitCost: '25,000', leadTime: '7 days', stockLevelPercent: 0 } 
-  },
-  { 
-    id: 3, name: 'Ergo Office Chair V2', sku: 'FN-CHR-E2', category: 'Furniture', location: 'HQ - Storage', qty: 45, status: 'normal', icon: Armchair,
-    details: { supplier: 'Furnishings Co.', unitCost: '35,000', leadTime: '21 days', stockLevelPercent: 85 } 
-  },
-  { 
-    id: 4, name: 'A4 Notebooks (Ruled)', sku: 'CS-NB-A4', category: 'Consumables', location: 'Branch B', qty: 340, status: 'normal', icon: Book,
-    details: { supplier: 'Stationery Hub', unitCost: '850', leadTime: '3 days', stockLevelPercent: 60 } 
-  },
-  { 
-    id: 5, name: 'HP LaserJet Toner Black', sku: 'CS-TN-HPB', category: 'Consumables', location: 'HQ - Storage', qty: 18, status: 'normal', icon: Printer,
-    details: { supplier: 'TechStore Pk', unitCost: '14,500', leadTime: '5 days', stockLevelPercent: 45 } 
-  },
-];
-
-const reorderRecommendations = [
-  { id: 1, name: 'MacBook Pro 14"', current: 4, toAdd: 10, selected: true },
-  { id: 2, name: 'Logitech MX Master', current: 0, toAdd: 20, selected: true },
-  { id: 3, name: 'Dell U2720Q Monitor', current: 2, toAdd: 5, selected: true },
-];
-
-// ============================================================================
-// COMPONENTS
-// ============================================================================
-
-const HeaderActions = ({ onOpenReorder }: { onOpenReorder: () => void }) => (
+const HeaderActions = ({ onOpenReorder, reorderCount }: { onOpenReorder: () => void; reorderCount: number }) => (
   <div className="flex flex-wrap items-center gap-3">
     <button className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-[var(--radius)] text-sm font-medium hover:bg-muted/50 transition-colors shrink-0">
       All Locations <ChevronDown className="w-4 h-4 text-muted-foreground" />
@@ -84,9 +108,11 @@ const HeaderActions = ({ onOpenReorder }: { onOpenReorder: () => void }) => (
     >
       <Bell className="w-4 h-4 text-[#F5A623]" /> 
       Reorders
-      <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-white">
-        3
-      </span>
+      {reorderCount > 0 && (
+        <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-white">
+          {reorderCount}
+        </span>
+      )}
     </button>
 
     <div className="flex gap-2 shrink-0">
@@ -103,7 +129,7 @@ const HeaderActions = ({ onOpenReorder }: { onOpenReorder: () => void }) => (
   </div>
 );
 
-const StatsCard = ({ stats }: { stats: typeof dashboardStats }) => (
+const StatsCard = ({ stats }: { stats: DashboardStats }) => (
   <div className="bg-card border border-border rounded-xl p-6 shadow-sm w-full mb-6">
     <div className="grid grid-cols-1 md:grid-cols-4 gap-6 md:gap-0 mb-8">
       <div className="flex flex-col md:pr-6 md:border-r border-border/60 pb-4 md:pb-0">
@@ -139,27 +165,41 @@ const StatsCard = ({ stats }: { stats: typeof dashboardStats }) => (
     </div>
     
     <div className="h-2.5 w-full flex gap-1.5">
-      <div className="h-full bg-[#7C3AED] rounded-full" style={{ width: '70%' }} />
-      <div className="h-full bg-[#F5A623] rounded-full" style={{ width: '15%' }} />
-      <div className="h-full bg-destructive rounded-full" style={{ width: '5%' }} />
-      <div className="h-full bg-[#60A5FA] rounded-full" style={{ width: '10%' }} />
+      {stats.stockDistribution?.map((seg, i) => (
+        <div
+          key={i}
+          className="h-full rounded-full"
+          style={{ width: `${seg.percent}%`, backgroundColor: seg.color }}
+        />
+      ))}
     </div>
   </div>
 );
 
-const FilterSection = ({ filters }: { filters: typeof filterCategories }) => (
+const FilterSection = ({ filters, activeFilter, onFilterChange }: { filters: Category[]; activeFilter: string; onFilterChange: (id: string) => void }) => (
   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
     <div className="flex gap-2 overflow-x-auto min-w-0 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <button
+        onClick={() => onFilterChange('all')}
+        className={`px-4 py-1.5 rounded-full text-sm font-medium border whitespace-nowrap shrink-0 ${
+          activeFilter === 'all'
+            ? 'bg-secondary text-secondary-foreground border-secondary' 
+            : 'bg-card text-muted-foreground border-border hover:bg-muted/50'
+        } transition-colors`}
+      >
+        All
+      </button>
       {filters.map(filter => (
         <button
           key={filter.id}
+          onClick={() => onFilterChange(filter.id)}
           className={`px-4 py-1.5 rounded-full text-sm font-medium border whitespace-nowrap shrink-0 ${
-            filter.active 
+            activeFilter === filter.id
               ? 'bg-secondary text-secondary-foreground border-secondary' 
               : 'bg-card text-muted-foreground border-border hover:bg-muted/50'
           } transition-colors`}
         >
-          {filter.label}
+          {filter.name}
         </button>
       ))}
     </div>
@@ -172,9 +212,9 @@ const FilterSection = ({ filters }: { filters: typeof filterCategories }) => (
 );
 
 interface InventoryTableProps {
-  items: typeof inventoryItems;
-  selectedItemId: number | null;
-  onRowClick: (id: number) => void;
+  items: InventoryItem[];
+  selectedItemId: string | null;
+  onRowClick: (id: string) => void;
 }
 
 const InventoryTable = ({ items, selectedItemId, onRowClick }: InventoryTableProps) => (
@@ -191,9 +231,9 @@ const InventoryTable = ({ items, selectedItemId, onRowClick }: InventoryTablePro
       </thead>
       <tbody>
         {items.map((row) => {
-          const Icon = row.icon;
-          const isCritical = row.status === 'critical';
-          const isWarning = row.status === 'warning';
+          const Icon = getItemIcon(row.category);
+          const isCritical = row.status === 'out_of_stock';
+          const isWarning = row.status === 'low_stock';
           const isSelected = selectedItemId === row.id;
           
           return (
@@ -214,7 +254,7 @@ const InventoryTable = ({ items, selectedItemId, onRowClick }: InventoryTablePro
                 </div>
                 <span className="font-medium text-foreground flex items-center gap-2 truncate">
                   {row.name}
-                  {row.hasAlert && <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />}
+                  {isCritical && <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />}
                 </span>
               </td>
               <td className="px-6 py-4 text-muted-foreground font-mono whitespace-nowrap">{row.sku}</td>
@@ -231,11 +271,19 @@ const InventoryTable = ({ items, selectedItemId, onRowClick }: InventoryTablePro
   </div>
 );
 
-// ============================================================================
-// SIDEBAR COMPONENTS
-// ============================================================================
+const ReorderSidebar = ({ items, onClose }: { items: ReorderItem[]; onClose: () => void }) => {
+  const [selected, setSelected] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(items.map((i) => [i.id, true]))
+  );
+  const [quantities, setQuantities] = useState<Record<string, number>>(() =>
+    Object.fromEntries(items.map((i) => [i.id, i.recommendedOrder]))
+  );
 
-const ReorderSidebar = ({ items, onClose }: { items: typeof reorderRecommendations, onClose: () => void }) => {
+  const selectedCount = Object.values(selected).filter(Boolean).length;
+  const estimatedTotal = items
+    .filter((i) => selected[i.id])
+    .reduce((sum, i) => sum + (quantities[i.id] || 0) * i.unitCost, 0);
+
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
@@ -260,7 +308,12 @@ const ReorderSidebar = ({ items, onClose }: { items: typeof reorderRecommendatio
             <div key={item.id} className="border border-border rounded-[var(--radius)] p-3 bg-muted/20">
               <div className="flex justify-between items-start mb-2 gap-2">
                 <h4 className="font-medium text-sm text-foreground leading-tight">{item.name}</h4>
-                <input type="checkbox" defaultChecked={item.selected} className="accent-primary w-4 h-4 rounded border-border shrink-0" />
+                <input
+                  type="checkbox"
+                  checked={selected[item.id] ?? true}
+                  onChange={() => setSelected(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                  className="accent-primary w-4 h-4 rounded border-border shrink-0"
+                />
               </div>
               <div className="flex justify-between items-center text-xs">
                 <span className="text-muted-foreground">Cur: <strong className={item.current === 0 ? 'text-destructive' : 'text-[#F5A623]'}>{item.current}</strong></span>
@@ -268,7 +321,8 @@ const ReorderSidebar = ({ items, onClose }: { items: typeof reorderRecommendatio
                   <span className="text-muted-foreground">+</span>
                   <input 
                     type="number" 
-                    defaultValue={item.toAdd} 
+                    value={quantities[item.id] ?? item.recommendedOrder}
+                    onChange={(e) => setQuantities(prev => ({ ...prev, [item.id]: parseInt(e.target.value) || 0 }))}
                     className="w-14 text-center border border-border rounded bg-card py-1 text-foreground"
                   />
                 </div>
@@ -279,8 +333,8 @@ const ReorderSidebar = ({ items, onClose }: { items: typeof reorderRecommendatio
 
         <div className="border-t border-border pt-4 mt-auto">
           <div className="flex justify-between items-center mb-4 text-sm">
-            <span className="text-muted-foreground">3 selected</span>
-            <span className="text-foreground">Est. total: <strong>PKR 7,762,500</strong></span>
+            <span className="text-muted-foreground">{selectedCount} selected</span>
+            <span className="text-foreground">Est. total: <strong>PKR {estimatedTotal.toLocaleString()}</strong></span>
           </div>
           <button className="w-full py-2.5 bg-secondary text-secondary-foreground font-medium rounded-[var(--radius)] flex items-center justify-center gap-2 hover:opacity-90 transition-opacity text-sm">
             Generate PO <ArrowRight className="w-4 h-4" />
@@ -292,13 +346,12 @@ const ReorderSidebar = ({ items, onClose }: { items: typeof reorderRecommendatio
   );
 };
 
-const ItemDetailsSidebar = ({ item, onClose }: { item: typeof inventoryItems[0], onClose: () => void }) => {
-  const Icon = item.icon;
-  const isCritical = item.status === 'critical';
-  const isWarning = item.status === 'warning';
+const ItemDetailsSidebar = ({ item, onClose }: { item: InventoryItem; onClose: () => void }) => {
+  const Icon = getItemIcon(item.category);
+  const isCritical = item.status === 'out_of_stock';
+  const isWarning = item.status === 'low_stock';
 
-  // Mathematical variables for accurate SVG circle rendering
-  const percent = item.details.stockLevelPercent;
+  const percent = item.stockLevelPercent;
   const radius = 28;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (percent / 100) * circumference;
@@ -334,7 +387,6 @@ const ItemDetailsSidebar = ({ item, onClose }: { item: typeof inventoryItems[0],
           
           <div className="border-t border-border pt-6 grid grid-cols-[auto_1fr] gap-6 items-center">
             
-            {/* ACCURATE SVG CIRCULAR PROGRESS INDICATOR */}
             <div className="relative w-16 h-16 flex items-center justify-center shrink-0">
               <svg className="w-full h-full absolute inset-0 -rotate-90 transform" viewBox="0 0 64 64">
                 <circle
@@ -361,15 +413,15 @@ const ItemDetailsSidebar = ({ item, onClose }: { item: typeof inventoryItems[0],
             <div className="text-sm space-y-2 min-w-0">
               <div className="flex justify-between gap-2">
                 <span className="text-muted-foreground shrink-0">Supplier</span>
-                <span className="font-medium text-foreground truncate">{item.details.supplier}</span>
+                <span className="font-medium text-foreground truncate">{item.supplier}</span>
               </div>
               <div className="flex justify-between gap-2">
                 <span className="text-muted-foreground shrink-0">Unit cost</span>
-                <span className="font-medium text-foreground truncate">{item.details.unitCost}</span>
+                <span className="font-medium text-foreground truncate">PKR {item.unitCost.toLocaleString()}</span>
               </div>
               <div className="flex justify-between gap-2">
                 <span className="text-muted-foreground shrink-0">Lead time</span>
-                <span className="font-medium text-foreground truncate">{item.details.leadTime}</span>
+                <span className="font-medium text-foreground truncate">{item.leadTime}</span>
               </div>
             </div>
           </div>
@@ -380,25 +432,104 @@ const ItemDetailsSidebar = ({ item, onClose }: { item: typeof inventoryItems[0],
   );
 };
 
-// ============================================================================
-// MAIN PAGE COMPONENT
-// ============================================================================
-
 export default function InventoryDashboard() {
-  const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [isReorderOpen, setIsReorderOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const selectedItem = inventoryItems.find(item => item.id === selectedItemId);
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [reorderItems, setReorderItems] = useState<ReorderItem[]>([]);
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalSkuCount, setTotalSkuCount] = useState(0);
+  const [locationCount, setLocationCount] = useState(0);
+
+  const fetchDashboard = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/inventory/dashboard');
+      const data = res.data.data;
+      setDashboardStats(data);
+      setTotalSkuCount(data.totalSkuCount);
+      setLocationCount(data.locationCount);
+    } catch (err) {
+      console.error('Failed to fetch dashboard stats', err);
+    }
+  }, []);
+
+  const fetchItems = useCallback(async (categoryId?: string) => {
+    try {
+      const params: Record<string, string> = { limit: '100' };
+      if (categoryId && categoryId !== 'all') params.categoryId = categoryId;
+      const res = await apiClient.get('/inventory', { params });
+      setItems(res.data.data.items);
+      setTotalItems(res.data.data.total);
+    } catch (err) {
+      console.error('Failed to fetch items', err);
+    }
+  }, []);
+
+  const fetchCategories = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/inventory/categories', { params: { limit: '100' } });
+      setCategories(res.data.data.categories);
+    } catch (err) {
+      console.error('Failed to fetch categories', err);
+    }
+  }, []);
+
+  const fetchReorderItems = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/inventory/reorder');
+      setReorderItems(res.data.data);
+    } catch (err) {
+      console.error('Failed to fetch reorder items', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    Promise.all([
+      fetchDashboard(),
+      fetchItems(),
+      fetchCategories(),
+      fetchReorderItems(),
+    ]).finally(() => setLoading(false));
+  }, [fetchDashboard, fetchItems, fetchCategories, fetchReorderItems]);
+
+  const selectedItem = items.find(item => item.id === selectedItemId) || null;
 
   const handleOpenReorder = () => {
     setSelectedItemId(null);
     setIsReorderOpen(true);
   };
 
-  const handleRowClick = (id: number) => {
+  const handleRowClick = (id: string) => {
     setIsReorderOpen(false);
     setSelectedItemId(id);
   };
+
+  const handleFilterChange = (categoryId: string) => {
+    setActiveCategory(categoryId);
+    fetchItems(categoryId !== 'all' ? categoryId : undefined);
+  };
+
+  if (loading) {
+    return (
+      <div className="w-full bg-background min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="w-full bg-background min-h-screen flex items-center justify-center">
+        <p className="text-destructive">{error}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full bg-background min-h-screen">
@@ -414,18 +545,18 @@ export default function InventoryDashboard() {
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <h1 className="text-xl font-bold text-foreground">Inventory management</h1>
               <span className="text-sm text-muted-foreground whitespace-nowrap">
-                1,247 SKUs • 3 locations • May 2026
+                {totalSkuCount.toLocaleString()} SKUs • {locationCount} locations • {new Date().toLocaleString('default', { month: 'short', year: 'numeric' })}
               </span>
             </div>
           </div>
-          <HeaderActions onOpenReorder={handleOpenReorder} />
+          <HeaderActions onOpenReorder={handleOpenReorder} reorderCount={reorderItems.length} />
         </header>
 
         <div className="pb-12 w-full">
-          <StatsCard stats={dashboardStats} />
-          <FilterSection filters={filterCategories} />
+          {dashboardStats && <StatsCard stats={dashboardStats} />}
+          <FilterSection filters={categories} activeFilter={activeCategory} onFilterChange={handleFilterChange} />
           <InventoryTable 
-            items={inventoryItems} 
+            items={items} 
             selectedItemId={selectedItemId}
             onRowClick={handleRowClick} 
           />
@@ -435,7 +566,7 @@ export default function InventoryDashboard() {
 
       {isReorderOpen && (
         <ReorderSidebar 
-          items={reorderRecommendations} 
+          items={reorderItems} 
           onClose={() => setIsReorderOpen(false)} 
         />
       )}

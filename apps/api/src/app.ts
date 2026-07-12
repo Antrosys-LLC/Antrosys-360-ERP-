@@ -44,6 +44,7 @@ import { ledgerRoutes } from './modules/ledger/ledger.routes';
 import { currencyRoutes } from './modules/currency/currency.routes';
 import { operationHeadRoutes } from './modules/operationHead/operationHead.routes';
 import { bankFeedsRoutes } from './modules/finance/bank_feeds/bank_feeds.routes';
+import { inventoryRoutes } from './modules/inventory/inventory.routes';
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
@@ -116,6 +117,7 @@ export async function buildApp() {
       await api.register(currencyRoutes, { prefix: '/currency' });
       await api.register(operationHeadRoutes, { prefix: '/operation-head' });
       await api.register(bankFeedsRoutes, { prefix: '/finance/bank-feeds' });
+      await api.register(inventoryRoutes, { prefix: '/inventory' });
     },
     { prefix: '/api/v1' },
   );

@@ -349,6 +349,9 @@ async function main() {
   const { seedBankFeedsData } = await import('./bank_feeds.seed');
   await seedBankFeedsData(prisma);
 
+  const { seedInventoryData } = await import('./inventory.seed');
+  await seedInventoryData();
+
   console.log('\n🎉 Seed completed successfully!');
 }
 

@@ -16,6 +16,7 @@ import {
   Megaphone,
   Shield,
   ScrollText,
+  Package,
 } from 'lucide-react';
 import type { Permission } from '@antrosys/types';
 
@@ -37,6 +38,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { label: 'Attendance', href: '/operations/attendance', icon: ClipboardCheck, permission: 'attendance:read' },
   { label: 'Leave', href: '/operations/leave', icon: Calendar, permission: 'leave:read' },
   { label: 'Manpower', href: '/operations/manpower', icon: UsersRound, permission: 'manpower:read' },
+  { label: 'Inventory', href: '/inventory', icon: Package, permission: 'inventory:read' },
   { label: 'Clients', href: '/clients', icon: Building2, permission: 'clients:read' },
   { label: 'Reports', href: '/reports', icon: BarChart3, permission: 'reports:read' },
   { label: 'Announcements', href: '/announcements', icon: Megaphone, permission: 'announcements:read' },
