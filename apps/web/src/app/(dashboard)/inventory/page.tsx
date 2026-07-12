@@ -577,6 +577,7 @@ const ReorderSidebar = ({ items, onClose }: { items: ReorderItem[]; onClose: () 
   );
   const [generating, setGenerating] = useState(false);
   const [poResult, setPoResult] = useState<{ poNumber: string; grandTotal: number } | null>(null);
+  const [poError, setPoError] = useState<string | null>(null);
 
   const selectedCount = Object.values(selected).filter(Boolean).length;
   const estimatedTotal = items
@@ -586,6 +587,7 @@ const ReorderSidebar = ({ items, onClose }: { items: ReorderItem[]; onClose: () 
   const handleGeneratePO = async () => {
     const selectedItems = items.filter(i => selected[i.id]);
     if (selectedItems.length === 0) return;
+    setPoError(null);
     setGenerating(true);
     try {
       const res = await apiClient.post('/inventory/purchase-order', {
@@ -599,7 +601,9 @@ const ReorderSidebar = ({ items, onClose }: { items: ReorderItem[]; onClose: () 
         })),
       });
       setPoResult(res.data.data);
-    } catch (err) {
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed to generate PO. Check your connection and permissions.';
+      setPoError(msg);
       console.error('Failed to generate PO', err);
     } finally {
       setGenerating(false);
@@ -625,6 +629,17 @@ const ReorderSidebar = ({ items, onClose }: { items: ReorderItem[]; onClose: () 
           </button>
         </div>
         
+        {poError && (
+          <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-[var(--radius)] flex items-start gap-3">
+            <div className="w-8 h-8 rounded-full bg-destructive/20 text-destructive flex items-center justify-center shrink-0 mt-0.5">
+              <X className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-destructive">PO Generation Failed</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{poError}</p>
+            </div>
+          </div>
+        )}
         {poResult && (
           <div className="mb-4 p-3 bg-primary/10 border border-primary/20 rounded-[var(--radius)] flex items-start gap-3">
             <div className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center shrink-0 mt-0.5">
