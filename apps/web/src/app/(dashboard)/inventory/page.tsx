@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, FormEvent } from 'react';
 import { 
   ChevronDown, 
   Barcode, 
@@ -39,6 +39,7 @@ import {
   Gem,
   Gift,
   Loader2,
+  Search,
 } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 
@@ -96,38 +97,225 @@ function getItemIcon(category: string): React.ElementType {
   return categoryIconMap[category] || Package;
 }
 
-const HeaderActions = ({ onOpenReorder, reorderCount }: { onOpenReorder: () => void; reorderCount: number }) => (
-  <div className="flex flex-wrap items-center gap-3">
-    <button className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-[var(--radius)] text-sm font-medium hover:bg-muted/50 transition-colors shrink-0">
-      All Locations <ChevronDown className="w-4 h-4 text-muted-foreground" />
-    </button>
-    
-    <button 
-      onClick={onOpenReorder}
-      className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-[var(--radius)] text-sm font-medium hover:bg-muted/50 transition-colors shrink-0 relative"
-    >
-      <Bell className="w-4 h-4 text-[#F5A623]" /> 
-      Reorders
-      {reorderCount > 0 && (
-        <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-white">
-          {reorderCount}
-        </span>
-      )}
-    </button>
+const LocationDropdown = ({
+  selectedLocation,
+  onLocationChange,
+}: {
+  selectedLocation: string;
+  onLocationChange: (location: string) => void;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [locations, setLocations] = useState<string[]>([]);
+  const [customLocations, setCustomLocations] = useState<string[]>([]);
+  const [isAdding, setIsAdding] = useState(false);
+  const [newLocation, setNewLocation] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-    <div className="flex gap-2 shrink-0">
-      <button className="p-2 bg-card border border-border rounded-[var(--radius)] text-muted-foreground hover:text-foreground transition-colors">
-        <Barcode className="w-4 h-4" />
+  const LOCATIONS_STORAGE_KEY = 'inventory_custom_locations';
+
+  useEffect(() => {
+    const stored = localStorage.getItem(LOCATIONS_STORAGE_KEY);
+    if (stored) {
+      try { setCustomLocations(JSON.parse(stored)); } catch { /* ignore */ }
+    }
+    apiClient.get('/inventory/locations').then(res => {
+      setLocations(res.data.data || []);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+        setIsAdding(false);
+        setNewLocation('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleAddLocation = () => {
+    if (!newLocation.trim()) return;
+    const updated = [...new Set([...customLocations, newLocation.trim()])];
+    setCustomLocations(updated);
+    localStorage.setItem(LOCATIONS_STORAGE_KEY, JSON.stringify(updated));
+    onLocationChange(newLocation.trim());
+    setIsAdding(false);
+    setNewLocation('');
+    setIsOpen(false);
+  };
+
+  const allLocations = [...new Set([...locations, ...customLocations])];
+  const displayName = selectedLocation || 'All Locations';
+
+  return (
+    <div className="relative shrink-0" ref={dropdownRef}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-[var(--radius)] text-sm font-medium hover:bg-muted/50 transition-colors"
+      >
+        {displayName} <ChevronDown className="w-4 h-4 text-muted-foreground" />
       </button>
-      <button className="p-2 bg-card border border-border rounded-[var(--radius)] text-muted-foreground hover:text-foreground transition-colors">
-        <Download className="w-4 h-4" />
-      </button>
+      {isOpen && (
+        <div className="absolute top-full left-0 mt-1 w-56 bg-card border border-border rounded-[var(--radius)] shadow-lg z-30 py-1">
+          <button
+            onClick={() => { onLocationChange(''); setIsOpen(false); }}
+            className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/50 transition-colors ${!selectedLocation ? 'bg-muted/30 font-medium' : ''}`}
+          >
+            All Locations
+          </button>
+          {allLocations.map(loc => (
+            <button
+              key={loc}
+              onClick={() => { onLocationChange(loc); setIsOpen(false); }}
+              className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/50 transition-colors ${selectedLocation === loc ? 'bg-muted/30 font-medium' : ''}`}
+            >
+              {loc}
+            </button>
+          ))}
+          <div className="border-t border-border my-1" />
+          {isAdding ? (
+            <div className="px-3 py-2 flex gap-2">
+              <input
+                type="text"
+                value={newLocation}
+                onChange={(e) => setNewLocation(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddLocation()}
+                placeholder="Location name"
+                className="flex-1 px-2 py-1 text-xs border border-border rounded bg-background text-foreground"
+                autoFocus
+              />
+              <button onClick={handleAddLocation} className="px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:opacity-90">
+                Add
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setIsAdding(true)}
+              className="w-full text-left px-3 py-2 text-sm text-primary hover:bg-muted/50 transition-colors"
+            >
+              + Add location
+            </button>
+          )}
+        </div>
+      )}
     </div>
-    <button className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-[var(--radius)] text-sm font-medium hover:opacity-90 transition-opacity shrink-0">
-      <Plus className="w-4 h-4" /> Add item
-    </button>
-  </div>
-);
+  );
+};
+
+const AddItemModal = ({
+  isOpen,
+  onClose,
+  categories,
+  onSuccess,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  categories: Category[];
+  onSuccess: () => void;
+}) => {
+  const [form, setForm] = useState({
+    name: '', sku: '', categoryId: '', location: '', qty: 0,
+    minStockLevel: 10, maxStockLevel: 100, supplier: '', unitCost: 0, leadTime: '',
+  });
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!form.name || !form.sku || !form.categoryId || !form.supplier || !form.leadTime) return;
+    setSubmitting(true);
+    try {
+      await apiClient.post('/inventory', {
+        ...form,
+        unitCost: Number(form.unitCost),
+        qty: Number(form.qty),
+        minStockLevel: Number(form.minStockLevel),
+        maxStockLevel: Number(form.maxStockLevel),
+      });
+      onSuccess();
+      onClose();
+      setForm({ name: '', sku: '', categoryId: '', location: '', qty: 0, minStockLevel: 10, maxStockLevel: 100, supplier: '', unitCost: 0, leadTime: '' });
+    } catch (err) {
+      console.error('Failed to create item', err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 z-50" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between p-5 border-b border-border">
+            <h2 className="text-lg font-semibold text-foreground">Add Inventory Item</h2>
+            <button onClick={onClose} className="p-1 -mr-1 text-muted-foreground hover:text-foreground rounded-full transition-colors">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <form onSubmit={handleSubmit} className="p-5 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Name *</label>
+                <input type="text" value={form.name} onChange={e => setForm(p => ({...p, name: e.target.value}))} required className="w-full px-3 py-2 text-sm border border-border rounded-[var(--radius)] bg-card text-foreground" placeholder="Item name" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">SKU *</label>
+                <input type="text" value={form.sku} onChange={e => setForm(p => ({...p, sku: e.target.value}))} required className="w-full px-3 py-2 text-sm border border-border rounded-[var(--radius)] bg-card text-foreground" placeholder="e.g. ITM-001" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Category *</label>
+                <select value={form.categoryId} onChange={e => setForm(p => ({...p, categoryId: e.target.value}))} required className="w-full px-3 py-2 text-sm border border-border rounded-[var(--radius)] bg-card text-foreground">
+                  <option value="">Select category</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Location</label>
+                <input type="text" value={form.location} onChange={e => setForm(p => ({...p, location: e.target.value}))} className="w-full px-3 py-2 text-sm border border-border rounded-[var(--radius)] bg-card text-foreground" placeholder="e.g. HQ - Floor 3" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Supplier *</label>
+                <input type="text" value={form.supplier} onChange={e => setForm(p => ({...p, supplier: e.target.value}))} required className="w-full px-3 py-2 text-sm border border-border rounded-[var(--radius)] bg-card text-foreground" placeholder="Supplier name" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Lead time *</label>
+                <input type="text" value={form.leadTime} onChange={e => setForm(p => ({...p, leadTime: e.target.value}))} required className="w-full px-3 py-2 text-sm border border-border rounded-[var(--radius)] bg-card text-foreground" placeholder="e.g. 2-3 weeks" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Quantity</label>
+                <input type="number" value={form.qty} onChange={e => setForm(p => ({...p, qty: Number(e.target.value)}))} min="0" className="w-full px-3 py-2 text-sm border border-border rounded-[var(--radius)] bg-card text-foreground" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Unit cost (PKR) *</label>
+                <input type="number" value={form.unitCost || ''} onChange={e => setForm(p => ({...p, unitCost: Number(e.target.value)}))} required min="0" step="0.01" className="w-full px-3 py-2 text-sm border border-border rounded-[var(--radius)] bg-card text-foreground" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Min stock level</label>
+                <input type="number" value={form.minStockLevel} onChange={e => setForm(p => ({...p, minStockLevel: Number(e.target.value)}))} min="0" className="w-full px-3 py-2 text-sm border border-border rounded-[var(--radius)] bg-card text-foreground" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Max stock level</label>
+                <input type="number" value={form.maxStockLevel} onChange={e => setForm(p => ({...p, maxStockLevel: Number(e.target.value)}))} min="0" className="w-full px-3 py-2 text-sm border border-border rounded-[var(--radius)] bg-card text-foreground" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 pt-4 border-t border-border">
+              <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium border border-border rounded-[var(--radius)] hover:bg-muted/50 transition-colors">
+                Cancel
+              </button>
+              <button type="submit" disabled={submitting} className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-[var(--radius)] hover:opacity-90 transition-opacity disabled:opacity-50">
+                {submitting ? 'Creating...' : 'Create Item'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </>
+  );
+};
 
 const StatsCard = ({ stats }: { stats: DashboardStats }) => (
   <div className="bg-card border border-border rounded-xl p-6 shadow-sm w-full mb-6">
@@ -176,7 +364,13 @@ const StatsCard = ({ stats }: { stats: DashboardStats }) => (
   </div>
 );
 
-const FilterSection = ({ filters, activeFilter, onFilterChange }: { filters: Category[]; activeFilter: string; onFilterChange: (id: string) => void }) => (
+const FilterSection = ({ filters, activeFilter, onFilterChange, viewMode, onViewModeChange }: {
+  filters: Category[];
+  activeFilter: string;
+  onFilterChange: (id: string) => void;
+  viewMode: 'grid' | 'list' | 'map';
+  onViewModeChange: (mode: 'grid' | 'list' | 'map') => void;
+}) => (
   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
     <div className="flex gap-2 overflow-x-auto min-w-0 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <button
@@ -204,20 +398,29 @@ const FilterSection = ({ filters, activeFilter, onFilterChange }: { filters: Cat
       ))}
     </div>
     <div className="flex bg-card border border-border rounded-[var(--radius)] overflow-hidden shrink-0">
-      <button className="p-2 border-r border-border text-muted-foreground hover:bg-muted/50"><LayoutGrid className="w-4 h-4" /></button>
-      <button className="p-2 border-r border-border bg-secondary/50 text-foreground"><List className="w-4 h-4" /></button>
-      <button className="p-2 text-muted-foreground hover:bg-muted/50"><MapPin className="w-4 h-4" /></button>
+      <button
+        onClick={() => onViewModeChange('grid')}
+        className={`p-2 border-r border-border transition-colors ${viewMode === 'grid' ? 'bg-secondary/50 text-foreground' : 'text-muted-foreground hover:bg-muted/50'}`}
+      >
+        <LayoutGrid className="w-4 h-4" />
+      </button>
+      <button
+        onClick={() => onViewModeChange('list')}
+        className={`p-2 border-r border-border transition-colors ${viewMode === 'list' ? 'bg-secondary/50 text-foreground' : 'text-muted-foreground hover:bg-muted/50'}`}
+      >
+        <List className="w-4 h-4" />
+      </button>
+      <button
+        onClick={() => onViewModeChange('map')}
+        className={`p-2 transition-colors ${viewMode === 'map' ? 'bg-secondary/50 text-foreground' : 'text-muted-foreground hover:bg-muted/50'}`}
+      >
+        <MapPin className="w-4 h-4" />
+      </button>
     </div>
   </div>
 );
 
-interface InventoryTableProps {
-  items: InventoryItem[];
-  selectedItemId: string | null;
-  onRowClick: (id: string) => void;
-}
-
-const InventoryTable = ({ items, selectedItemId, onRowClick }: InventoryTableProps) => (
+const InventoryTable = ({ items, selectedItemId, onRowClick }: { items: InventoryItem[]; selectedItemId: string | null; onRowClick: (id: string) => void }) => (
   <div className="bg-card border border-border rounded-[var(--radius)] overflow-x-auto shadow-sm w-full">
     <table className="w-full text-sm text-left min-w-[700px]">
       <thead className="text-xs font-semibold text-muted-foreground uppercase border-b border-border bg-card">
@@ -271,6 +474,100 @@ const InventoryTable = ({ items, selectedItemId, onRowClick }: InventoryTablePro
   </div>
 );
 
+const InventoryGrid = ({ items, onItemClick }: { items: InventoryItem[]; onItemClick: (id: string) => void }) => (
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+    {items.map(item => {
+      const Icon = getItemIcon(item.category);
+      const isCritical = item.status === 'out_of_stock';
+      const isWarning = item.status === 'low_stock';
+      return (
+        <div
+          key={item.id}
+          onClick={() => onItemClick(item.id)}
+          className={`bg-card border border-border rounded-xl p-4 cursor-pointer hover:shadow-md transition-all ${isCritical ? 'border-destructive/30' : isWarning ? 'border-[#F5A623]/30' : ''}`}
+        >
+          <div className="flex items-start gap-3 mb-3">
+            <div className={`p-2 rounded-[var(--radius)] ${isCritical ? 'bg-destructive/10 text-destructive' : isWarning ? 'bg-[#F5A623]/10 text-[#F5A623]' : 'bg-muted text-muted-foreground'}`}>
+              <Icon className="w-5 h-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-sm text-foreground truncate flex items-center gap-1">
+                {item.name}
+                {isCritical && <AlertTriangle className="w-3.5 h-3.5 text-destructive shrink-0" />}
+              </p>
+              <p className="text-xs text-muted-foreground font-mono mt-0.5">{item.sku}</p>
+            </div>
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground flex items-center gap-1">
+              <MapPin className="w-3 h-3" /> {item.location}
+            </span>
+            <span className={`text-sm font-semibold ${isCritical ? 'text-destructive' : isWarning ? 'text-[#F5A623]' : 'text-foreground'}`}>
+              {item.qty}
+            </span>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+);
+
+const InventoryMapView = ({ items, onItemClick }: { items: InventoryItem[]; onItemClick: (id: string) => void }) => {
+  const grouped = items.reduce<Record<string, InventoryItem[]>>((acc, item) => {
+    const loc = item.location || 'Unassigned';
+    if (!acc[loc]) acc[loc] = [];
+    acc[loc].push(item);
+    return acc;
+  }, {});
+
+  const sortedLocations = Object.keys(grouped).sort();
+
+  return (
+    <div className="space-y-6">
+      {sortedLocations.length === 0 && (
+        <div className="text-center py-12 text-muted-foreground text-sm">No items found for the selected location filter.</div>
+      )}
+      {sortedLocations.map(location => (
+        <div key={location}>
+          <div className="flex items-center gap-2 mb-3 px-1">
+            <MapPin className="w-4 h-4 text-muted-foreground" />
+            <h3 className="font-semibold text-sm text-foreground">{location}</h3>
+            <span className="text-xs text-muted-foreground">({grouped[location].length} items)</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {grouped[location].map(item => {
+              const Icon = getItemIcon(item.category);
+              const isCritical = item.status === 'out_of_stock';
+              const isWarning = item.status === 'low_stock';
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => onItemClick(item.id)}
+                  className={`bg-card border border-border rounded-xl p-3 cursor-pointer hover:shadow-md transition-all ${isCritical ? 'border-destructive/30' : isWarning ? 'border-[#F5A623]/30' : ''}`}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className={`p-1.5 rounded ${isCritical ? 'bg-destructive/10 text-destructive' : isWarning ? 'bg-[#F5A623]/10 text-[#F5A623]' : 'bg-muted text-muted-foreground'}`}>
+                      <Icon className="w-3.5 h-3.5" />
+                    </div>
+                    <p className="text-sm font-medium text-foreground truncate flex-1 flex items-center gap-1">
+                      {item.name}
+                      {isCritical && <AlertTriangle className="w-3 h-3 text-destructive shrink-0" />}
+                    </p>
+                    <span className={`text-xs font-semibold ${isCritical ? 'text-destructive' : isWarning ? 'text-[#F5A623]' : 'text-foreground'}`}>
+                      {item.qty}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground font-mono">{item.sku}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const ReorderSidebar = ({ items, onClose }: { items: ReorderItem[]; onClose: () => void }) => {
   const [selected, setSelected] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(items.map((i) => [i.id, true]))
@@ -278,11 +575,62 @@ const ReorderSidebar = ({ items, onClose }: { items: ReorderItem[]; onClose: () 
   const [quantities, setQuantities] = useState<Record<string, number>>(() =>
     Object.fromEntries(items.map((i) => [i.id, i.recommendedOrder]))
   );
+  const [generating, setGenerating] = useState(false);
+  const [poResult, setPoResult] = useState<{ poNumber: string; grandTotal: number; items: { itemName: string; quantity: number }[] } | null>(null);
 
   const selectedCount = Object.values(selected).filter(Boolean).length;
   const estimatedTotal = items
     .filter((i) => selected[i.id])
     .reduce((sum, i) => sum + (quantities[i.id] || 0) * i.unitCost, 0);
+
+  const handleGeneratePO = async () => {
+    const selectedItems = items.filter(i => selected[i.id]);
+    if (selectedItems.length === 0) return;
+    setGenerating(true);
+    try {
+      const res = await apiClient.post('/inventory/purchase-order', {
+        items: selectedItems.map(i => ({
+          itemId: i.id,
+          itemName: i.name,
+          sku: i.sku,
+          quantity: quantities[i.id] || i.recommendedOrder,
+          unitCost: i.unitCost,
+          totalCost: (quantities[i.id] || i.recommendedOrder) * i.unitCost,
+        })),
+      });
+      setPoResult(res.data.data);
+    } catch (err) {
+      console.error('Failed to generate PO', err);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleDownloadPO = () => {
+    if (!poResult) return;
+    const headers = ['Item', 'SKU', 'Quantity', 'Unit Cost', 'Total'];
+    const rows = poResult.items.map(i => {
+      const item = items.find(it => it.name === i.itemName);
+      const qty = item ? (quantities[item.id] || item.recommendedOrder) : i.quantity;
+      return `"${i.itemName}","${item?.sku || ''}",${qty},${item?.unitCost || 0},${(qty * (item?.unitCost || 0)).toFixed(2)}`;
+    });
+    const csvContent = [
+      `PO Number,${poResult.poNumber}`,
+      `Created,${new Date().toLocaleString()}`,
+      '',
+      headers.join(','),
+      ...rows,
+      '',
+      `Grand Total,,,PKR ${poResult.grandTotal.toLocaleString()}`,
+    ].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${poResult.poNumber}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <>
@@ -303,43 +651,72 @@ const ReorderSidebar = ({ items, onClose }: { items: ReorderItem[]; onClose: () 
           </button>
         </div>
         
-        <div className="flex-1 overflow-y-auto space-y-3 mb-6 pr-2">
-          {items.map(item => (
-            <div key={item.id} className="border border-border rounded-[var(--radius)] p-3 bg-muted/20">
-              <div className="flex justify-between items-start mb-2 gap-2">
-                <h4 className="font-medium text-sm text-foreground leading-tight">{item.name}</h4>
-                <input
-                  type="checkbox"
-                  checked={selected[item.id] ?? true}
-                  onChange={() => setSelected(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
-                  className="accent-primary w-4 h-4 rounded border-border shrink-0"
-                />
-              </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-muted-foreground">Cur: <strong className={item.current === 0 ? 'text-destructive' : 'text-[#F5A623]'}>{item.current}</strong></span>
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">+</span>
-                  <input 
-                    type="number" 
-                    value={quantities[item.id] ?? item.recommendedOrder}
-                    onChange={(e) => setQuantities(prev => ({ ...prev, [item.id]: parseInt(e.target.value) || 0 }))}
-                    className="w-14 text-center border border-border rounded bg-card py-1 text-foreground"
-                  />
-                </div>
-              </div>
+        {poResult ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-center px-4">
+            <div className="w-16 h-16 rounded-full bg-primary/10 text-primary flex items-center justify-center mb-4">
+              <Package className="w-8 h-8" />
             </div>
-          ))}
-        </div>
-
-        <div className="border-t border-border pt-4 mt-auto">
-          <div className="flex justify-between items-center mb-4 text-sm">
-            <span className="text-muted-foreground">{selectedCount} selected</span>
-            <span className="text-foreground">Est. total: <strong>PKR {estimatedTotal.toLocaleString()}</strong></span>
+            <h3 className="text-lg font-semibold text-foreground mb-1">Purchase Order Created</h3>
+            <p className="text-sm text-muted-foreground mb-1">PO Number: <strong className="text-foreground font-mono">{poResult.poNumber}</strong></p>
+            <p className="text-xs text-muted-foreground mb-6">Grand Total: <strong>PKR {poResult.grandTotal.toLocaleString()}</strong></p>
+            <div className="flex gap-3">
+              <button onClick={handleDownloadPO} className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-[var(--radius)] hover:opacity-90 transition-opacity flex items-center gap-2">
+                <Download className="w-4 h-4" /> Download PO
+              </button>
+              <button onClick={() => setPoResult(null)} className="px-4 py-2 text-sm font-medium border border-border rounded-[var(--radius)] hover:bg-muted/50 transition-colors">
+                Back
+              </button>
+            </div>
           </div>
-          <button className="w-full py-2.5 bg-secondary text-secondary-foreground font-medium rounded-[var(--radius)] flex items-center justify-center gap-2 hover:opacity-90 transition-opacity text-sm">
-            Generate PO <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
+        ) : (
+          <>
+            <div className="flex-1 overflow-y-auto space-y-3 mb-6 pr-2">
+              {items.map(item => (
+                <div key={item.id} className="border border-border rounded-[var(--radius)] p-3 bg-muted/20">
+                  <div className="flex justify-between items-start mb-2 gap-2">
+                    <h4 className="font-medium text-sm text-foreground leading-tight">{item.name}</h4>
+                    <input
+                      type="checkbox"
+                      checked={selected[item.id] ?? true}
+                      onChange={() => setSelected(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                      className="accent-primary w-4 h-4 rounded border-border shrink-0"
+                    />
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground">Cur: <strong className={item.current === 0 ? 'text-destructive' : 'text-[#F5A623]'}>{item.current}</strong></span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">+</span>
+                      <input 
+                        type="number" 
+                        value={quantities[item.id] ?? item.recommendedOrder}
+                        onChange={(e) => setQuantities(prev => ({ ...prev, [item.id]: parseInt(e.target.value) || 0 }))}
+                        className="w-14 text-center border border-border rounded bg-card py-1 text-foreground"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t border-border pt-4 mt-auto">
+              <div className="flex justify-between items-center mb-4 text-sm">
+                <span className="text-muted-foreground">{selectedCount} selected</span>
+                <span className="text-foreground">Est. total: <strong>PKR {estimatedTotal.toLocaleString()}</strong></span>
+              </div>
+              <button
+                onClick={handleGeneratePO}
+                disabled={generating || selectedCount === 0}
+                className="w-full py-2.5 bg-secondary text-secondary-foreground font-medium rounded-[var(--radius)] flex items-center justify-center gap-2 hover:opacity-90 transition-opacity text-sm disabled:opacity-50"
+              >
+                {generating ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</>
+                ) : (
+                  <>Generate PO <ArrowRight className="w-4 h-4" /></>
+                )}
+              </button>
+            </div>
+          </>
+        )}
 
       </div>
     </>
@@ -446,10 +823,17 @@ export default function InventoryDashboard() {
   const [totalItems, setTotalItems] = useState(0);
   const [totalSkuCount, setTotalSkuCount] = useState(0);
   const [locationCount, setLocationCount] = useState(0);
+  const [selectedLocation, setSelectedLocation] = useState('');
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'map'>('list');
+  const [showAddItemModal, setShowAddItemModal] = useState(false);
+  const [isBarcodeSearch, setIsBarcodeSearch] = useState(false);
+  const [barcodeQuery, setBarcodeQuery] = useState('');
 
-  const fetchDashboard = useCallback(async () => {
+  const fetchDashboard = useCallback(async (location?: string) => {
     try {
-      const res = await apiClient.get('/inventory/dashboard');
+      const params: Record<string, string> = {};
+      if (location) params.location = location;
+      const res = await apiClient.get('/inventory/dashboard', { params });
       const data = res.data.data;
       setDashboardStats(data);
       setTotalSkuCount(data.totalSkuCount);
@@ -459,10 +843,12 @@ export default function InventoryDashboard() {
     }
   }, []);
 
-  const fetchItems = useCallback(async (categoryId?: string) => {
+  const fetchItems = useCallback(async (categoryId?: string, location?: string, search?: string) => {
     try {
       const params: Record<string, string> = { limit: '100' };
       if (categoryId && categoryId !== 'all') params.categoryId = categoryId;
+      if (location) params.location = location;
+      if (search) params.search = search;
       const res = await apiClient.get('/inventory', { params });
       setItems(res.data.data.items);
       setTotalItems(res.data.data.total);
@@ -510,12 +896,58 @@ export default function InventoryDashboard() {
     setSelectedItemId(id);
   };
 
+  const refreshItems = useCallback((categoryId?: string, location?: string, search?: string) => {
+    fetchItems(categoryId, location, search);
+    fetchDashboard(location);
+  }, [fetchItems, fetchDashboard]);
+
   const handleFilterChange = (categoryId: string) => {
     setActiveCategory(categoryId);
-    fetchItems(categoryId !== 'all' ? categoryId : undefined);
+    refreshItems(categoryId !== 'all' ? categoryId : undefined, selectedLocation || undefined);
   };
 
-  if (loading) {
+  const handleLocationChange = (location: string) => {
+    setSelectedLocation(location);
+    refreshItems(activeCategory !== 'all' ? activeCategory : undefined, location || undefined);
+  };
+
+  const handleViewModeChange = (mode: 'grid' | 'list' | 'map') => {
+    setViewMode(mode);
+  };
+
+  const handleDownloadCSV = () => {
+    if (items.length === 0) return;
+    const headers = ['Name', 'SKU', 'Category', 'Location', 'Quantity', 'Min Stock', 'Max Stock', 'Supplier', 'Unit Cost', 'Lead Time', 'Status'];
+    const csvContent = [
+      headers.join(','),
+      ...items.map(row =>
+        `"${row.name}","${row.sku}","${row.category}","${row.location}",${row.qty},${row.minStockLevel},${row.maxStockLevel},"${row.supplier}",${row.unitCost},"${row.leadTime}","${row.status}"`
+      ),
+    ].join('\n');
+    const blob = new Blob([`\ufeff${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `inventory_export_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleBarcodeSearch = () => {
+    if (isBarcodeSearch && barcodeQuery.trim()) {
+      refreshItems(activeCategory !== 'all' ? activeCategory : undefined, selectedLocation || undefined, barcodeQuery.trim());
+      setIsBarcodeSearch(false);
+      setBarcodeQuery('');
+    } else {
+      setIsBarcodeSearch(true);
+    }
+  };
+
+  const handleRefresh = () => {
+    refreshItems(activeCategory !== 'all' ? activeCategory : undefined, selectedLocation || undefined);
+  };
+
+  if (loading && items.length === 0) {
     return (
       <div className="w-full bg-background min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
@@ -549,34 +981,118 @@ export default function InventoryDashboard() {
               </span>
             </div>
           </div>
-          <HeaderActions onOpenReorder={handleOpenReorder} reorderCount={reorderItems.length} />
+          <div className="flex flex-wrap items-center gap-3">
+            <LocationDropdown
+              selectedLocation={selectedLocation}
+              onLocationChange={handleLocationChange}
+            />
+            <button
+              onClick={handleOpenReorder}
+              className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-[var(--radius)] text-sm font-medium hover:bg-muted/50 transition-colors shrink-0 relative"
+            >
+              <Bell className="w-4 h-4 text-[#F5A623]" /> 
+              Reorders
+              {reorderItems.length > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-white">
+                  {reorderItems.length}
+                </span>
+              )}
+            </button>
+            <div className="flex gap-2 shrink-0">
+              {isBarcodeSearch ? (
+                <div className="flex items-center gap-1 bg-card border border-border rounded-[var(--radius)] px-2">
+                  <Search className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <input
+                    type="text"
+                    value={barcodeQuery}
+                    onChange={(e) => setBarcodeQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleBarcodeSearch();
+                      if (e.key === 'Escape') { setIsBarcodeSearch(false); setBarcodeQuery(''); }
+                    }}
+                    placeholder="Search by SKU..."
+                    className="w-28 py-2 text-xs bg-transparent text-foreground outline-none border-none"
+                    autoFocus
+                  />
+                  <button
+                    onClick={() => { setIsBarcodeSearch(false); setBarcodeQuery(''); handleRefresh(); }}
+                    className="p-1 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setIsBarcodeSearch(true)}
+                  className="p-2 bg-card border border-border rounded-[var(--radius)] text-muted-foreground hover:text-foreground transition-colors"
+                  title="Search by SKU"
+                >
+                  <Barcode className="w-4 h-4" />
+                </button>
+              )}
+              <button
+                onClick={handleDownloadCSV}
+                className="p-2 bg-card border border-border rounded-[var(--radius)] text-muted-foreground hover:text-foreground transition-colors"
+                title="Download as CSV"
+              >
+                <Download className="w-4 h-4" />
+              </button>
+            </div>
+            <button
+              onClick={() => setShowAddItemModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-[var(--radius)] text-sm font-medium hover:opacity-90 transition-opacity shrink-0"
+            >
+              <Plus className="w-4 h-4" /> Add item
+            </button>
+          </div>
         </header>
 
         <div className="pb-12 w-full">
           {dashboardStats && <StatsCard stats={dashboardStats} />}
-          <FilterSection filters={categories} activeFilter={activeCategory} onFilterChange={handleFilterChange} />
-          <InventoryTable 
-            items={items} 
-            selectedItemId={selectedItemId}
-            onRowClick={handleRowClick} 
+          <FilterSection
+            filters={categories}
+            activeFilter={activeCategory}
+            onFilterChange={handleFilterChange}
+            viewMode={viewMode}
+            onViewModeChange={handleViewModeChange}
           />
+          {viewMode === 'list' && (
+            <InventoryTable
+              items={items}
+              selectedItemId={selectedItemId}
+              onRowClick={handleRowClick}
+            />
+          )}
+          {viewMode === 'grid' && (
+            <InventoryGrid items={items} onItemClick={handleRowClick} />
+          )}
+          {viewMode === 'map' && (
+            <InventoryMapView items={items} onItemClick={handleRowClick} />
+          )}
         </div>
         
       </div>
 
       {isReorderOpen && (
-        <ReorderSidebar 
-          items={reorderItems} 
-          onClose={() => setIsReorderOpen(false)} 
+        <ReorderSidebar
+          items={reorderItems}
+          onClose={() => setIsReorderOpen(false)}
         />
       )}
 
       {selectedItem && (
-        <ItemDetailsSidebar 
-          item={selectedItem} 
-          onClose={() => setSelectedItemId(null)} 
+        <ItemDetailsSidebar
+          item={selectedItem}
+          onClose={() => setSelectedItemId(null)}
         />
       )}
+
+      <AddItemModal
+        isOpen={showAddItemModal}
+        onClose={() => setShowAddItemModal(false)}
+        categories={categories}
+        onSuccess={handleRefresh}
+      />
     </div>
   );
 }

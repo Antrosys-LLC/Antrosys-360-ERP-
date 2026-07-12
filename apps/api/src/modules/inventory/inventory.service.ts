@@ -249,3 +249,39 @@ export async function createCategory(data: CreateCategoryBody) {
     data: { name: data.name },
   });
 }
+
+export async function listLocations() {
+  const items = await prisma.inventoryItem.findMany({
+    select: { location: true },
+    distinct: ['location'],
+    orderBy: { location: 'asc' },
+  });
+  return items.map((i) => i.location);
+}
+
+export async function createPurchaseOrder(data: import('./inventory.schema').CreatePurchaseOrderBody, userId: string) {
+  const poNumber = `PO-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+  const grandTotal = data.items.reduce((sum, i) => sum + i.totalCost, 0);
+
+  await prisma.auditLog.create({
+    data: {
+      userId,
+      action: 'PURCHASE_ORDER_CREATE',
+      metadata: {
+        poNumber,
+        itemCount: data.items.length,
+        grandTotal,
+        notes: data.notes || '',
+        items: data.items,
+      },
+    },
+  });
+
+  return {
+    poNumber,
+    items: data.items,
+    grandTotal,
+    notes: data.notes || '',
+    createdAt: new Date().toISOString(),
+  };
+}

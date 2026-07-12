@@ -106,3 +106,22 @@ export async function createCategoryHandler(request: FastifyRequest, reply: Fast
   const category = await inventoryService.createCategory(parsed.data);
   return reply.code(201).send({ status: 'success', data: category });
 }
+
+export async function listLocationsHandler(_request: FastifyRequest, reply: FastifyReply) {
+  const locations = await inventoryService.listLocations();
+  return reply.code(200).send({ status: 'success', data: locations });
+}
+
+export async function createPurchaseOrderHandler(request: FastifyRequest, reply: FastifyReply) {
+  if (!request.user?.id) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+
+  const parsed = createPurchaseOrderBodySchema.safeParse(request.body);
+  if (!parsed.success) {
+    return reply.code(400).send({ error: 'Validation failed', details: parsed.error.flatten() });
+  }
+
+  const po = await inventoryService.createPurchaseOrder(parsed.data, request.user.id);
+  return reply.code(201).send({ status: 'success', data: po });
+}
