@@ -10,6 +10,7 @@ import {
   deleteSkillHandler,
   getEmployeePayslipsHandler,
   downloadEmployeePayslipHandler,
+  downloadEmployeeLetterHandler,
   getEmployeeAttendanceHandler,
   exportEmployeeAttendanceHandler,
 } from './employees.controller';
@@ -94,5 +95,11 @@ export async function employeesRoutes(fastify: FastifyInstance) {
   fastify.get('/:id/payslips/:payslipId/download', {
     preHandler: [fastify.requirePermission('hr:read')],
     handler: downloadEmployeePayslipHandler,
+  });
+
+  // Download experience certificate / HR letter PDF
+  fastify.get('/:id/letter', {
+    preHandler: [fastify.requirePermission('hr:read')],
+    handler: downloadEmployeeLetterHandler,
   });
 }

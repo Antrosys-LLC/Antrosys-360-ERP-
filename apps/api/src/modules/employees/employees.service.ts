@@ -15,6 +15,7 @@ import { validateEmploymentDates } from '../../shared/validation/employment-date
 import { APP_DEFAULT_CURRENCY } from '../../shared/currency/currency-constants';
 import { formatCurrencyAmount, formatCurrencyCompact } from '../../shared/currency/format-currency';
 import { buildPayslipPdf } from '../../shared/pdf/payslip-pdf';
+import { buildExperienceCertificatePdf } from '../../shared/pdf/experience-certificate-pdf';
 import { payslipPeriodLabel } from '../../shared/payslip/payslip-period-label';
 import {
   buildAttendanceCalendarWeeks,
@@ -798,4 +799,42 @@ export async function exportEmployeeAttendanceCsv(
     csv,
     filename: attendanceCsvFilename(csvEmployee, query.month, query.year),
   };
+}
+
+// ============================================================================
+// HR LETTER – download experience certificate PDF
+// ============================================================================
+
+export async function downloadEmployeeLetter(employeeId: string) {
+  const employee = await prisma.employee.findUnique({
+    where: { id: employeeId },
+    include: { user: { select: { email: true } } },
+  });
+
+  if (!employee) return null;
+
+  const employeeName = `${employee.firstName} ${employee.lastName}`;
+  const empCode = employee.employeeCode ?? 'N/A';
+  const filename = `HR_Letter_${employeeName.replace(/\s+/g, '_')}.pdf`;
+
+  const departmentLabel = employee.department
+    ? employee.department.replace(/_/g, ' ')
+    : 'N/A';
+
+  const buffer = await buildExperienceCertificatePdf({
+    employeeName,
+    employeeCode: empCode,
+    designation: employee.designation ?? 'N/A',
+    department: departmentLabel,
+    employeeType: employee.employeeType ?? 'N/A',
+    contractType: employee.contractType ?? 'N/A',
+    employmentStatus: employee.employmentStatus.replace(/_/g, ' '),
+    joiningDate: employee.joiningDate,
+    workLocation: employee.location ?? 'N/A',
+    officialEmail: employee.user.email,
+    contactNumber: employee.phone ?? 'N/A',
+    generatedAt: new Date(),
+  });
+
+  return { buffer, filename };
 }

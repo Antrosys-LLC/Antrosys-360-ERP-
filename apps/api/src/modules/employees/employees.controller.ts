@@ -447,3 +447,25 @@ export async function downloadEmployeePayslipHandler(request: FastifyRequest, re
     .header('Content-Disposition', `attachment; filename="${result.filename}"`)
     .send(result.buffer);
 }
+
+// ============================================================================
+// GET /employees/:id/letter – Download experience certificate PDF
+// ============================================================================
+
+export async function downloadEmployeeLetterHandler(request: FastifyRequest, reply: FastifyReply) {
+  const parsed = employeeParamsSchema.safeParse(request.params);
+  if (!parsed.success) {
+    return reply.code(400).send({ error: 'Validation failed', details: parsed.error.flatten() });
+  }
+
+  const result = await employeesService.downloadEmployeeLetter(parsed.data.id);
+
+  if (!result) {
+    return reply.code(404).send({ error: 'Employee not found' });
+  }
+
+  return reply
+    .header('Content-Type', 'application/pdf')
+    .header('Content-Disposition', `attachment; filename="${result.filename}"`)
+    .send(result.buffer);
+}
