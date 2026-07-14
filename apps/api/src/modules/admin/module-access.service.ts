@@ -23,6 +23,7 @@ export const TOGGLEABLE_MODULES: ModuleDef[] = [
   { key: 'reports', label: 'Reports & BI', writeCapable: false },
   { key: 'announcements', label: 'Announcements', writeCapable: true },
   { key: 'documents', label: 'Documents', writeCapable: true },
+  { key: 'inventory', label: 'Inventory', writeCapable: true },
 ];
 
 export const TOGGLEABLE_ROLES: Role[] = [

@@ -26,7 +26,9 @@ export type Permission =
   | 'documents:read'
   | 'documents:write'
   | 'bank_feeds:read'
-  | 'bank_feeds:write';
+  | 'bank_feeds:write'
+  | 'inventory:read'
+  | 'inventory:write';
 
 const ALL_PERMISSIONS: Permission[] = [
   'finance:read',
@@ -55,6 +57,8 @@ const ALL_PERMISSIONS: Permission[] = [
   'documents:write',
   'bank_feeds:read',
   'bank_feeds:write',
+  'inventory:read',
+  'inventory:write',
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
@@ -71,6 +75,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'documents:write',
     'bank_feeds:read',
     'bank_feeds:write',
+    'inventory:read',
+    'inventory:write',
   ],
 
   [Role.OPERATIONS_HEAD]: [
@@ -84,6 +90,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'announcements:write',
     'documents:read',
     'documents:write',
+    'inventory:read',
+    'inventory:write',
   ],
 
   [Role.HR_HEAD]: [
@@ -95,6 +103,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'leave:read',
     'documents:read',
     'documents:write',
+    'inventory:read',
   ],
 
   [Role.FINANCE_MANAGER]: [
@@ -106,12 +115,14 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'documents:write',
     'bank_feeds:read',
     'bank_feeds:write',
+    'inventory:read',
   ],
 
   [Role.PROJECT_MANAGER]: [
     'clients:read',
     'reports:read',
     'documents:read',
+    'inventory:read',
   ],
 
   [Role.MANAGER]: [
@@ -124,6 +135,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'announcements:write',
     'documents:read',
     'documents:write',
+    'inventory:read',
+    'inventory:write',
   ],
 
   [Role.SUB_MANAGER]: [
@@ -136,12 +149,14 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'announcements:write',
     'documents:read',
     'documents:write',
+    'inventory:read',
   ],
 
   [Role.TEAM_LEAD]: [
     'attendance:read',
     'hr:read',
     'documents:read',
+    'inventory:read',
   ],
 
   [Role.EMPLOYEE]: [
@@ -152,6 +167,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'documents:read',
     'announcements:read',
     'payroll:read',
+    'inventory:read',
   ],
 };
 

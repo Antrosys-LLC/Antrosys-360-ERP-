@@ -1536,3 +1536,34 @@ model BankConnection {
   @@map("bank_connections")
 }
 
+model InventoryCategory {
+  id        String          @id @default(cuid())
+  name      String          @unique
+  items     InventoryItem[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@map("inventory_categories")
+}
+
+model InventoryItem {
+  id              String             @id @default(cuid())
+  name            String
+  sku             String             @unique
+  categoryId      String
+  category        InventoryCategory  @relation(fields: [categoryId], references: [id])
+  location        String
+  qty             Int                @default(0)
+  minStockLevel   Int                @default(10)
+  maxStockLevel   Int                @default(100)
+  supplier        String
+  unitCost        Decimal            @db.Decimal(12, 2)
+  leadTime        String
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([categoryId])
+  @@index([sku])
+  @@map("inventory_items")
+}
+
