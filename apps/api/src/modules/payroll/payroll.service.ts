@@ -788,6 +788,9 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
               employeeCode: true,
               department: true,
               designation: true,
+              employeeType: true,
+              location: true,
+              joiningDate: true,
               user: { select: { email: true } },
             },
           },
@@ -810,6 +813,15 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
   let skipped = payroll.lineItems.length - eligible.length;
   const periodLabel = periodLabelFromStart(payroll.periodStart);
 
+  const periodStart = payroll.periodStart;
+  const periodEnd = payroll.periodEnd;
+  const monthStr = String(periodStart.getMonth() + 1).padStart(2, '0');
+  const yearStr = String(periodStart.getFullYear());
+
+  const year = periodStart.getFullYear();
+  const ytdStart = new Date(Date.UTC(year, 0, 1));
+  const ytdEnd = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
+
   for (const line of eligible) {
     await upsertPayslipFromLineItem(
       prisma,
@@ -821,22 +833,54 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
 
     if (config.pdf || config.email) {
       const employeeName = `${line.employee.firstName} ${line.employee.lastName}`;
+
+      const employeeId = line.employee.id;
+      const ytdPayslips = await prisma.employeePayslip.findMany({
+        where: {
+          employeeId,
+          periodStart: { gte: ytdStart, lte: ytdEnd },
+        },
+        select: { grossPay: true, deductionsTotal: true, netPay: true },
+      });
+      let ytdGross = 0;
+      let ytdDeductions = 0;
+      let ytdNet = 0;
+      for (const p of ytdPayslips) {
+        ytdGross += Number(p.grossPay);
+        ytdDeductions += Number(p.deductionsTotal);
+        ytdNet += Number(p.netPay);
+      }
+
+      const payslipNumber = `PSL-${line.employee.employeeCode ?? 'EMP'}-${monthStr}${yearStr}`;
+
       const buffer = await buildPayslipPdf({
         employeeName,
         employeeCode: line.employee.employeeCode,
         department: line.employee.department?.replace(/_/g, ' ') ?? null,
         designation: line.employee.designation,
+        employeeType: line.employee.employeeType ?? null,
+        workLocation: line.employee.location ?? null,
+        joiningDate: line.employee.joiningDate,
+        periodStart,
+        periodEnd,
         periodLabel,
-        grossAmount: Number(line.grossPay),
-        grossPay: Number(line.grossPay),
-        deductionsAmount: Number(line.deductionsTotal),
-        deductionsTotal: Number(line.deductionsTotal),
-        taxAmount: Number(line.taxAmount),
-        netAmount: Number(line.netPay),
-        netPay: Number(line.netPay),
+        payslipNumber,
+        paymentDate: new Date(),
         currencyCode: payroll.currencyCode,
         status: 'Processing',
-        generatedAt: new Date(),
+        basicSalary: Number(line.baseSalary),
+        allowances: Number(line.allowances),
+        overtime: Number(line.overtime),
+        bonuses: Number(line.bonuses),
+        grossPay: Number(line.grossPay),
+        incomeTax: Number(line.incomeTax),
+        providentFund: Number(line.providentFund),
+        healthInsurance: Number(line.healthInsurance),
+        deductionsTotal: Number(line.deductionsTotal),
+        netPay: Number(line.netPay),
+        ytdGross,
+        ytdDeductions,
+        ytdNet,
       });
 
       if (config.email && line.employee.user.email) {
