@@ -477,6 +477,15 @@ export async function downloadEmployeePayslip(employeeId: string, payslipId: str
           employeeCode: true,
           department: true,
           designation: true,
+          employeeType: true,
+          location: true,
+          joiningDate: true,
+        },
+      },
+      payroll: {
+        select: {
+          periodStart: true,
+          periodEnd: true,
         },
       },
     },
@@ -484,26 +493,78 @@ export async function downloadEmployeePayslip(employeeId: string, payslipId: str
 
   if (!payslip) return null;
 
-  const employeeName = `${payslip.employee.firstName} ${payslip.employee.lastName}`;
+  const employee = payslip.employee;
+  const employeeName = `${employee.firstName} ${employee.lastName}`;
   const periodLabel = payslipPeriodLabel(new Date(payslip.periodStart));
-  const filename = `payslip-${payslip.employee.employeeCode ?? employeeId}-${periodLabel.replace(/\s+/g, '-')}.pdf`;
+  const periodStart = payslip.payroll?.periodStart ?? payslip.periodStart;
+  const periodEnd = payslip.payroll?.periodEnd ?? payslip.periodEnd;
+
+  const filename = `payslip-${employee.employeeCode ?? employeeId}-${periodLabel.replace(/\s+/g, '-')}.pdf`;
+
+  const lineItem = await prisma.payrollLineItem.findUnique({
+    where: { payslipId: payslip.id },
+    select: {
+      baseSalary: true,
+      allowances: true,
+      overtime: true,
+      bonuses: true,
+      incomeTax: true,
+      providentFund: true,
+      healthInsurance: true,
+    },
+  });
+
+  const year = new Date(payslip.periodStart).getFullYear();
+  const yearStart = new Date(Date.UTC(year, 0, 1));
+  const yearEnd = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
+  const yearPayslips = await prisma.employeePayslip.findMany({
+    where: {
+      employeeId,
+      periodStart: { gte: yearStart, lte: yearEnd },
+    },
+    select: { grossPay: true, deductionsTotal: true, netPay: true },
+  });
+  let ytdGross = 0;
+  let ytdDeductions = 0;
+  let ytdNet = 0;
+  for (const p of yearPayslips) {
+    ytdGross += Number(p.grossPay);
+    ytdDeductions += Number(p.deductionsTotal);
+    ytdNet += Number(p.netPay);
+  }
+
+  const monthStr = String(periodStart.getMonth() + 1).padStart(2, '0');
+  const yearStr = String(periodStart.getFullYear());
+  const payslipNumber = `PSL-${employee.employeeCode ?? 'EMP'}-${monthStr}${yearStr}`;
 
   const buffer = await buildPayslipPdf({
     employeeName,
-    employeeCode: payslip.employee.employeeCode,
-    department: payslip.employee.department?.replace(/_/g, ' ') ?? null,
-    designation: payslip.employee.designation,
+    employeeCode: employee.employeeCode,
+    department: employee.department?.replace(/_/g, ' ') ?? null,
+    designation: employee.designation,
+    employeeType: employee.employeeType ?? null,
+    workLocation: employee.location ?? null,
+    joiningDate: employee.joiningDate,
+    periodStart,
+    periodEnd,
     periodLabel,
-    grossAmount: Number(payslip.grossPay),
-    grossPay: Number(payslip.grossPay),
-    deductionsAmount: Number(payslip.deductionsTotal),
-    deductionsTotal: Number(payslip.deductionsTotal),
-    taxAmount: Number(payslip.taxAmount),
-    netAmount: Number(payslip.netPay),
-    netPay: Number(payslip.netPay),
+    payslipNumber,
+    paymentDate: payslip.paidAt ?? payslip.createdAt,
     currencyCode: payslip.currencyCode,
     status: PAYSLIP_STATUS_LABEL[payslip.status],
-    generatedAt: new Date(),
+    basicSalary: Number(lineItem?.baseSalary ?? payslip.grossPay),
+    allowances: Number(lineItem?.allowances ?? 0),
+    overtime: Number(lineItem?.overtime ?? 0),
+    bonuses: Number(lineItem?.bonuses ?? 0),
+    grossPay: Number(payslip.grossPay),
+    incomeTax: Number(lineItem?.incomeTax ?? payslip.taxAmount),
+    providentFund: Number(lineItem?.providentFund ?? 0),
+    healthInsurance: Number(lineItem?.healthInsurance ?? 0),
+    deductionsTotal: Number(payslip.deductionsTotal),
+    netPay: Number(payslip.netPay),
+    ytdGross,
+    ytdDeductions,
+    ytdNet,
   });
 
   return { buffer, filename };
