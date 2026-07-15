@@ -42,10 +42,12 @@ export const listEmployeesQuerySchema = z.object({
   page: z
     .string()
     .optional()
+    .refine((v) => (v ? /^\d+$/.test(v) : true), 'page must be a number')
     .transform((v) => (v ? parseInt(v, 10) : 1)),
   limit: z
     .string()
     .optional()
+    .refine((v) => (v ? /^\d+$/.test(v) : true), 'limit must be a number')
     .transform((v) => (v ? parseInt(v, 10) : 50)),
 });
 
