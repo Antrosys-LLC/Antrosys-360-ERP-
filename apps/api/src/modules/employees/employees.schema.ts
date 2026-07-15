@@ -140,6 +140,9 @@ export const employeePayslipsQuerySchema = z.object({
   year: z
     .string()
     .optional()
+    .refine((v) => v === undefined || /^\d{4}$/.test(v), {
+      message: 'Year must be a 4-digit number',
+    })
     .transform((v) => (v ? parseInt(v, 10) : new Date().getFullYear())),
 });
 

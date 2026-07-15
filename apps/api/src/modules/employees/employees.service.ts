@@ -695,6 +695,14 @@ async function leaveDayNumbersForMonth(
   return days;
 }
 
+async function fetchEmployeeAttendanceRecords(employeeId: string, month: number, year: number) {
+  const { monthStart, monthEnd } = attendanceMonthBounds(month, year);
+  return prisma.attendance.findMany({
+    where: { employeeId, date: { gte: monthStart, lte: monthEnd } },
+    orderBy: { date: 'desc' },
+  });
+}
+
 export async function getEmployeeAttendanceLogs(employeeId: string, query: EmployeeAttendanceQuery) {
   const employee = await prisma.employee.findUnique({
     where: { id: employeeId },
@@ -711,13 +719,7 @@ export async function getEmployeeAttendanceLogs(employeeId: string, query: Emplo
   const availableMonths = listAvailableAttendanceMonths(employee.joiningDate);
 
   const [attendanceRecords, holidays, leaveDayNumbers] = await Promise.all([
-    prisma.attendance.findMany({
-      where: {
-        employeeId,
-        date: { gte: monthStart, lte: monthEnd },
-      },
-      orderBy: { date: 'desc' },
-    }),
+    fetchEmployeeAttendanceRecords(employeeId, query.month, query.year),
     prisma.companyHoliday.findMany({
       where: {
         OR: [
@@ -852,14 +854,7 @@ export async function exportEmployeeAttendanceCsv(
     return null;
   }
 
-  const { monthStart, monthEnd } = attendanceMonthBounds(query.month, query.year);
-  const attendanceRecords = await prisma.attendance.findMany({
-    where: {
-      employeeId,
-      date: { gte: monthStart, lte: monthEnd },
-    },
-    orderBy: { date: 'asc' },
-  });
+  const attendanceRecords = await fetchEmployeeAttendanceRecords(employeeId, query.month, query.year);
 
   let totalHours = 0;
   let totalOvertime = 0;
