@@ -53,7 +53,7 @@ export async function getEmployeeHandler(request: FastifyRequest, reply: Fastify
   // Calculate tenure from joining date
   const joiningDate = employee.joiningDate ? new Date(employee.joiningDate) : null;
   let tenure = '';
-  let sinceDate = '';
+  let sinceDate = '—';
   if (joiningDate) {
     const now = new Date();
     const years = now.getFullYear() - joiningDate.getFullYear();

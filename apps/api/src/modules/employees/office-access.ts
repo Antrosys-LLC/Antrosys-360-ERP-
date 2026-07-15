@@ -47,8 +47,10 @@ export function formatWorkShiftLabel(config: WorkScheduleConfig): string {
   const startHour = padTimePart(config.lateAfterHour);
   const startMinute = padTimePart(config.lateAfterMinute);
   const hoursPerDay = Number(config.standardHoursPerDay);
-  const endHour = Math.floor(config.lateAfterHour + hoursPerDay);
-  const endMinute = config.lateAfterMinute;
+  const totalStartMinutes = config.lateAfterHour * 60 + config.lateAfterMinute;
+  const totalEndMinutes = totalStartMinutes + Math.round(hoursPerDay * 60);
+  const endHour = Math.floor(totalEndMinutes / 60);
+  const endMinute = totalEndMinutes % 60;
   return `General (${startHour}:${startMinute} - ${padTimePart(endHour)}:${padTimePart(endMinute)})`;
 }
 
