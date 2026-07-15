@@ -156,8 +156,8 @@ export type EmployeePayslipParams = z.infer<typeof employeePayslipParamsSchema>;
 // ============================================================================
 
 export const employeeAttendanceQuerySchema = z.object({
-  month: z.coerce.number().int().min(1).max(12).optional().default(new Date().getUTCMonth() + 1),
-  year: z.coerce.number().int().min(2000).max(2100).optional().default(new Date().getUTCFullYear()),
+  month: z.coerce.number().int().min(1).max(12).optional().default(() => new Date().getUTCMonth() + 1),
+  year: z.coerce.number().int().min(2000).max(2100).optional().default(() => new Date().getUTCFullYear()),
 });
 
 export type EmployeeAttendanceQuery = z.infer<typeof employeeAttendanceQuerySchema>;
