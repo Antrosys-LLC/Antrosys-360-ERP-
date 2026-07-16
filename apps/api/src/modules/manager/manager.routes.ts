@@ -13,9 +13,12 @@ export async function managerRoutes(fastify: FastifyInstance) {
   // Enforce JWT validation on all endpoints in this module
   fastify.addHook('preHandler', fastify.verifyJwt);
 
-  // GET scoped dashboard data
+  // GET scoped dashboard data (attendance + leaves + KPIs + announcements)
   fastify.get('/', {
-    preHandler: [fastify.requirePermission('attendance:read')],
+    preHandler: [
+      fastify.requirePermission('attendance:read'),
+      fastify.requirePermission('leave:read'),
+    ],
     handler: getDashboardDataHandler,
   });
 

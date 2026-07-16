@@ -55,18 +55,29 @@ export function buildAttendanceTable(
     hours: Prisma.Decimal | null;
     isFlagged: boolean;
   }[],
+  approvedTeamLeaves: LeaveRequest[] = [],
+  today: Date = getTodayUtc(),
 ): AttendanceTableRow[] {
   const attendanceMap = new Map(attendancesToday.map((a) => [a.employeeId, a]));
+  const onLeaveIds = new Set(
+    approvedTeamLeaves
+      .filter((leave) => isLeaveActiveOnDate(leave, today))
+      .map((leave) => leave.employeeId),
+  );
 
   return teamEmployees.map((emp) => {
     const att = attendanceMap.get(emp.id);
+    let status = att?.status || 'ABSENT';
+    if (!att && onLeaveIds.has(emp.id)) {
+      status = 'LEAVE';
+    }
     return {
       employeeId: emp.id,
       name: `${emp.firstName} ${emp.lastName}`,
       role: emp.designation || 'Staff',
       checkIn: att?.checkIn ? att.checkIn.toISOString() : null,
       checkOut: att?.checkOut ? att.checkOut.toISOString() : null,
-      status: att?.status || 'ABSENT',
+      status,
       hours: att?.hours ? Number(att.hours) : 0,
       isFlagged: att?.isFlagged || false,
     };
@@ -104,7 +115,9 @@ export function computeTeamScheduleStats(
   }
 
   const onLeaveToday = onLeaveEmployeeIds.size;
-  const absentCount = attendanceTable.filter((row) => row.status === 'ABSENT').length;
+  const absentCount = attendanceTable.filter(
+    (row) => row.status === 'ABSENT' && !onLeaveEmployeeIds.has(row.employeeId),
+  ).length;
   const attendance =
     totalEmployees > 0 ? Math.round((presentCount / totalEmployees) * 100) : 0;
 
