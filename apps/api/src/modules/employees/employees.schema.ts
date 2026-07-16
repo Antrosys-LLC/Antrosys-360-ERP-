@@ -72,7 +72,6 @@ export const updatePersonalBodySchema = z.object({
   emergencyContactRelation: z.string().nullable().optional(),
   emergencyContactPhone: z.string().nullable().optional(),
   homeAddress: z.string().nullable().optional(),
-  socialHandle: z.string().nullable().optional(),
 });
 
 export type UpdatePersonalBody = z.infer<typeof updatePersonalBodySchema>;
