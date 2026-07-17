@@ -136,10 +136,14 @@ export async function updateEmployee(id: string, data: UpdatePersonalBody) {
   if (data.dateOfBirth) {
     updateData.dateOfBirth = new Date(data.dateOfBirth);
   }
-  if (data.gender) {
-    const gender = normalizeGender(data.gender);
-    if (gender) updateData.gender = gender;
-    else delete updateData.gender;
+  if (data.gender !== undefined) {
+    if (data.gender) {
+      const gender = normalizeGender(data.gender);
+      if (gender) updateData.gender = gender;
+      else delete updateData.gender;
+    } else {
+      delete updateData.gender;
+    }
   }
 
   const updated = await prisma.employee.update({
@@ -287,7 +291,7 @@ export async function listManagerOptions(query: ManagerOptionsQuery) {
   const employees = await prisma.employee.findMany({
     where: {
       isActive: true,
-      user: { role: { not: 'EMPLOYEE' } },
+      user: { role: { not: 'EMPLOYEE' }, isActive: true },
       ...(query.excludeId ? { id: { not: query.excludeId } } : {}),
     },
     select: {

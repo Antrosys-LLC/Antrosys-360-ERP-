@@ -1591,7 +1591,7 @@ fill="none"
                   {personalInformation?.fields.map((field, idx) => (
                     <div key={idx} className="space-y-1">
                       <span className="block text-xs font-medium text-muted-foreground tracking-tight">{field.label}</span>
-                      <span className="block text-sm text-foreground font-semibold">{field.value}</span>
+                      <span className="block text-sm text-foreground font-semibold">{displayOrDash(field.value)}</span>
                     </div>
                   ))}
                 </div>
@@ -1774,7 +1774,13 @@ fill="none"
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Gender</Label>
-                    <Input {...profileForm.register('gender')} className="text-sm" />
+                    <select {...profileForm.register('gender')} className={selectFieldClassName}>
+                      <option value="">Not specified</option>
+                      <option value="MALE">Male</option>
+                      <option value="FEMALE">Female</option>
+                      <option value="OTHER">Other</option>
+                      <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
+                    </select>
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Nationality</Label>
@@ -1887,7 +1893,7 @@ fill="none"
                     )}
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Work Mode</Label>
+                    <Label className="text-xs">Employee Type</Label>
                     <Input
                       {...employmentForm.register('employeeType')}
                       list="employee-type-options"
