@@ -204,7 +204,7 @@ function resolveAttachmentLink(attachment: string): { href: string; label: strin
   if (attachment.startsWith('http://') || attachment.startsWith('https://')) {
     return { href: attachment, label };
   }
-  const apiOrigin = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1').replace(/\/api\/v\d+\/?$/, '');
+  const apiOrigin = new URL(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1').origin;
   const href = attachment.startsWith('/') ? `${apiOrigin}${attachment}` : attachment;
   return { href, label };
 }
@@ -227,7 +227,7 @@ function timeAgo(isoString: string): string {
   if (diffHrs < 24) return `${diffHrs}h ago`;
   if (diffDays === 1) return 'Yesterday';
   if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
 function formatLeaveDates(startDate: string, endDate: string): string {

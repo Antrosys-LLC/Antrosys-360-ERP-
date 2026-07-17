@@ -13,7 +13,7 @@ import {
 } from './manager-team-stats';
 
 function mapOverrideStatus(status: string): AttendanceStatus {
-  if (status === 'ON LEAVE') return AttendanceStatus.LEAVE;
+  if (status === 'ON LEAVE' || status === 'LEAVE') return AttendanceStatus.LEAVE;
   if (status === 'PRESENT') return AttendanceStatus.PRESENT;
   if (status === 'ABSENT') return AttendanceStatus.ABSENT;
   if (status === 'LATE') return AttendanceStatus.LATE;
@@ -62,7 +62,7 @@ async function loadTeamSnapshot(teamId: string, today: Date) {
     }),
   ]);
 
-  const attendanceTable = buildAttendanceTable(teamEmployees, attendancesToday);
+  const attendanceTable = buildAttendanceTable(teamEmployees, attendancesToday, approvedTeamLeaves, today);
   const teamSchedule = computeTeamScheduleStats(
     attendanceTable,
     approvedTeamLeaves,
@@ -156,6 +156,33 @@ export async function getDashboardData(userId: string, userRole: string) {
     },
   });
 
+  const [leaveRequests, approvedTeamLeaves] = await Promise.all([
+    prisma.leaveRequest.findMany({
+      where: {
+        employeeId: { in: teamEmployeeIds },
+        status: 'PENDING',
+      },
+      include: {
+        employee: {
+          select: {
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.leaveRequest.findMany({
+      where: {
+        employeeId: { in: teamEmployeeIds },
+        status: 'APPROVED',
+        endDate: { gte: today },
+      },
+    }),
+  ]);
+
+  const leavesPendingCount = leaveRequests.length;
+
   const attendanceTable = buildAttendanceTable(
     teamEmployees.map((emp) => ({
       id: emp.id,
@@ -166,33 +193,9 @@ export async function getDashboardData(userId: string, userRole: string) {
       performanceScore: emp.performanceScore,
     })),
     attendancesToday,
+    approvedTeamLeaves,
+    today,
   );
-
-  const leaveRequests = await prisma.leaveRequest.findMany({
-    where: {
-      employeeId: { in: teamEmployeeIds },
-      status: 'PENDING',
-    },
-    include: {
-      employee: {
-        select: {
-          firstName: true,
-          lastName: true,
-        },
-      },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
-
-  const leavesPendingCount = leaveRequests.length;
-
-  const approvedTeamLeaves = await prisma.leaveRequest.findMany({
-    where: {
-      employeeId: { in: teamEmployeeIds },
-      status: 'APPROVED',
-      endDate: { gte: today },
-    },
-  });
 
   const teamSchedule = computeTeamScheduleStats(
     attendanceTable,
