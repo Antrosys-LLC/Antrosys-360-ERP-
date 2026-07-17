@@ -63,7 +63,7 @@ export const updatePersonalBodySchema = z.object({
   gender: z.string().nullable().optional(),
   nationality: z.string().nullable().optional(),
   cnic: z.string().nullable().optional(),
-  personalEmail: z.union([z.string().email(), z.literal('')]).nullable().optional(),
+  personalEmail: z.string().email().nullable().optional(),
   personalPhone: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
   emergencyContactName: z.string().nullable().optional(),

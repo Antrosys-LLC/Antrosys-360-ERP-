@@ -187,7 +187,7 @@ const profileSchema = z.object({
   gender: z.string().nullable().optional(),
   nationality: z.string().nullable().optional(),
   cnic: z.string().nullable().optional(),
-  personalEmail: z.string().email('Invalid email').nullable().optional().or(z.literal('')),
+  personalEmail: z.string().email('Invalid email').nullable().optional(),
   personalPhone: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
   emergencyContactName: z.string().nullable().optional(),
@@ -756,7 +756,14 @@ function EmployeeDashboardContent() {
 
   const handleAttendanceMonthChange = (monthKey: string) => {
     const [year, month] = monthKey.split('-').map(Number);
-    if (!month || !year) return;
+    if (!month || !year) {
+      toast({
+        variant: 'destructive',
+        title: 'Invalid month selection',
+        description: 'Could not parse the selected month. Please try again.',
+      });
+      return;
+    }
     setAttendanceMonth({ month, year });
     fetchAttendance(month, year);
   };
@@ -1068,11 +1075,19 @@ function EmployeeDashboardContent() {
                   a.remove();
                   URL.revokeObjectURL(url);
                   toast({ title: 'HR Letter Downloaded', description: 'Experience certificate has been generated.' });
-                } catch {
+                } catch (error) {
+                  let description = 'Could not generate the HR letter. Please try again.';
+                  if (axios.isAxiosError(error)) {
+                    if (error.response?.status === 403) {
+                      description = 'You do not have permission to download this letter.';
+                    } else if (error.response?.status === 404) {
+                      description = 'Employee record not found. The letter cannot be generated.';
+                    }
+                  }
                   toast({
                     variant: 'destructive',
                     title: 'Download failed',
-                    description: 'Could not generate the HR letter. Please try again.',
+                    description,
                   });
                 }
               }}
