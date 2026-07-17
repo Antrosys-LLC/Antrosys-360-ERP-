@@ -1,4 +1,4 @@
-import { Department, EmploymentStatus, Gender, PayslipStatus, AttendanceStatus } from '@prisma/client';
+import { Department, EmploymentStatus, Gender, PayslipStatus, AttendanceStatus, LeaveRequestStatus } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { enumOptions } from '../../shared/enum-labels';
 import { normalizeDepartment, resolveDepartmentTeam } from '../../shared/department/department-utils';
@@ -666,6 +666,35 @@ function countPastWorkingDays(
   return count;
 }
 
+async function leaveDayNumbersForMonth(
+  employeeId: string,
+  month: number,
+  year: number,
+): Promise<Set<number>> {
+  const { monthStart, monthEnd } = attendanceMonthBounds(month, year);
+  const leaves = await prisma.leaveRequest.findMany({
+    where: {
+      employeeId,
+      status: LeaveRequestStatus.APPROVED,
+      startDate: { lte: monthEnd },
+      endDate: { gte: monthStart },
+    },
+    select: { startDate: true, endDate: true },
+  });
+
+  const days = new Set<number>();
+  for (const leave of leaves) {
+    const start = startOfUtcDay(leave.startDate);
+    const end = startOfUtcDay(leave.endDate);
+    for (let cursor = new Date(start); cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+      if (cursor.getUTCFullYear() === year && cursor.getUTCMonth() + 1 === month) {
+        days.add(cursor.getUTCDate());
+      }
+    }
+  }
+  return days;
+}
+
 export async function getEmployeeAttendanceLogs(employeeId: string, query: EmployeeAttendanceQuery) {
   const employee = await prisma.employee.findUnique({
     where: { id: employeeId },
@@ -681,7 +710,7 @@ export async function getEmployeeAttendanceLogs(employeeId: string, query: Emplo
   const { monthStart, monthEnd } = attendanceMonthBounds(query.month, query.year);
   const availableMonths = listAvailableAttendanceMonths(employee.joiningDate);
 
-  const [attendanceRecords, holidays] = await Promise.all([
+  const [attendanceRecords, holidays, leaveDayNumbers] = await Promise.all([
     prisma.attendance.findMany({
       where: {
         employeeId,
@@ -697,6 +726,7 @@ export async function getEmployeeAttendanceLogs(employeeId: string, query: Emplo
         ],
       },
     }),
+    leaveDayNumbersForMonth(employeeId, query.month, query.year),
   ]);
 
   const holidayRanges = holidays.map((holiday) => ({
@@ -718,6 +748,7 @@ export async function getEmployeeAttendanceLogs(employeeId: string, query: Emplo
     attendanceMap,
     holidayRanges,
     halfDayThreshold,
+    leaveDayNumbers,
   );
 
   const profileWeeks = calendar.weeks.map((week) =>
