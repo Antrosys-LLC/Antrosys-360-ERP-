@@ -738,6 +738,7 @@ export default function ManagerDashboard() {
   const [approveAllConfirmOpen, setApproveAllConfirmOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedKpiTeamId, setSelectedKpiTeamId] = useState<string | null>(null);
+  const [pendingLeaveIds, setPendingLeaveIds] = useState<Set<string>>(new Set());
 
   // Fetch dashboard data
   const { data, isLoading, isError, refetch } = useQuery<DashboardData>({
@@ -752,6 +753,9 @@ export default function ManagerDashboard() {
   const leaveStatusMutation = useMutation({
     mutationFn: ({ leaveId, status }: { leaveId: string; status: 'APPROVED' | 'REJECTED' }) =>
       patchLeaveStatus(leaveId, status),
+    onMutate: (variables) => {
+      setPendingLeaveIds((prev) => new Set(prev).add(variables.leaveId));
+    },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['manager-dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
@@ -769,6 +773,13 @@ export default function ManagerDashboard() {
         variant: 'destructive',
         title: 'Leave update failed',
         description: getMutationErrorMessage(error, 'Could not update the leave request.'),
+      });
+    },
+    onSettled: (_data, _error, variables) => {
+      setPendingLeaveIds((prev) => {
+        const next = new Set(prev);
+        next.delete(variables.leaveId);
+        return next;
       });
     },
   });
@@ -1175,16 +1186,16 @@ export default function ManagerDashboard() {
                     <button
                       onClick={() => leaveStatusMutation.mutate({ leaveId: req.id, status: 'REJECTED' })}
                       className="flex-1 rounded-md bg-[#FDECEF] dark:bg-rose-950/30 py-2 text-sm font-bold text-[#C93B4E] dark:text-rose-400 hover:bg-[#f8dadd] dark:hover:bg-rose-900/40 transition-colors"
-                      disabled={leaveStatusMutation.isPending}
+                      disabled={pendingLeaveIds.has(req.id)}
                     >
-                      Decline
+                      {pendingLeaveIds.has(req.id) ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Decline'}
                     </button>
                     <button
                       onClick={() => leaveStatusMutation.mutate({ leaveId: req.id, status: 'APPROVED' })}
                       className="flex-1 rounded-md bg-[#5A4FCF] dark:bg-indigo-600 py-2 text-sm font-bold text-white hover:bg-[#4d44b4] dark:hover:bg-indigo-700 transition-colors"
-                      disabled={leaveStatusMutation.isPending}
+                      disabled={pendingLeaveIds.has(req.id)}
                     >
-                      Approve
+                      {pendingLeaveIds.has(req.id) ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Approve'}
                     </button>
                   </div>
                 </div>
