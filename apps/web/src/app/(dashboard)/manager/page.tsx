@@ -168,16 +168,16 @@ function formatHours(h: number): string {
 function getStatusBadge(status: string) {
   switch (status) {
     case 'PRESENT':
-      return { label: 'Present', className: 'bg-[#EBF7EE] text-[#2F7A47] dark:bg-emerald-950/20 dark:text-emerald-400' };
+      return { label: 'Present', className: 'bg-[#EBF7EE] text-[#2F7A47] dark:bg-emerald-950/20 dark:text-emerald-400', dotColor: 'bg-[#EBF7EE]' };
     case 'ABSENT':
-      return { label: 'Absent', className: 'bg-[#FDECEF] text-[#C93B4E] dark:bg-rose-950/20 dark:text-rose-400' };
+      return { label: 'Absent', className: 'bg-[#FDECEF] text-[#C93B4E] dark:bg-rose-950/20 dark:text-rose-400', dotColor: 'bg-[#FDECEF]' };
     case 'LATE':
-      return { label: 'Late', className: 'bg-[#FEF5E7] text-[#C98B2C] dark:bg-amber-950/20 dark:text-amber-400' };
+      return { label: 'Late', className: 'bg-[#FEF5E7] text-[#C98B2C] dark:bg-amber-950/20 dark:text-amber-400', dotColor: 'bg-[#FEF5E7]' };
     case 'LEAVE':
     case 'ON LEAVE':
-      return { label: 'On leave', className: 'bg-[#ECEFF3] text-[#5A6E85] dark:bg-slate-800 dark:text-slate-400' };
+      return { label: 'On leave', className: 'bg-[#ECEFF3] text-[#5A6E85] dark:bg-slate-800 dark:text-slate-400', dotColor: 'bg-[#ECEFF3]' };
     default:
-      return { label: status, className: 'bg-muted text-muted-foreground' };
+      return { label: status, className: 'bg-muted text-muted-foreground', dotColor: 'bg-muted' };
   }
 }
 
@@ -236,10 +236,10 @@ function formatLeaveDates(startDate: string, endDate: string): string {
     const e = new Date(endDate);
     if (isNaN(s.getTime()) || isNaN(e.getTime())) return '-';
     
-    const sMonth = s.toLocaleDateString('en-US', { month: 'short' });
-    const sDate = s.getDate();
-    const eMonth = e.toLocaleDateString('en-US', { month: 'short' });
-    const eDate = e.getDate();
+    const sMonth = s.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+    const sDate = s.getUTCDate();
+    const eMonth = e.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+    const eDate = e.getUTCDate();
     
     if (sMonth === eMonth) {
       if (sDate === eDate) return `${sMonth} ${sDate}`;
@@ -646,7 +646,7 @@ function StatusDropdown({
                     isSameAttendanceStatus(opt, currentStatus) ? 'bg-accent/50' : ''
                   }`}
                 >
-                  <span className={`inline-block h-2 w-2 rounded-full ${optBadge.className.split(' ')[0]}`} />
+                  <span className={`inline-block h-2 w-2 rounded-full ${optBadge.dotColor}`} />
                   {optBadge.label}
                 </button>
               );
