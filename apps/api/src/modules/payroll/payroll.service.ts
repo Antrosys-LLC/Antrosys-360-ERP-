@@ -13,6 +13,7 @@ import { payslipPeriodLabel } from '../../shared/payslip/payslip-period-label';
 import { sendMail } from '../../shared/email/mail.service';
 import {
   calculatePayrollLine,
+  defaultCompensation,
   syncPayslipsFromPayrollBatch,
   toPayrollDecimal,
   upsertPayslipFromLineItem,
@@ -171,6 +172,17 @@ function deriveLifecycleUi(
     };
   }
 
+  if (status === 'REJECTED') {
+    return {
+      steps: LIFECYCLE_LABELS.map((label, idx) => ({
+        step: idx + 1,
+        label,
+        status: 'upcoming' as const,
+      })),
+      progressPct: 0,
+    };
+  }
+
   const currentIndex = LIFECYCLE_STEPS.indexOf(lifecycleStep);
   let effectiveIndex = currentIndex;
 
@@ -179,8 +191,6 @@ function deriveLifecycleUi(
     effectiveIndex = LIFECYCLE_STEPS.indexOf('DISBURSEMENT');
   } else if (status === 'PENDING_APPROVAL') {
     effectiveIndex = LIFECYCLE_STEPS.indexOf('CFO_APPROVAL');
-  } else if (status === 'REJECTED') {
-    effectiveIndex = LIFECYCLE_STEPS.indexOf('PAYROLL_RUN');
   }
 
   const steps = LIFECYCLE_LABELS.map((label, idx) => {
@@ -453,7 +463,7 @@ export async function getDashboard(query: DashboardQuery) {
     employeeCount: payroll.employeeCount,
     lifecycle: {
       ...lifecycle,
-      activeProcessingCount: activeProcessingCount || payroll.employeeCount,
+      activeProcessingCount: activeProcessingCount ?? payroll.employeeCount,
     },
     metrics: buildMetrics(totals, currencyCode),
     payslipGeneration: {
@@ -579,17 +589,13 @@ export async function runPayroll(userId: string, body: RunPayrollBody) {
 
     for (const emp of employees) {
       const comp = emp.compensation;
-      const baseSalary = comp ? Number(comp.baseSalary) : 120000;
-      const allowances = comp ? Number(comp.allowances) : Math.round(baseSalary * 0.15);
+      const defaults = defaultCompensation(emp.grade);
+      const baseSalary = comp ? Number(comp.baseSalary) : defaults.base;
+      const allowances = comp ? Number(comp.allowances) : defaults.allowances;
       const hourlyRate = baseSalary / 176;
       const overtime = await sumOvertimePay(emp.id, periodStart, periodEnd, hourlyRate);
       const bonusPct = emp.grade === 'L5' ? 0.04 : 0;
       const calc = calculatePayrollLine({ baseSalary, allowances }, overtime, bonusPct);
-
-      let status: PayrollLineStatus = 'PROCESSING';
-      if (emp.lastName.toLowerCase().includes('hassan') || emp.firstName.toLowerCase() === 'madiha') {
-        status = 'ON_HOLD';
-      }
 
       await tx.payrollLineItem.create({
         data: {
@@ -606,8 +612,7 @@ export async function runPayroll(userId: string, body: RunPayrollBody) {
           deductionsTotal: toDecimal(calc.deductionsTotal),
           taxAmount: toDecimal(calc.taxAmount),
           netPay: toDecimal(calc.netPay),
-          status,
-          holdReason: status === 'ON_HOLD' ? 'Pending clearance' : null,
+          status: 'PROCESSING',
         },
       });
     }
@@ -617,10 +622,6 @@ export async function runPayroll(userId: string, body: RunPayrollBody) {
 
   await recalculateBatchTotals(payroll.id);
   await syncPayslipsFromPayrollBatch(payroll.id);
-  await prisma.payroll.update({
-    where: { id: payroll.id },
-    data: { lifecycleStep: 'CFO_APPROVAL' },
-  });
   return { payrollId: payroll.id };
 }
 
@@ -664,6 +665,7 @@ export async function updateLineItem(payrollId: string, lineItemId: string, body
 export async function approveLines(payrollId: string, body: ApproveLinesBody) {
   const payroll = await prisma.payroll.findUnique({ where: { id: payrollId } });
   if (!payroll) return null;
+  if (payroll.status !== 'DRAFT' && payroll.status !== 'REJECTED') return null;
 
   await prisma.payrollLineItem.updateMany({
     where: { payrollId, id: { in: body.lineItemIds } },
@@ -688,6 +690,7 @@ export async function submitForApproval(payrollId: string, userId: string) {
     include: { lineItems: true },
   });
   if (!payroll) return null;
+  if (payroll.status !== 'DRAFT') return { error: 'INVALID_STATE' as const };
 
   const cfoUser = await prisma.user.findFirst({ where: { role: 'CFO', isActive: true } });
   const requester = await prisma.employee.findFirst({ where: { userId } });
@@ -742,21 +745,28 @@ export async function exportLedgerCsv(payrollId: string) {
     orderBy: { employee: { lastName: 'asc' } },
   });
 
+  function esc(val: unknown): string {
+    const s = String(val ?? '');
+    if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  }
+
   const header = 'Employee Code,Name,Department,Grade,Base Salary,Allowances,Deductions,Tax,Net Pay,Status';
   const rows = lines.map((line) => {
     const name = `${line.employee.firstName} ${line.employee.lastName}`;
-    const dept = line.employee.department ?? '';
     return [
-      line.employee.employeeCode ?? '',
-      `"${name}"`,
-      dept,
-      line.employee.grade ?? '',
+      esc(line.employee.employeeCode),
+      esc(name),
+      esc(line.employee.department ?? ''),
+      esc(line.employee.grade ?? ''),
       Number(line.baseSalary),
       Number(line.allowances),
       Number(line.deductionsTotal),
       Number(line.taxAmount),
       Number(line.netPay),
-      LINE_STATUS_LABEL[line.status],
+      esc(LINE_STATUS_LABEL[line.status]),
     ].join(',');
   });
 
@@ -800,6 +810,9 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
   });
 
   if (!payroll) return null;
+  if (payroll.status === 'PAID' || payroll.status === 'APPROVED' || payroll.status === 'REJECTED' || payroll.status === 'PENDING_APPROVAL') {
+    return null;
+  }
 
   const config = parsePayslipConfig(payroll.payslipConfig);
   const eligible = payroll.lineItems.filter((line) => {
@@ -822,6 +835,23 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
   const ytdStart = new Date(Date.UTC(year, 0, 1));
   const ytdEnd = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
 
+  const eligibleEmployeeIds = eligible.map(l => l.employee.id);
+  const allYtdPayslips = await prisma.employeePayslip.findMany({
+    where: {
+      employeeId: { in: eligibleEmployeeIds },
+      periodStart: { gte: ytdStart, lte: ytdEnd },
+    },
+    select: { employeeId: true, grossPay: true, deductionsTotal: true, netPay: true },
+  });
+  const ytdByEmployee = new Map<string, { gross: number; deductions: number; net: number }>();
+  for (const p of allYtdPayslips) {
+    const entry = ytdByEmployee.get(p.employeeId) ?? { gross: 0, deductions: 0, net: 0 };
+    entry.gross += Number(p.grossPay);
+    entry.deductions += Number(p.deductionsTotal);
+    entry.net += Number(p.netPay);
+    ytdByEmployee.set(p.employeeId, entry);
+  }
+
   for (const line of eligible) {
     await upsertPayslipFromLineItem(
       prisma,
@@ -834,22 +864,10 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
     if (config.pdf || config.email) {
       const employeeName = `${line.employee.firstName} ${line.employee.lastName}`;
 
-      const employeeId = line.employee.id;
-      const ytdPayslips = await prisma.employeePayslip.findMany({
-        where: {
-          employeeId,
-          periodStart: { gte: ytdStart, lte: ytdEnd },
-        },
-        select: { grossPay: true, deductionsTotal: true, netPay: true },
-      });
-      let ytdGross = 0;
-      let ytdDeductions = 0;
-      let ytdNet = 0;
-      for (const p of ytdPayslips) {
-        ytdGross += Number(p.grossPay);
-        ytdDeductions += Number(p.deductionsTotal);
-        ytdNet += Number(p.netPay);
-      }
+      const ytd = ytdByEmployee.get(line.employee.id) ?? { gross: 0, deductions: 0, net: 0 };
+      const ytdGross = ytd.gross;
+      const ytdDeductions = ytd.deductions;
+      const ytdNet = ytd.net;
 
       const payslipNumber = `PSL-${line.employee.employeeCode ?? 'EMP'}-${monthStr}${yearStr}`;
 

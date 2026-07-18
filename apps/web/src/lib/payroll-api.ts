@@ -224,13 +224,15 @@ const RUN_STEP_LABELS = [
   'Disbursement',
 ];
 
-export const RUN_PAYROLL_STEP_MS = 900;
+export const RUN_PAYROLL_STEP_MS = 3000;
 
 /** Step-by-step lifecycle animation while run-payroll API executes. */
 export async function animateRunPayrollSteps(
   onUpdate: (lifecycle: PayrollDashboardData['lifecycle']) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   for (let i = 0; i < 3; i++) {
+    if (signal?.aborted) return;
     onUpdate({
       steps: RUN_STEP_LABELS.map((label, idx) => ({
         step: idx + 1,
@@ -243,6 +245,7 @@ export async function animateRunPayrollSteps(
     await new Promise((resolve) => setTimeout(resolve, RUN_PAYROLL_STEP_MS));
   }
 
+  if (signal?.aborted) return;
   onUpdate({
     steps: RUN_STEP_LABELS.map((label, idx) => ({
       step: idx + 1,

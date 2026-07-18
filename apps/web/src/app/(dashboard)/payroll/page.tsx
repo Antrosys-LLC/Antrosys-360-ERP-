@@ -49,6 +49,16 @@ function mapStatusFilter(statusFilter: string): string | undefined {
   return undefined;
 }
 
+function statusLabel(code: string): string {
+  const map: Record<string, string> = {
+    PROCESSING: 'Processing',
+    ON_HOLD: 'On hold',
+    PENDING: 'Pending',
+    VERIFIED: 'Verified',
+  };
+  return map[code] ?? code;
+}
+
 export default function PayrollDashboard() {
   const [dashboard, setDashboard] = useState<PayrollDashboardData | null>(null);
   const [employees, setEmployees] = useState<PayrollEmployeeRow[]>([]);
@@ -75,6 +85,10 @@ export default function PayrollDashboard() {
   });
 
   const payrollIdRef = useRef<string | null>(null);
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+  const employeesRef = useRef(employees);
+  employeesRef.current = employees;
   const payrollId = dashboard?.payroll?.id ?? null;
   payrollIdRef.current = payrollId;
   const currencyCode = dashboard?.currencyCode ?? 'PKR';
@@ -147,13 +161,14 @@ export default function PayrollDashboard() {
   }, [payrollId, page, search, department, statusFilter, gradeFilter, initialLoading]);
 
   const toggleOption = async (key: keyof PayslipConfig) => {
-    const next = { ...options, [key]: !options[key] };
+    const current = optionsRef.current;
+    const next = { ...current, [key]: !current[key] };
     setOptions(next);
     if (payrollId) {
       try {
         await updatePayrollPayslipConfig(payrollId, next);
       } catch {
-        setOptions(options);
+        setOptions(current);
       }
     }
   };
@@ -207,12 +222,14 @@ export default function PayrollDashboard() {
     setBulkLoading(true);
     setError(null);
 
+    const abortController = new AbortController();
+
     try {
       const runPromise = runPayroll({ period });
 
-      await animateRunPayrollSteps((lifecycle) => {
+      animateRunPayrollSteps((lifecycle) => {
         setRunLifecycleOverride(lifecycle);
-      });
+      }, abortController.signal);
 
       const dash = await runPromise;
       setRunLifecycleOverride(null);
@@ -229,6 +246,7 @@ export default function PayrollDashboard() {
       }
       setPeriods(await fetchPayrollPeriods());
     } catch (err: unknown) {
+      abortController.abort();
       setRunLifecycleOverride(null);
       const status = (err as { response?: { status?: number } })?.response?.status;
       setError(status === 409 ? 'Payroll already exists for this period.' : 'Failed to run payroll.');
@@ -356,7 +374,7 @@ export default function PayrollDashboard() {
 
               <button
                 onClick={handleRunPayroll}
-                disabled={bulkLoading || !!payrollId}
+                disabled={bulkLoading || (!!payrollId && dashboard?.payroll?.status !== 'REJECTED')}
                 className="bg-[#6366F1] hover:bg-[#4F46E5] disabled:opacity-60 text-white px-4 py-1.5 rounded-[6px] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors shadow-sm tracking-wide min-w-[120px] justify-center"
               >
                 {bulkLoading ? (
@@ -708,23 +726,35 @@ export default function PayrollDashboard() {
                             value={emp.statusCode}
                             onChange={async (e) => {
                               if (!payrollId) return;
-                              await updatePayrollLineStatus(payrollId, emp.id, {
-                                status: e.target.value,
-                              });
-                              const empData = await fetchPayrollEmployees(payrollId, {
-                                search: search || undefined,
-                                department: department || undefined,
-                                status: mapStatusFilter(statusFilter),
-                                grade: gradeFilter || undefined,
-                                page,
-                                limit: 12,
-                              });
-                              setEmployees(empData.items);
-                              setPagination(empData.pagination);
-                              const dash = await fetchPayrollDashboard({
-                                period: selectedPeriodKey,
-                              });
-                              setDashboard(dash);
+                              const newStatus = e.target.value;
+                              const rollback = employeesRef.current;
+                              setEmployees((prev) =>
+                                prev.map((r) =>
+                                  r.id === emp.id ? { ...r, statusCode: newStatus, status: statusLabel(newStatus) } : r,
+                                ),
+                              );
+                              try {
+                                await updatePayrollLineStatus(payrollId, emp.id, {
+                                  status: newStatus,
+                                });
+                                const [empData, dash] = await Promise.all([
+                                  fetchPayrollEmployees(payrollId, {
+                                    search: search || undefined,
+                                    department: department || undefined,
+                                    status: mapStatusFilter(statusFilter),
+                                    grade: gradeFilter || undefined,
+                                    page,
+                                    limit: 12,
+                                  }),
+                                  fetchPayrollDashboard({ period: selectedPeriodKey }),
+                                ]);
+                                setEmployees(empData.items);
+                                setPagination(empData.pagination);
+                                setDashboard(dash);
+                              } catch {
+                                setEmployees(rollback);
+                                setError('Failed to update line item status.');
+                              }
                             }}
                             className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide border-0 cursor-pointer
                               ${emp.status === 'Processing' ? 'bg-purple-50 text-[#6366F1]' : ''}
