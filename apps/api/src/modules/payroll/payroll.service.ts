@@ -148,19 +148,6 @@ function deriveLifecycleUi(
   lifecycleStep: PayrollLifecycleStep,
   status: PayrollStatus,
 ): { steps: { step: number; label: string; status: 'complete' | 'current' | 'upcoming' }[]; progressPct: number } {
-  // Payroll run finished — steps 1–3 complete, CFO approval is next (not active until submitted)
-  if (lifecycleStep === 'CFO_APPROVAL' && status === 'DRAFT') {
-    return {
-      steps: LIFECYCLE_LABELS.map((label, idx) => ({
-        step: idx + 1,
-        label,
-        status: idx < 3 ? 'complete' : 'upcoming',
-      })),
-      progressPct: 62,
-    };
-  }
-
-  // Legacy batches still marked PAYROLL_RUN after calculations
   if (lifecycleStep === 'PAYROLL_RUN' && status === 'DRAFT') {
     return {
       steps: LIFECYCLE_LABELS.map((label, idx) => ({

@@ -102,7 +102,14 @@ export async function submitForApprovalHandler(request: FastifyRequest, reply: F
 
   const result = await payrollService.submitForApproval(paramsParsed.data.payrollId, request.user!.id);
   if (!result) return reply.code(404).send({ error: 'Payroll batch not found' });
-  if ('error' in result) return reply.code(422).send({ error: 'Unable to submit payroll for approval' });
+  if ('error' in result) {
+    const errorMap: Record<string, string> = {
+      INVALID_STATE: 'Payroll must be in DRAFT status before submission',
+      MISSING_ACTORS: 'Cannot submit — no active CFO user or requester employee record found',
+    };
+    const msg = errorMap[(result as { error: string }).error] ?? 'Unable to submit payroll for approval';
+    return reply.code(422).send({ error: msg });
+  }
 
   const dashboard = await payrollService.getDashboard({ payrollId: paramsParsed.data.payrollId });
   return reply.code(200).send({ status: 'success', data: dashboard });
