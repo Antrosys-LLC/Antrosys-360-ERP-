@@ -18,12 +18,14 @@ import {
   animateRunPayrollSteps,
   approvePayrollLines,
   bulkActionDelay,
+  disbursePayroll,
   exportPayrollLedger,
   fetchPayrollDashboard,
   fetchPayrollEmployees,
   fetchPayrollPeriods,
   generatePayrollPayslips,
   runPayroll,
+  submitPayrollForApproval,
   updatePayrollLineStatus,
   updatePayrollPayslipConfig,
   type PayrollDashboardData,
@@ -101,8 +103,10 @@ export default function PayrollDashboard() {
       setInitialLoading(true);
       setError(null);
       try {
+        const savedPeriod = typeof window !== 'undefined' ? localStorage.getItem('payroll-period-key') : null;
+        const dashPromise = savedPeriod ? fetchPayrollDashboard({ period: savedPeriod }) : fetchPayrollDashboard();
         const [dash, periodList] = await Promise.all([
-          fetchPayrollDashboard(),
+          dashPromise,
           fetchPayrollPeriods(),
         ]);
         if (cancelled) return;
@@ -113,6 +117,7 @@ export default function PayrollDashboard() {
           setOptions(dash.payslipGeneration.config);
         }
         if (dash.payroll?.id) {
+          if (cancelled) return;
           const empData = await fetchPayrollEmployees(dash.payroll.id, { page: 1, limit: 12 });
           if (!cancelled) {
             setEmployees(empData.items);
@@ -224,6 +229,8 @@ export default function PayrollDashboard() {
     setError(null);
 
     const abortController = new AbortController();
+    const animationStartTime = Date.now();
+    const MIN_ANIMATION_MS = 3000;
 
     try {
       const runPromise = runPayroll({ period });
@@ -233,6 +240,11 @@ export default function PayrollDashboard() {
       }, abortController.signal);
 
       const dash = await runPromise;
+      abortController.abort();
+      const elapsed = Date.now() - animationStartTime;
+      if (elapsed < MIN_ANIMATION_MS) {
+        await new Promise((r) => setTimeout(r, MIN_ANIMATION_MS - elapsed));
+      }
       setRunLifecycleOverride(null);
       setDashboard(dash);
       setSelectedPeriodKey(dash.period.key);
@@ -266,6 +278,17 @@ export default function PayrollDashboard() {
       await bulkActionDelay();
       const dash = await approvePayrollLines(payrollId, ids);
       setDashboard(dash);
+      const empData = await fetchPayrollEmployees(payrollId, {
+        search: search || undefined,
+        department: department || undefined,
+        status: mapStatusFilter(statusFilter),
+        grade: gradeFilter || undefined,
+        page,
+        limit: 12,
+      });
+      setEmployees(empData.items);
+      setPagination(empData.pagination);
+      setSelected({});
     } catch {
       setError('Failed to approve selected employees.');
     } finally {
@@ -287,6 +310,33 @@ export default function PayrollDashboard() {
     }
   };
 
+  const handleSubmitForApproval = async () => {
+    if (!payrollId) return;
+    setBulkLoading(true);
+    try {
+      const dash = await submitPayrollForApproval(payrollId);
+      setDashboard(dash);
+    } catch {
+      setError('Failed to submit payroll for approval.');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleDisburse = async () => {
+    if (!payrollId) return;
+    setBulkLoading(true);
+    try {
+      const dash = await disbursePayroll(payrollId);
+      setDashboard(dash);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setError(msg ?? 'Failed to disburse payroll.');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   const handleExport = async () => {
     if (!payrollId) return;
     try {
@@ -299,6 +349,7 @@ export default function PayrollDashboard() {
   const handlePeriodChange = async (periodKey: string) => {
     if (periodKey === selectedPeriodKey) return;
     setSelectedPeriodKey(periodKey);
+    localStorage.setItem('payroll-period-key', periodKey);
     setPage(1);
     setSelected({});
     setSearch('');
@@ -392,6 +443,7 @@ export default function PayrollDashboard() {
     periods.find((p) => p.key === selectedPeriodKey)?.label ?? dashboard?.period.label ?? '—';
 
   return (
+    <>
     <div className="bg-[#F8F9FC] min-h-screen text-[#1A1A1A] antialiased">
       <main className="max-w-[1360px] mx-auto p-5 space-y-4">
         {error && (
@@ -493,7 +545,7 @@ export default function PayrollDashboard() {
           <p className="text-center text-[11px] text-gray-400 mt-4 font-normal">
             {bulkLoading && runLifecycleOverride ? (
               <>Running payroll cycle for selected period…</>
-            ) : (
+            ) : (lifecycle?.activeProcessingCount ?? 0) > 0 ? (
               <>
                 System is currently processing calculations for{' '}
                 <span className="font-semibold text-gray-700">
@@ -501,6 +553,8 @@ export default function PayrollDashboard() {
                 </span>{' '}
                 active personnel records.
               </>
+            ) : (
+              <>All employee records have been verified.</>
             )}
           </p>
         </section>
@@ -682,11 +736,45 @@ export default function PayrollDashboard() {
                   <option value="L4">L4</option>
                   <option value="L5">L5</option>
                 </select>
-                <button className="p-1.5 border border-[#E5E7EB] rounded-[6px] bg-white hover:bg-gray-50 text-gray-500 transition-colors">
-                  <SlidersHorizontal className="w-3.5 h-3.5" />
-                </button>
               </div>
               <div className="flex items-center gap-2">
+                {(() => {
+                  const ps = dashboard?.payroll?.status;
+                  if (ps === 'PAID') {
+                    return (
+                      <span className="bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-[6px] text-xs font-bold">
+                        Paid
+                      </span>
+                    );
+                  }
+                  if (ps === 'REJECTED') {
+                    return (
+                      <span className="bg-red-50 text-red-500 px-3 py-1.5 rounded-[6px] text-xs font-bold">
+                        Rejected
+                      </span>
+                    );
+                  }
+                  if (ps === 'PENDING_APPROVAL') {
+                    return (
+                      <span className="bg-amber-50 text-amber-600 px-3 py-1.5 rounded-[6px] text-xs font-bold flex items-center gap-1.5">
+                        <Info className="w-3 h-3" />
+                        Awaiting CFO approval
+                      </span>
+                    );
+                  }
+                  if (ps === 'APPROVED') {
+                    return (
+                      <button
+                        onClick={handleDisburse}
+                        disabled={bulkLoading}
+                        className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white px-3.5 py-1.5 rounded-[6px] text-xs font-semibold tracking-wide transition-colors"
+                      >
+                        Disburse payroll
+                      </button>
+                    );
+                  }
+                  return null;
+                })()}
                 <button
                   onClick={handleExport}
                   className="bg-white border border-[#E5E7EB] hover:bg-gray-50 text-gray-600 px-3 py-1.5 rounded-[6px] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
@@ -694,13 +782,24 @@ export default function PayrollDashboard() {
                   <Download className="w-3.5 h-3.5 text-gray-400" />
                   Export
                 </button>
-                <button
-                  onClick={handleApproveLines}
-                  disabled={bulkLoading || selectedEmployees.length === 0}
-                  className="bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 text-[#6366F1] px-3.5 py-1.5 rounded-[6px] text-xs font-semibold tracking-wide transition-colors"
-                >
-                  Approve & process
-                </button>
+                {(dashboard?.payroll?.status === 'DRAFT' || dashboard?.payroll?.status === 'REJECTED') && (
+                  <>
+                    <button
+                      onClick={handleApproveLines}
+                      disabled={bulkLoading || selectedEmployees.length === 0}
+                      className="bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 text-[#6366F1] px-3.5 py-1.5 rounded-[6px] text-xs font-semibold tracking-wide transition-colors"
+                    >
+                      Approve & process
+                    </button>
+                    <button
+                      onClick={handleSubmitForApproval}
+                      disabled={bulkLoading}
+                      className="bg-[#6366F1] hover:bg-[#4F46E5] disabled:opacity-60 text-white px-3.5 py-1.5 rounded-[6px] text-xs font-semibold tracking-wide transition-colors shadow-sm"
+                    >
+                      Submit for CFO approval
+                    </button>
+                  </>
+                )}
               </div>
             </section>
 
@@ -780,6 +879,7 @@ export default function PayrollDashboard() {
                         <td className="p-4 text-center">
                           <select
                             value={emp.statusCode}
+                            disabled={dashboard?.payroll?.status !== 'DRAFT' && dashboard?.payroll?.status !== 'REJECTED'}
                             onChange={async (e) => {
                               if (!payrollId) return;
                               const newStatus = e.target.value;
@@ -1036,6 +1136,100 @@ export default function PayrollDashboard() {
           </>
         )}
       </main>
+
+      {bulkLoading && runLifecycleOverride && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden animate-[fadeIn_0.3s_ease-out]">
+            <div className="p-6 pb-4">
+              <div className="flex items-center gap-3 mb-1">
+                <Loader2 className="w-5 h-5 animate-spin text-[#6366F1]" />
+                <h3 className="text-base font-bold text-gray-900">Running Payroll</h3>
+              </div>
+              <p className="text-xs text-gray-400 ml-8">
+                Processing payroll for {periodLabel}
+              </p>
+            </div>
+
+            <div className="px-6 pb-2">
+              <div className="space-y-0">
+                {(runLifecycleOverride.steps ?? []).map((step, idx) => {
+                  const isComplete = step.status === 'complete';
+                  const isCurrent = step.status === 'current';
+                  const delay = idx * 0.12;
+                  return (
+                    <div
+                      key={idx}
+                      className="flex items-center gap-3 py-2.5 transition-all duration-500"
+                      style={{
+                        opacity: isComplete || isCurrent ? 1 : 0.35,
+                        animation: isCurrent ? `slideIn 0.4s ease-out ${delay}s both` : undefined,
+                      }}
+                    >
+                      <div
+                        className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-500
+                          ${isComplete ? 'bg-[#10B981] text-white scale-100' : ''}
+                          ${isCurrent ? 'bg-[#EEEEFF] border-2 border-[#6366F1] text-[#6366F1] scale-110' : ''}
+                          ${step.status === 'upcoming' ? 'bg-white border-2 border-gray-200 text-gray-300 scale-100' : ''}
+                        `}
+                      >
+                        {isComplete ? (
+                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                        ) : isCurrent ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#6366F1]" />
+                        ) : (
+                          <span className="text-xs font-bold">{step.step}</span>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span
+                          className={`text-sm font-semibold transition-colors duration-300
+                            ${isComplete ? 'text-gray-900' : ''}
+                            ${isCurrent ? 'text-[#6366F1]' : ''}
+                            ${step.status === 'upcoming' ? 'text-gray-400' : ''}
+                          `}
+                        >
+                          {step.label}
+                        </span>
+                      </div>
+                      {isComplete && (
+                        <Check className="w-4 h-4 text-[#10B981] stroke-[2.5] animate-[scaleIn_0.3s_ease-out]" />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="px-6 pb-6 pt-2">
+              <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[#6366F1] rounded-full transition-all duration-700 ease-out"
+                  style={{ width: `${Math.min(runLifecycleOverride.progressPct ?? 0, 100)}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-gray-400 mt-1.5 text-right font-medium">
+                {runLifecycleOverride.progressPct ?? 0}%
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+
+    <style dangerouslySetInnerHTML={{__html: `
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes scaleIn {
+  from { transform: scale(0); }
+  to { transform: scale(1); }
+}
+    `}} />
+    </>
   );
 }
