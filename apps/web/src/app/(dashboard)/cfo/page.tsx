@@ -133,6 +133,7 @@ export default function CFODashboard() {
     mutationFn: cancelCfoTask,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cfo', 'tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['cfo', 'dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['cfo', 'activities'] });
       toast({ title: 'Task cancelled' });
     },

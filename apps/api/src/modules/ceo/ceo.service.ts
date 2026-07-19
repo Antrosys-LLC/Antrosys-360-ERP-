@@ -530,7 +530,19 @@ export async function rejectOverride(taskId: string, userId: string) {
   return prisma.$transaction(async (tx) => {
     const updated = await tx.approvalTask.update({ where: { id: taskId }, data: { status: 'CANCELLED', resolvedAt: new Date() } });
     if (task.entityType === 'PAYROLL') {
-      await tx.payroll.update({ where: { id: task.entityId }, data: { status: 'REJECTED' } });
+      await tx.payroll.update({
+        where: { id: task.entityId },
+        data: { status: 'REJECTED', lifecycleStep: 'PAYROLL_RUN' },
+      });
+
+      await tx.payrollLineItem.updateMany({
+        where: { payrollId: task.entityId },
+        data: { status: 'PROCESSING', payslipId: null },
+      });
+
+      await tx.employeePayslip.deleteMany({
+        where: { payrollId: task.entityId },
+      });
     }
     await writeAuditLog(tx, userId, 'CEO_OVERRIDE_REJECT', { taskId, entityType: task.entityType, entityId: task.entityId });
     return updated;

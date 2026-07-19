@@ -453,8 +453,18 @@ export async function cancelTask(taskId: string, userId: string) {
     if (task.entityType === 'PAYROLL') {
       await tx.payroll.update({
         where: { id: task.entityId },
-        data: { status: 'REJECTED' },
+        data: { status: 'REJECTED', lifecycleStep: 'PAYROLL_RUN' },
       });
+
+      await tx.payrollLineItem.updateMany({
+        where: { payrollId: task.entityId },
+        data: { status: 'PROCESSING', payslipId: null },
+      });
+
+      await tx.employeePayslip.deleteMany({
+        where: { payrollId: task.entityId },
+      });
+
       await logFinancialActivity(tx, {
         category: 'PAYROLL',
         title: `Rejected ${task.actionTitle}`,
