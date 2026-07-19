@@ -683,6 +683,9 @@ export async function submitForApproval(payrollId: string, userId: string) {
   if (!payroll) return null;
   if (payroll.status !== 'DRAFT') return { error: 'INVALID_STATE' as const };
 
+  const verifiedCount = payroll.lineItems.filter((li) => li.status === 'VERIFIED').length;
+  if (verifiedCount === 0) return { error: 'NO_VERIFIED_LINES' as const };
+
   const cfoUser = await prisma.user.findFirst({ where: { role: 'CFO', isActive: true } });
   const requester = await prisma.employee.findFirst({ where: { userId } });
 
