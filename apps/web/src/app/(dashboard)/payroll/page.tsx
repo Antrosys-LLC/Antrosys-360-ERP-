@@ -229,22 +229,15 @@ export default function PayrollDashboard() {
     setError(null);
 
     const abortController = new AbortController();
-    const animationStartTime = Date.now();
-    const MIN_ANIMATION_MS = 3000;
 
     try {
       const runPromise = runPayroll({ period });
-
-      animateRunPayrollSteps((lifecycle) => {
+      const animPromise = animateRunPayrollSteps((lifecycle) => {
         setRunLifecycleOverride(lifecycle);
-      }, abortController.signal);
+      });
 
       const dash = await runPromise;
-      abortController.abort();
-      const elapsed = Date.now() - animationStartTime;
-      if (elapsed < MIN_ANIMATION_MS) {
-        await new Promise((r) => setTimeout(r, MIN_ANIMATION_MS - elapsed));
-      }
+      await animPromise;
       setRunLifecycleOverride(null);
       setDashboard(dash);
       setSelectedPeriodKey(dash.period.key);
@@ -316,8 +309,9 @@ export default function PayrollDashboard() {
     try {
       const dash = await submitPayrollForApproval(payrollId);
       setDashboard(dash);
-    } catch {
-      setError('Failed to submit payroll for approval.');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setError(msg ?? 'Failed to submit payroll for approval.');
     } finally {
       setBulkLoading(false);
     }
@@ -436,7 +430,7 @@ export default function PayrollDashboard() {
     );
   }
 
-  const lifecycle = runLifecycleOverride ?? dashboard?.lifecycle;
+  const lifecycle = dashboard?.lifecycle;
   const metrics = dashboard?.metrics;
   const payslipGen = dashboard?.payslipGeneration;
   const periodLabel =

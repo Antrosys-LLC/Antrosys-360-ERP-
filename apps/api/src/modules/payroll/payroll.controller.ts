@@ -106,6 +106,7 @@ export async function submitForApprovalHandler(request: FastifyRequest, reply: F
     const errorMap: Record<string, string> = {
       INVALID_STATE: 'Payroll must be in DRAFT status before submission',
       MISSING_ACTORS: 'Cannot submit — no active CFO user or requester employee record found',
+      NO_VERIFIED_LINES: 'At least one employee must be verified before submitting for CFO approval',
     };
     const msg = errorMap[(result as { error: string }).error] ?? 'Unable to submit payroll for approval';
     return reply.code(422).send({ error: msg });
