@@ -177,6 +177,13 @@ export async function submitPayrollForApproval(payrollId: string) {
   return unwrap(data);
 }
 
+export async function disbursePayroll(payrollId: string) {
+  const { data } = await apiClient.post<{ status: string; data: PayrollDashboardData }>(
+    `/payroll/${payrollId}/disburse`,
+  );
+  return unwrap(data);
+}
+
 export async function updatePayrollPayslipConfig(payrollId: string, config: PayslipConfig) {
   const { data } = await apiClient.patch<{ status: string; data: PayslipConfig }>(
     `/payroll/${payrollId}/payslip-config`,
@@ -227,7 +234,7 @@ const RUN_STEP_LABELS = [
   'Disbursement',
 ];
 
-export const RUN_PAYROLL_STEP_MS = 3000;
+export const RUN_PAYROLL_STEP_MS = 800;
 
 /** Step-by-step lifecycle animation while run-payroll API executes. */
 export async function animateRunPayrollSteps(

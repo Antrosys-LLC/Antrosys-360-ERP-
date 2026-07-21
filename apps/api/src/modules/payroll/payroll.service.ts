@@ -555,7 +555,11 @@ export async function runPayroll(userId: string, body: RunPayrollBody) {
     include: { compensation: true },
   });
 
-  const batchNumber = `PAY-${year}-${String(month).padStart(2, '0')}`;
+  const baseBatchNumber = `PAY-${year}-${String(month).padStart(2, '0')}`;
+  const rejectedCount = await prisma.payroll.count({
+    where: { periodStart, periodEnd, status: 'REJECTED' },
+  });
+  const batchNumber = rejectedCount > 0 ? `${baseBatchNumber}-v${rejectedCount + 1}` : baseBatchNumber;
 
   const payroll = await prisma.$transaction(async (tx) => {
     const created = await tx.payroll.create({
@@ -743,8 +747,9 @@ export async function exportLedgerCsv(payrollId: string) {
   const header = 'Employee Code,Name,Department,Grade,Base Salary,Allowances,Deductions,Tax,Net Pay,Status';
   const rows = lines.map((line) => {
     const name = `${line.employee.firstName} ${line.employee.lastName}`;
+    const empCode = line.employee.employeeCode ?? line.employeeId.slice(0, 8).toUpperCase();
     return [
-      esc(line.employee.employeeCode),
+      esc(empCode),
       esc(name),
       esc(line.employee.department ?? ''),
       esc(line.employee.grade ?? ''),
@@ -917,6 +922,14 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
 }
 
 export async function disbursePayroll(payrollId: string) {
+  const blocked = await prisma.payrollLineItem.findMany({
+    where: { payrollId, status: { in: ['ON_HOLD', 'PENDING'] } },
+    select: { id: true },
+  });
+  if (blocked.length > 0) {
+    return { error: 'UNVERIFIED_LINES' as const, blockedCount: blocked.length };
+  }
+
   const payroll = await prisma.payroll.findUnique({ where: { id: payrollId } });
   if (!payroll) return null;
   if (payroll.status !== 'APPROVED') {
