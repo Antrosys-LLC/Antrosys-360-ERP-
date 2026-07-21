@@ -17,7 +17,6 @@ import {
 import {
   animateRunPayrollSteps,
   approvePayrollLines,
-  bulkActionDelay,
   disbursePayroll,
   exportPayrollLedger,
   fetchPayrollDashboard,
@@ -268,7 +267,6 @@ export default function PayrollDashboard() {
 
     setBulkLoading(true);
     try {
-      await bulkActionDelay();
       const dash = await approvePayrollLines(payrollId, ids);
       setDashboard(dash);
       const empData = await fetchPayrollEmployees(payrollId, {
@@ -293,9 +291,20 @@ export default function PayrollDashboard() {
     if (!payrollId) return;
     setBulkLoading(true);
     try {
-      await bulkActionDelay();
       const result = await generatePayrollPayslips(payrollId, scope);
       setDashboard(result.dashboard);
+      if (payrollId) {
+        const empData = await fetchPayrollEmployees(payrollId, {
+          search: search || undefined,
+          department: department || undefined,
+          status: mapStatusFilter(statusFilter),
+          grade: gradeFilter || undefined,
+          page,
+          limit: 12,
+        });
+        setEmployees(empData.items);
+        setPagination(empData.pagination);
+      }
     } catch {
       setError('Failed to generate payslips.');
     } finally {
@@ -333,10 +342,13 @@ export default function PayrollDashboard() {
 
   const handleExport = async () => {
     if (!payrollId) return;
+    setBulkLoading(true);
     try {
       await exportPayrollLedger(payrollId);
     } catch {
       setError('Failed to export payroll ledger.');
+    } finally {
+      setBulkLoading(false);
     }
   };
 
@@ -771,7 +783,8 @@ export default function PayrollDashboard() {
                 })()}
                 <button
                   onClick={handleExport}
-                  className="bg-white border border-[#E5E7EB] hover:bg-gray-50 text-gray-600 px-3 py-1.5 rounded-[6px] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
+                  disabled={bulkLoading}
+                  className="bg-white border border-[#E5E7EB] hover:bg-gray-50 disabled:opacity-50 text-gray-600 px-3 py-1.5 rounded-[6px] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
                 >
                   <Download className="w-3.5 h-3.5 text-gray-400" />
                   Export
@@ -783,7 +796,7 @@ export default function PayrollDashboard() {
                       disabled={bulkLoading || selectedEmployees.length === 0}
                       className="bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 text-[#6366F1] px-3.5 py-1.5 rounded-[6px] text-xs font-semibold tracking-wide transition-colors"
                     >
-                      Approve & process
+                      Verify & process
                     </button>
                     <button
                       onClick={handleSubmitForApproval}
@@ -1021,7 +1034,7 @@ export default function PayrollDashboard() {
                   ))}
                 </div>
 
-                <div className="lg:col-span-4 lg:border-l lg:border-r lg:border-gray-150 lg:px-6">
+                <div className="lg:col-span-4 lg:border-l lg:border-r lg:border-gray-200 lg:px-6">
                   <span className="text-[10px] font-bold tracking-wider text-gray-400 uppercase block mb-3">
                     Templates
                   </span>

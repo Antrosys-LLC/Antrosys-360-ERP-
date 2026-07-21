@@ -326,10 +326,7 @@ async function findPayrollForQuery(query: DashboardQuery) {
 
   const { periodStart } = parsePeriod(query.period);
   return prisma.payroll.findFirst({
-    where: {
-      periodStart,
-      status: { not: 'REJECTED' },
-    },
+    where: { periodStart },
     orderBy: { createdAt: 'desc' },
     include: { lineItems: true },
   });
@@ -625,30 +622,34 @@ export async function updateLineItem(payrollId: string, lineItemId: string, body
   const payroll = await prisma.payroll.findUnique({ where: { id: payrollId } });
   if (!payroll) return null;
 
-  const updated = await prisma.payrollLineItem.update({
-    where: { id: lineItemId },
-    data: {
-      status: body.status,
-      holdReason: body.status === 'ON_HOLD' ? body.holdReason ?? 'On hold' : null,
-    },
-  });
+  const updated = await prisma.$transaction(async (tx) => {
+    const updated = await tx.payrollLineItem.update({
+      where: { id: lineItemId },
+      data: {
+        status: body.status,
+        holdReason: body.status === 'ON_HOLD' ? body.holdReason ?? 'On hold' : null,
+      },
+    });
 
-  if (body.status === 'ON_HOLD' || body.status === 'PENDING') {
-    if (updated.payslipId) {
-      await prisma.employeePayslip.update({
-        where: { id: updated.payslipId },
-        data: { status: 'CANCELLED' },
-      });
+    if (body.status === 'ON_HOLD' || body.status === 'PENDING') {
+      if (updated.payslipId) {
+        await tx.employeePayslip.update({
+          where: { id: updated.payslipId },
+          data: { status: 'CANCELLED' },
+        });
+      }
+    } else {
+      await upsertPayslipFromLineItem(
+        tx,
+        updated,
+        payroll,
+        periodLabelFromStart(payroll.periodStart),
+        'PROCESSING',
+      );
     }
-  } else {
-    await upsertPayslipFromLineItem(
-      prisma,
-      updated,
-      payroll,
-      periodLabelFromStart(payroll.periodStart),
-      'PROCESSING',
-    );
-  }
+
+    return updated;
+  });
 
   return updated;
 }
@@ -658,21 +659,32 @@ export async function approveLines(payrollId: string, body: ApproveLinesBody) {
   if (!payroll) return null;
   if (payroll.status !== 'DRAFT' && payroll.status !== 'REJECTED') return null;
 
-  await prisma.payrollLineItem.updateMany({
-    where: { payrollId, id: { in: body.lineItemIds } },
-    data: { status: 'VERIFIED' },
-  });
-
   const periodLabel = periodLabelFromStart(payroll.periodStart);
-  const lines = await prisma.payrollLineItem.findMany({
-    where: { payrollId, id: { in: body.lineItemIds } },
+
+  const result = await prisma.$transaction(async (tx) => {
+    const updateResult = await tx.payrollLineItem.updateMany({
+      where: { payrollId, id: { in: body.lineItemIds } },
+      data: { status: 'VERIFIED' },
+    });
+
+    const lines = await tx.payrollLineItem.findMany({
+      where: { payrollId, id: { in: body.lineItemIds } },
+    });
+    for (const line of lines) {
+      await upsertPayslipFromLineItem(tx, line, payroll, periodLabel, 'PROCESSING');
+    }
+
+    await logFinancialActivity(tx, {
+      category: 'PAYROLL',
+      title: `Approved ${updateResult.count} employee lines in ${payroll.batchNumber}`,
+      metadata: { payrollId, batchNumber: payroll.batchNumber, count: updateResult.count },
+    });
+
+    return updateResult.count;
   });
-  for (const line of lines) {
-    await upsertPayslipFromLineItem(prisma, line, payroll, periodLabel, 'PROCESSING');
-  }
 
   await recalculateBatchTotals(payrollId);
-  return { updated: body.lineItemIds.length };
+  return { updated: result };
 }
 
 export async function submitForApproval(payrollId: string, userId: string) {
@@ -681,7 +693,7 @@ export async function submitForApproval(payrollId: string, userId: string) {
     include: { lineItems: true },
   });
   if (!payroll) return null;
-  if (payroll.status !== 'DRAFT') return { error: 'INVALID_STATE' as const };
+  if (payroll.status !== 'DRAFT' && payroll.status !== 'REJECTED') return { error: 'INVALID_STATE' as const };
 
   const verifiedCount = payroll.lineItems.filter((li) => li.status === 'VERIFIED').length;
   if (verifiedCount === 0) return { error: 'NO_VERIFIED_LINES' as const };
@@ -701,19 +713,19 @@ export async function submitForApproval(payrollId: string, userId: string) {
       where: { entityType: 'PAYROLL', entityId: payrollId, status: 'PENDING' },
     });
 
-    if (!existingTask) {
-      await tx.approvalTask.create({
-        data: {
-          assigneeUserId: cfoUser.id,
-          requesterEmployeeId: requester.id,
-          actionTitle: `Approve Payroll ${payroll.batchNumber}`,
-          priority: 'HIGH',
-          entityType: 'PAYROLL',
-          entityId: payrollId,
-          dueAt: new Date(),
-        },
-      });
-    }
+      if (!existingTask) {
+        await tx.approvalTask.create({
+          data: {
+            assigneeUserId: cfoUser.id,
+            requesterEmployeeId: requester.id,
+            actionTitle: `Approve Payroll ${payroll.batchNumber}`,
+            priority: 'HIGH',
+            entityType: 'PAYROLL',
+            entityId: payrollId,
+            dueAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+        });
+      }
 
     await logFinancialActivity(tx, {
       category: 'PAYROLL',
@@ -812,7 +824,7 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
   const config = parsePayslipConfig(payroll.payslipConfig);
   const eligible = payroll.lineItems.filter((line) => {
     if (body.scope === 'verified_only') {
-      return line.status === 'VERIFIED' || line.status === 'PROCESSING';
+      return line.status === 'VERIFIED';
     }
     return line.status !== 'ON_HOLD' && line.status !== 'PENDING';
   });
@@ -828,13 +840,13 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
 
   const year = periodStart.getFullYear();
   const ytdStart = new Date(Date.UTC(year, 0, 1));
-  const ytdEnd = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
 
   const eligibleEmployeeIds = eligible.map(l => l.employee.id);
   const allYtdPayslips = await prisma.employeePayslip.findMany({
     where: {
       employeeId: { in: eligibleEmployeeIds },
-      periodStart: { gte: ytdStart, lte: ytdEnd },
+      periodStart: { gte: ytdStart, lt: periodStart },
+      status: { not: 'CANCELLED' },
     },
     select: { employeeId: true, grossPay: true, deductionsTotal: true, netPay: true },
   });
@@ -925,21 +937,21 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
 }
 
 export async function disbursePayroll(payrollId: string) {
-  const blocked = await prisma.payrollLineItem.findMany({
-    where: { payrollId, status: { in: ['ON_HOLD', 'PENDING'] } },
-    select: { id: true },
-  });
-  if (blocked.length > 0) {
-    return { error: 'UNVERIFIED_LINES' as const, blockedCount: blocked.length };
-  }
-
   const payroll = await prisma.payroll.findUnique({ where: { id: payrollId } });
   if (!payroll) return null;
   if (payroll.status !== 'APPROVED') {
     return { error: 'NOT_APPROVED' as const };
   }
 
-  await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
+    const blocked = await tx.payrollLineItem.findMany({
+      where: { payrollId, status: { in: ['ON_HOLD', 'PENDING'] } },
+      select: { id: true },
+    });
+    if (blocked.length > 0) {
+      return { error: 'UNVERIFIED_LINES' as const, blockedCount: blocked.length };
+    }
+
     await tx.payroll.update({
       where: { id: payrollId },
       data: { status: 'PAID', paidAt: new Date(), lifecycleStep: 'DISBURSEMENT' },
@@ -955,9 +967,11 @@ export async function disbursePayroll(payrollId: string) {
       title: `Disbursed payroll ${payroll.batchNumber}`,
       metadata: { payrollId, batchNumber: payroll.batchNumber },
     });
+
+    return { success: true as const };
   });
 
-  return { success: true };
+  return result;
 }
 
 export async function getPayrollById(payrollId: string) {

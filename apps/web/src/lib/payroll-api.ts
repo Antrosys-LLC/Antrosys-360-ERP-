@@ -108,6 +108,9 @@ export interface PayslipConfig {
 }
 
 function unwrap<T>(data: { status: string; data: T }): T {
+  if (data.status !== 'success') {
+    throw new Error('API returned non-success status');
+  }
   return data.data;
 }
 
