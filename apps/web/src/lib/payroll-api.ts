@@ -201,10 +201,13 @@ export async function exportPayrollLedger(payrollId: string) {
     responseType: 'blob',
   });
   const blob = response.data as Blob;
+  const disposition = response.headers?.['content-disposition'] as string | undefined;
+  const match = disposition?.match(/filename="?(.+?)"?$/);
+  const filename = match?.[1] ?? `payroll-export.csv`;
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `payroll-export.csv`;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -231,7 +234,7 @@ export async function animateRunPayrollSteps(
   onUpdate: (lifecycle: PayrollDashboardData['lifecycle']) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < RUN_STEP_LABELS.length; i++) {
     if (signal?.aborted) return;
     onUpdate({
       steps: RUN_STEP_LABELS.map((label, idx) => ({
@@ -244,16 +247,4 @@ export async function animateRunPayrollSteps(
     });
     await new Promise((resolve) => setTimeout(resolve, RUN_PAYROLL_STEP_MS));
   }
-
-  if (signal?.aborted) return;
-  onUpdate({
-    steps: RUN_STEP_LABELS.map((label, idx) => ({
-      step: idx + 1,
-      label,
-      status: idx < 3 ? 'complete' : 'upcoming',
-    })),
-    progressPct: 62,
-    activeProcessingCount: 0,
-  });
-  await new Promise((resolve) => setTimeout(resolve, 450));
 }

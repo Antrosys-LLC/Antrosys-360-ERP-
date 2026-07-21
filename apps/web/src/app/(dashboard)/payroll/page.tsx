@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Info,
   Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import {
   animateRunPayrollSteps,
@@ -299,6 +300,11 @@ export default function PayrollDashboard() {
     if (periodKey === selectedPeriodKey) return;
     setSelectedPeriodKey(periodKey);
     setPage(1);
+    setSelected({});
+    setSearch('');
+    setDepartment('');
+    setStatusFilter('');
+    setGradeFilter('');
     setError(null);
     setRunLifecycleOverride(null);
 
@@ -321,10 +327,60 @@ export default function PayrollDashboard() {
     }
   };
 
+  const handleRetry = () => {
+    setError(null);
+    setInitialLoading(true);
+    (async () => {
+      try {
+        const [dash, periodList] = await Promise.all([
+          fetchPayrollDashboard(),
+          fetchPayrollPeriods(),
+        ]);
+        setDashboard(dash);
+        setSelectedPeriodKey(dash.period.key);
+        setPeriods(periodList);
+        if (dash.payslipGeneration?.config) {
+          setOptions(dash.payslipGeneration.config);
+        }
+        if (dash.payroll?.id) {
+          const empData = await fetchPayrollEmployees(dash.payroll.id, { page: 1, limit: 12 });
+          setEmployees(empData.items);
+          setPagination(empData.pagination);
+          setPage(1);
+        }
+      } catch {
+        setError('Failed to load payroll data.');
+      } finally {
+        setInitialLoading(false);
+      }
+    })();
+  };
+
   if (initialLoading && !dashboard) {
     return (
       <div className="bg-[#F8F9FC] min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-[#6366F1]" />
+      </div>
+    );
+  }
+
+  if (!initialLoading && !dashboard && error) {
+    return (
+      <div className="bg-[#F8F9FC] min-h-screen flex items-center justify-center">
+        <div className="bg-white border border-red-200 rounded-xl shadow-sm p-8 max-w-md text-center space-y-4">
+          <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+            <Info className="w-6 h-6 text-red-500" />
+          </div>
+          <h2 className="text-lg font-bold text-gray-900">Failed to load payroll</h2>
+          <p className="text-sm text-gray-500">{error}</p>
+          <button
+            onClick={handleRetry}
+            className="bg-[#6366F1] hover:bg-[#4F46E5] text-white px-5 py-2 rounded-lg text-sm font-semibold inline-flex items-center gap-2 transition-colors mx-auto"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
