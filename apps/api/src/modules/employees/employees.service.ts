@@ -853,19 +853,39 @@ export async function exportEmployeeAttendanceCsv(
     return null;
   }
 
-  const logs = await getEmployeeAttendanceLogs(employeeId, query);
-  if (!logs) {
-    return null;
-  }
-
   const attendanceRecords = await fetchEmployeeAttendanceRecords(employeeId, query.month, query.year);
 
   let totalHours = 0;
   let totalOvertime = 0;
+  let attendedDays = 0;
   for (const record of attendanceRecords) {
     totalHours += record.hours ? Number(record.hours) : 0;
     totalOvertime += record.overtimeHours ? Number(record.overtimeHours) : 0;
+    if (
+      record.status === AttendanceStatus.PRESENT ||
+      record.status === AttendanceStatus.LATE ||
+      record.status === AttendanceStatus.HALF_DAY
+    ) {
+      attendedDays += 1;
+    }
   }
+
+  const { monthStart, monthEnd } = attendanceMonthBounds(query.month, query.year);
+  const holidays = await prisma.companyHoliday.findMany({
+    where: {
+      OR: [
+        { date: { gte: monthStart, lte: monthEnd } },
+        { endDate: { gte: monthStart }, date: { lte: monthEnd } },
+      ],
+    },
+  });
+  const holidayRanges = holidays.map((holiday) => ({
+    date: holiday.date,
+    endDate: holiday.endDate,
+  }));
+  const workingDaysPast = countPastWorkingDays(query.month, query.year, holidayRanges);
+  const attendancePercentage =
+    workingDaysPast > 0 ? Math.round((attendedDays / workingDaysPast) * 100) : 0;
 
   const csvEmployee = {
     firstName: employee.firstName,
@@ -882,7 +902,7 @@ export async function exportEmployeeAttendanceCsv(
     {
       totalHours,
       totalOvertime,
-      attendancePercentage: logs.summary.attendancePercentage,
+      attendancePercentage,
     },
   );
 

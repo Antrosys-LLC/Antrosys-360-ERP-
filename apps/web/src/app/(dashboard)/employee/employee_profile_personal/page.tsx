@@ -206,7 +206,7 @@ const employmentSchema = z
     location: z.string().nullable().optional(),
     employeeType: z.string().nullable().optional(),
     contractType: z.string().nullable().optional(),
-    employmentStatus: z.string().min(1, 'Employment status is required'),
+    employmentStatus: z.string().nullable().optional(),
     joiningDate: z
       .string()
       .nullable()
@@ -352,7 +352,7 @@ function employeeToEmploymentFormValues(employee: {
     location: employee.location || '',
     employeeType: employee.employeeType || '',
     contractType: employee.contractType || '',
-    employmentStatus: employee.employmentStatus || 'ACTIVE',
+    employmentStatus: employee.employmentStatus ?? '',
     joiningDate: toDateInputValue(employee.joiningDate),
     probationEnd: toDateInputValue(employee.probationEnd),
     managerId: employee.managerId || '',
