@@ -294,6 +294,30 @@ export async function createPurchaseOrder(data: CreatePurchaseOrderBody, userId:
       },
     });
 
+    const totalAmount = Number(grandTotal);
+
+    await pushLedgerEntry(tx, {
+      date: new Date(),
+      ref: poNumber,
+      description: `Purchase order commitment - ${poNumber} (${data.supplier})`,
+      entryType: 'DEBIT',
+      amount: totalAmount,
+      accountCode: '1000',
+      currencyCode: data.currencyCode ?? 'PKR',
+      createdByUserId: userId,
+    });
+
+    await pushLedgerEntry(tx, {
+      date: new Date(),
+      ref: poNumber,
+      description: `Purchase order commitment - ${poNumber} (${data.supplier})`,
+      entryType: 'CREDIT',
+      amount: totalAmount,
+      accountCode: '2000',
+      currencyCode: data.currencyCode ?? 'PKR',
+      createdByUserId: userId,
+    });
+
     return {
       id: po.id,
       poNumber: po.poNumber,
