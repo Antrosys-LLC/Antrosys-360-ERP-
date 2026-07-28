@@ -1,4 +1,5 @@
 import { PrismaClient, Prisma } from '@prisma/client';
+import { pushLedgerEntry } from '../../src/shared/finance/ledger-push';
 
 const prisma = new PrismaClient();
 
@@ -74,13 +75,15 @@ export async function seedCfoData() {
     { number: 'INV-2026-007', clientIdx: 2, status: 'DRAFT', total: 19000, currency: 'AED', invoiceDay: 16, dueDay: 5, monthOffset: 0 },
   ];
 
+  const createdInvoices: { status: string; totalDue: Prisma.Decimal; currencyCode: string; invoiceNumber: string }[] = [];
+
   for (const spec of invoiceSpecs) {
     const invMonth = month + spec.monthOffset;
     const invDate = dateOnly(year, invMonth, spec.invoiceDay);
     const dueDate = dateOnly(year, invMonth, spec.dueDay);
     const tax = spec.total * 0.1;
 
-    await prisma.invoice.create({
+    const invoice = await prisma.invoice.create({
       data: {
         invoiceNumber: spec.number,
         clientId: clients[spec.clientIdx].id,
@@ -114,6 +117,36 @@ export async function seedCfoData() {
         },
       },
     });
+
+    createdInvoices.push({ status: spec.status, totalDue: invoice.totalDue, currencyCode: invoice.currencyCode, invoiceNumber: invoice.invoiceNumber });
+  }
+
+  for (const inv of createdInvoices) {
+    if (inv.status === 'PAID' || inv.status === 'PARTIALLY_PAID') {
+      const isPartial = inv.status === 'PARTIALLY_PAID';
+      await pushLedgerEntry(prisma as any, {
+        date: new Date(),
+        ref: inv.invoiceNumber,
+        description: `Client payment - ${inv.invoiceNumber} (${inv.status})`,
+        entryType: 'CREDIT',
+        amount: Number(inv.totalDue),
+        accountCode: '4000',
+        currencyCode: inv.currencyCode,
+        hasFlag: isPartial,
+        createdByUserId: financeManager.id,
+      });
+      await pushLedgerEntry(prisma as any, {
+        date: new Date(),
+        ref: inv.invoiceNumber,
+        description: `Payment received - ${inv.invoiceNumber} (${inv.status})`,
+        entryType: 'DEBIT',
+        amount: Number(inv.totalDue),
+        accountCode: '1000',
+        currencyCode: inv.currencyCode,
+        hasFlag: isPartial,
+        createdByUserId: financeManager.id,
+      });
+    }
   }
 
   const payrollCurrent = await prisma.payroll.create({
@@ -130,7 +163,7 @@ export async function seedCfoData() {
     },
   });
 
-  await prisma.payroll.create({
+  const paidPayroll = await prisma.payroll.create({
     data: {
       batchNumber: 'PAY-2025-12',
       periodStart: dateOnly(year, month - 1, 16),
@@ -146,6 +179,40 @@ export async function seedCfoData() {
       paidAt: dateOnly(year, month - 1, 30),
     },
   });
+
+  await pushLedgerEntry(prisma as any, {
+    date: new Date(),
+    ref: paidPayroll.batchNumber,
+    description: `Payroll disbursement - ${paidPayroll.batchNumber}`,
+    entryType: 'DEBIT',
+    amount: Number(paidPayroll.totalGross),
+    accountCode: '6100',
+    currencyCode: 'PKR',
+    createdByUserId: financeManager.id,
+  });
+  await pushLedgerEntry(prisma as any, {
+    date: new Date(),
+    ref: paidPayroll.batchNumber,
+    description: `Payroll net payout - ${paidPayroll.batchNumber}`,
+    entryType: 'CREDIT',
+    amount: Number(paidPayroll.totalNet),
+    accountCode: '1000',
+    currencyCode: 'PKR',
+    createdByUserId: financeManager.id,
+  });
+  const deductionsAmount = Number(paidPayroll.totalGross) - Number(paidPayroll.totalNet);
+  if (deductionsAmount > 0) {
+    await pushLedgerEntry(prisma as any, {
+      date: new Date(),
+      ref: paidPayroll.batchNumber,
+      description: `Payroll deductions & taxes - ${paidPayroll.batchNumber}`,
+      entryType: 'CREDIT',
+      amount: deductionsAmount,
+      accountCode: '2000',
+      currencyCode: 'PKR',
+      createdByUserId: financeManager.id,
+    });
+  }
 
   await prisma.approvalTask.create({
     data: {
