@@ -231,6 +231,11 @@ export async function confirmMatch(
       },
     });
 
+    await tx.ledgerEntry.update({
+      where: { id: entryId },
+      data: { hasFlag: false },
+    });
+
     await tx.auditLog.create({
       data: {
         userId,

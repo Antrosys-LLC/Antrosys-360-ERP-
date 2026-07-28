@@ -1,12 +1,10 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/database';
 import type {
-  CreateLedgerEntryBody,
   ListLedgerEntriesQuery,
-  UpdateLedgerEntryBody,
 } from './ledger.schema';
 
-type MutationAction = 'LEDGER_ENTRY_CREATE' | 'LEDGER_ENTRY_UPDATE' | 'LEDGER_ENTRY_VOID';
+type MutationAction = 'LEDGER_ENTRY_VOID';
 
 function toDecimal(value: number): Prisma.Decimal {
   return new Prisma.Decimal(value.toFixed(2));
@@ -241,64 +239,6 @@ export async function getLedgerEntryById(entryId: string) {
   return prisma.ledgerEntry.findUnique({
     where: { id: entryId },
     include: { account: true },
-  });
-}
-
-export async function createLedgerEntry(payload: CreateLedgerEntryBody, userId: string) {
-  return prisma.$transaction(async (tx) => {
-    const created = await tx.ledgerEntry.create({
-      data: {
-        date: payload.date,
-        ref: payload.ref,
-        description: payload.description,
-        entryType: payload.entryType,
-        amount: toDecimal(payload.amount),
-        accountId: payload.accountId,
-        currencyCode: payload.currencyCode.toUpperCase(),
-        hasFlag: payload.hasFlag,
-        createdByUserId: userId,
-      },
-      include: { account: true },
-    });
-
-    await writeAuditLog(tx, userId, 'LEDGER_ENTRY_CREATE', {
-      entryId: created.id,
-      ref: created.ref,
-      amount: payload.amount,
-      type: created.entryType,
-    });
-
-    return created;
-  });
-}
-
-export async function updateLedgerEntry(entryId: string, payload: UpdateLedgerEntryBody, userId: string) {
-  const current = await prisma.ledgerEntry.findUnique({ where: { id: entryId } });
-  if (!current) return null;
-
-  return prisma.$transaction(async (tx) => {
-    const updated = await tx.ledgerEntry.update({
-      where: { id: entryId },
-      data: {
-        ...(payload.date ? { date: payload.date } : {}),
-        ...(payload.ref ? { ref: payload.ref } : {}),
-        ...(payload.description ? { description: payload.description } : {}),
-        ...(payload.entryType ? { entryType: payload.entryType } : {}),
-        ...(payload.amount !== undefined ? { amount: toDecimal(payload.amount) } : {}),
-        ...(payload.accountId ? { accountId: payload.accountId } : {}),
-        ...(payload.currencyCode ? { currencyCode: payload.currencyCode.toUpperCase() } : {}),
-        ...(payload.hasFlag !== undefined ? { hasFlag: payload.hasFlag } : {}),
-        ...(payload.isVoided !== undefined ? { isVoided: payload.isVoided } : {}),
-      },
-      include: { account: true },
-    });
-
-    await writeAuditLog(tx, userId, 'LEDGER_ENTRY_UPDATE', {
-      entryId,
-      hasFlag: updated.hasFlag,
-    });
-
-    return updated;
   });
 }
 

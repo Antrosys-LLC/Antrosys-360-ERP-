@@ -6,6 +6,7 @@ import {
   formatUsdCompact,
 } from '../../shared/currency/exchange-rate';
 import { logFinancialActivity } from '../../shared/finance/financial-activity';
+import { pushLedgerEntry } from '../../shared/finance/ledger-push';
 import type {
   ActivitiesQuery,
   CashflowQuery,
@@ -412,6 +413,28 @@ export async function acceptTask(taskId: string, userId: string) {
         await tx.vendorPayment.update({
           where: { id: task.entityId },
           data: { status: 'PAID', paidAt: new Date() },
+        });
+
+        await pushLedgerEntry(tx, {
+          date: new Date(),
+          ref: payment.vendorReference,
+          description: `Vendor payment - ${payment.vendorName} (${payment.vendorReference})`,
+          entryType: 'DEBIT',
+          amount: Number(payment.amount),
+          accountCode: '6300',
+          currencyCode: payment.currencyCode,
+          createdByUserId: userId,
+        });
+
+        await pushLedgerEntry(tx, {
+          date: new Date(),
+          ref: payment.vendorReference,
+          description: `Vendor disbursement - ${payment.vendorName} (${payment.vendorReference})`,
+          entryType: 'CREDIT',
+          amount: Number(payment.amount),
+          accountCode: '1000',
+          currencyCode: payment.currencyCode,
+          createdByUserId: userId,
         });
       }
       await logFinancialActivity(tx, {

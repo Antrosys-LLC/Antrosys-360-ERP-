@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { logFinancialActivity } from '../../shared/finance/financial-activity';
+import { pushLedgerEntry } from '../../shared/finance/ledger-push';
 import type {
   CreateInvoiceBody,
   ListInvoicesQuery,
@@ -348,11 +349,35 @@ export async function updateInvoice(invoiceId: string, payload: UpdateInvoiceBod
         metadata: { invoiceId, previousStatus: current.status, status: updated.status },
       });
 
-      if (updated.status === 'PAID') {
+      if (updated.status === 'PAID' || updated.status === 'PARTIALLY_PAID') {
         await logFinancialActivity(tx, {
           category: 'INVOICE',
           title: `Payment received for ${updated.invoiceNumber}`,
-          metadata: { invoiceId, totalDue: Number(updated.totalDue) },
+          metadata: { invoiceId, totalDue: Number(updated.totalDue), status: updated.status },
+        });
+
+        await pushLedgerEntry(tx, {
+          date: new Date(),
+          ref: updated.invoiceNumber,
+          description: `Client payment - ${updated.invoiceNumber} (${updated.status})`,
+          entryType: 'CREDIT',
+          amount: Number(updated.totalDue),
+          accountCode: '4000',
+          currencyCode: updated.currencyCode,
+          hasFlag: updated.status === 'PARTIALLY_PAID',
+          createdByUserId: userId,
+        });
+
+        await pushLedgerEntry(tx, {
+          date: new Date(),
+          ref: updated.invoiceNumber,
+          description: `Payment received - ${updated.invoiceNumber} (${updated.status})`,
+          entryType: 'DEBIT',
+          amount: Number(updated.totalDue),
+          accountCode: '1000',
+          currencyCode: updated.currencyCode,
+          hasFlag: updated.status === 'PARTIALLY_PAID',
+          createdByUserId: userId,
         });
       }
 

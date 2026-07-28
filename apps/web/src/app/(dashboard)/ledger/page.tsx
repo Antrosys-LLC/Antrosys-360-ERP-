@@ -10,8 +10,6 @@ import {
   fetchLedgerEntries,
   fetchLedgerSummary,
   fetchMonthlyTrend,
-  createLedgerEntry,
-  updateLedgerEntry,
   voidLedgerEntry,
   type BudgetTrackerItem,
   type BudgetVsActualItem,
@@ -38,18 +36,6 @@ export default function LedgerBudgetDashboard() {
   
   // Export Dropdown state
   const [isExportOpen, setIsExportOpen] = useState(false);
-
-  // Add Entry Modal state
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [formData, setFormData] = useState({
-    date: new Date().toISOString().split('T')[0],
-    ref: '',
-    description: '',
-    entryType: 'CREDIT' as 'DEBIT' | 'CREDIT',
-    amount: '',
-    accountId: '',
-    hasFlag: false
-  });
 
   const formattedPeriod = period.match(/^\d{4}-\d{2}$/) 
     ? new Date(period + '-01').toLocaleString('default', { month: 'long', year: 'numeric' })
@@ -97,33 +83,8 @@ export default function LedgerBudgetDashboard() {
   });
 
   // Mutations
-  const addEntryMutation = useMutation({
-    mutationFn: createLedgerEntry,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ledger'] });
-      setIsAddModalOpen(false);
-      setFormData({
-        date: new Date().toISOString().split('T')[0],
-        ref: '',
-        description: '',
-        entryType: 'CREDIT',
-        amount: '',
-        accountId: '',
-        hasFlag: false
-      });
-    }
-  });
-
-  const toggleVoidMutation = useMutation({
-    mutationFn: async ({ id, currentlyVoided }: { id: string; currentlyVoided: boolean }) => {
-      if (currentlyVoided) {
-        // Unvoid
-        return updateLedgerEntry(id, { isVoided: false });
-      } else {
-        // Void
-        return voidLedgerEntry(id, 'Voided from UI double-click');
-      }
-    },
+  const voidEntryMutation = useMutation({
+    mutationFn: (id: string) => voidLedgerEntry(id, 'Voided from UI double-click'),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ledger'] });
     }
@@ -276,13 +237,6 @@ export default function LedgerBudgetDashboard() {
           </div>
 
           <div className="flex items-center gap-5">
-            <button 
-              type="button" 
-              onClick={() => setIsAddModalOpen(true)}
-              className="text-sm font-bold text-primary hover:text-primary/80 transition-colors"
-            >
-              + Add Entry
-            </button>
             <div className="h-4 w-[1px] bg-border mx-1"></div>
             <button 
               type="button" 
@@ -523,9 +477,9 @@ export default function LedgerBudgetDashboard() {
                     key={row.id} 
                     className={`hover:bg-muted/50 transition-colors cursor-pointer ${row.isVoided ? "text-muted-foreground bg-muted/20" : "text-foreground"}`}
                     onDoubleClick={() => {
-                      toggleVoidMutation.mutate({ id: row.id, currentlyVoided: row.isVoided });
+                      if (!row.isVoided) voidEntryMutation.mutate(row.id);
                     }}
-                    title="Double click to toggle void status"
+                    title="Double click to void entry"
                   >
                     <td className="whitespace-nowrap px-6 py-3.5">
                       {new Date(row.date).toLocaleDateString(undefined, { month: 'short', day: '2-digit' })}
@@ -662,85 +616,6 @@ export default function LedgerBudgetDashboard() {
         </div>
       </footer>
 
-      {/* Add Entry Modal Overlay */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-xl bg-card p-6 shadow-lg border border-border animate-in fade-in zoom-in duration-200">
-            <h2 className="text-lg font-bold text-foreground mb-4">Add Ledger Entry</h2>
-            
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              addEntryMutation.mutate({
-                ...formData,
-                amount: Number(formData.amount)
-              });
-            }} className="space-y-4">
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-muted-foreground mb-1">Date</label>
-                  <input type="date" required className="w-full rounded border border-border bg-background px-3 py-2 text-sm" 
-                    value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-muted-foreground mb-1">Ref</label>
-                  <input type="text" required placeholder="INV-123" className="w-full rounded border border-border bg-background px-3 py-2 text-sm" 
-                    value={formData.ref} onChange={e => setFormData({...formData, ref: e.target.value})} />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-muted-foreground mb-1">Account</label>
-                <select required className="w-full rounded border border-border bg-background px-3 py-2 text-sm"
-                  value={formData.accountId} onChange={e => setFormData({...formData, accountId: e.target.value})}>
-                  <option value="" disabled>Select Account...</option>
-                  {chartOfAccounts?.map(acc => (
-                    <option key={acc.id} value={acc.id}>{acc.code} - {acc.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-muted-foreground mb-1">Description</label>
-                <input type="text" required placeholder="Description of transaction" className="w-full rounded border border-border bg-background px-3 py-2 text-sm" 
-                  value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-muted-foreground mb-1">Type</label>
-                  <select className="w-full rounded border border-border bg-background px-3 py-2 text-sm"
-                    value={formData.entryType} onChange={e => setFormData({...formData, entryType: e.target.value as any})}>
-                    <option value="DEBIT">Debit</option>
-                    <option value="CREDIT">Credit</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-muted-foreground mb-1">Amount</label>
-                  <input type="number" min="0" step="0.01" required placeholder="0.00" className="w-full rounded border border-border bg-background px-3 py-2 text-sm" 
-                    value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 pt-2">
-                <input type="checkbox" id="hasFlag" 
-                  checked={formData.hasFlag} onChange={e => setFormData({...formData, hasFlag: e.target.checked})} />
-                <label htmlFor="hasFlag" className="text-sm font-medium text-foreground">Flag for reconciliation</label>
-              </div>
-
-              <div className="flex justify-end gap-3 mt-6">
-                <button type="button" onClick={() => setIsAddModalOpen(false)} className="px-4 py-2 text-sm font-bold text-muted-foreground hover:text-foreground">
-                  Cancel
-                </button>
-                <button type="submit" disabled={addEntryMutation.isPending} className="rounded bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:opacity-50">
-                  {addEntryMutation.isPending ? 'Saving...' : 'Save Entry'}
-                </button>
-              </div>
-
-            </form>
-          </div>
-        </div>
-      )}
     </main>
   );
 }
