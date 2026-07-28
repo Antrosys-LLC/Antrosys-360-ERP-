@@ -187,7 +187,7 @@ export async function createInvoice(payload: CreateInvoiceBody, userId: string) 
       data: {
         invoiceNumber: payload.invoiceNumber,
         clientId: payload.clientId,
-        projectId: payload.projectId,
+        projectId: payload.projectId ?? null,
         status: 'DRAFT',
         invoiceDate: payload.invoiceDate,
         dueDate: payload.dueDate,

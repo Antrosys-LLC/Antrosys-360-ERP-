@@ -430,11 +430,27 @@ export async function getChartOfAccounts() {
 }
 
 export async function getAccountingEquation(periodLabel: string) {
-  // Use cumulative balance (all entries up to period end for balance sheet items)
   const range = parsePeriodToDates(periodLabel);
   const cumulativeDate = range ? { lte: range.end } : undefined;
 
-  // Helper: aggregate entry amounts for accounts matching a code prefix
+  // Check if there are ANY entries in this period
+  const totalEntries = await prisma.ledgerEntry.count({
+    where: {
+      isVoided: false,
+      ...(cumulativeDate ? { date: cumulativeDate } : {}),
+    },
+  });
+
+  if (totalEntries === 0) {
+    return {
+      assets: 0,
+      liabilities: 0,
+      equity: 0,
+      isBalanced: false,
+      status: 'no_data' as const,
+    };
+  }
+
   const sumByPrefix = async (prefix: string, entryType: 'DEBIT' | 'CREDIT') => {
     const accounts = await prisma.ledgerAccount.findMany({
       where: { code: { startsWith: prefix } },
@@ -453,12 +469,6 @@ export async function getAccountingEquation(periodLabel: string) {
     return Number(result._sum.amount || 0);
   };
 
-  // Double-entry accounting rules:
-  // Assets (1xxx)      → increased by DEBIT, decreased by CREDIT
-  // Liabilities (2xxx) → increased by CREDIT, decreased by DEBIT
-  // Equity (3xxx)      → increased by CREDIT, decreased by DEBIT
-  // Revenue (4xxx)     → increases equity (CREDIT)
-  // Expenses (6xxx)    → decreases equity (DEBIT)
   const assetDr    = await sumByPrefix('1', 'DEBIT');
   const assetCr    = await sumByPrefix('1', 'CREDIT');
   const liabCr     = await sumByPrefix('2', 'CREDIT');
@@ -474,7 +484,6 @@ export async function getAccountingEquation(periodLabel: string) {
   const liabilities = liabCr  - liabDr;
   const equity      = (equityCr - equityDr) + (revenueCr - revenueDr) - (expenseDr - expenseCr);
 
-  // Assets = Liabilities + Equity (allow ±1 rounding tolerance)
   const isBalanced = Math.abs(assets - (liabilities + equity)) < 1;
 
   return {
@@ -482,6 +491,7 @@ export async function getAccountingEquation(periodLabel: string) {
     liabilities: Math.round(liabilities),
     equity:      Math.round(equity),
     isBalanced,
+    status: isBalanced ? ('balanced' as const) : ('skewed' as const),
   };
 }
 

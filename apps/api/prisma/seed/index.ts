@@ -315,6 +315,9 @@ async function main() {
     },
   });
 
+  const { seedLedgerData } = await import('./ledger.seed');
+  await seedLedgerData(prisma);
+
   const { seedCfoData } = await import('./cfo.seed');
   await seedCfoData();
 
@@ -336,9 +339,6 @@ async function main() {
 
   const { seedOperationHeadData } = await import('./operation_head.seed');
   await seedOperationHeadData(prisma);
-
-  const { seedLedgerData } = await import('./ledger.seed');
-  await seedLedgerData(prisma);
 
   const { seedPayslipsData, seedPayrollData } = await import('./payroll.seed');
   await seedPayslipsData(prisma);

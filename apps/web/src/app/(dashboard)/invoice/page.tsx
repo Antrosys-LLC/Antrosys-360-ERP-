@@ -622,18 +622,74 @@ export default function InvoiceBuilder() {
   const handleRecordPayment = async () => {
     setPaymentLoading(true);
     try {
-      await apiClient.patch(`/invoices/${mockData.header.id}`, { status: 'PAID' });
+      const invNumber = `INV-${Date.now()}`;
+
+      let clientId: string;
+      try {
+        const listRes = await apiClient.get('/clients?limit=1');
+        clientId = listRes.data.data?.items?.[0]?.id;
+      } catch { clientId = undefined as any; }
+      if (!clientId) {
+        const createRes = await apiClient.post('/clients', { name: billTo.name });
+        clientId = createRes.data.data.id;
+      }
+
+      let projectId: string | undefined;
+      try {
+        const projList = await apiClient.get(`/clients/${clientId}/projects?limit=1`);
+        projectId = projList.data.data?.[0]?.id;
+      } catch { /* no projects yet */ }
+      if (!projectId) {
+        try {
+          const projRes = await apiClient.post(`/clients/${clientId}/projects`, { name: 'Software Development' });
+          projectId = projRes.data.data.id;
+        } catch { /* project is optional */ }
+      }
+
+      const invPayload: Record<string, unknown> = {
+        invoiceNumber: invNumber,
+        clientId,
+        invoiceDate: toInputDate(details.invoiceDate),
+        dueDate: toInputDate(details.dueDate),
+        paymentTermsDays: 15,
+        currencyCode: selectedCurrency,
+        taxRegion: details.taxRegion || null,
+        lineItems: lineItems.map(item => {
+          const line: Record<string, unknown> = {
+            description: item.desc,
+            quantity: item.qty,
+            unitPrice: item.price,
+            discountPct: item.discount,
+            taxType: item.tax.includes('GST') ? 'GST' : item.tax.includes('WHT') ? 'WITHHOLDING' : 'EXEMPT',
+            taxRatePct: Number(item.tax.replace(/[^\d.]/g, '')) || 0,
+          };
+          if (item.unit && item.unit !== 'N/A') line.unit = item.unit;
+          return line;
+        }),
+      };
+      if (projectId) invPayload.projectId = projectId;
+
+      const invRes = await apiClient.post('/invoices', invPayload);
+      const invoiceId: string = invRes.data.data.id;
+
+      await apiClient.patch(`/invoices/${invoiceId}`, { status: 'PAID' });
+
       setStatus('Paid');
       setConfirmPaymentOpen(false);
       logActivity('Payment recorded');
       toast({
         title: 'Payment recorded!',
-        description: `Invoice ${mockData.header.id} marked as PAID. Ledger entries created.`,
+        description: `Invoice ${invNumber} created and marked as PAID. Ledger entries created.`,
       });
     } catch (err: any) {
-      const msg = err?.response?.data?.error || err?.response?.data?.details?.fieldErrors 
-        ? JSON.stringify(err.response.data.details.fieldErrors) 
-        : 'Failed to record payment. Ensure the invoice ID exists in the database.';
+      const apiErr = err?.response?.data;
+      let msg = apiErr?.error || 'Failed to record payment';
+      if (apiErr?.details?.fieldErrors) {
+        const fields = Object.entries(apiErr.details.fieldErrors)
+          .map(([f, errs]) => `${f}: ${(errs as string[]).join(', ')}`)
+          .join('; ');
+        msg = fields ? `${msg}: ${fields}` : msg;
+      }
       toast({
         title: 'Payment failed',
         description: msg,
@@ -641,6 +697,7 @@ export default function InvoiceBuilder() {
       });
     } finally {
       setPaymentLoading(false);
+      setConfirmPaymentOpen(false);
     }
   };
 

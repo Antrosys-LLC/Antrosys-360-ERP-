@@ -597,11 +597,15 @@ export default function LedgerBudgetDashboard() {
         </div>
         
         <div className={`inline-flex items-center gap-1.5 self-start sm:self-auto rounded-md border px-3.5 py-1 text-[11px] font-bold uppercase tracking-wider ${
-          equation?.isBalanced 
-            ? 'bg-[#EBF5EC] border-[#D1E9D4] text-[#2E6B24]' 
-            : 'bg-destructive/10 border-destructive/20 text-destructive'
+          equation?.status === 'no_data'
+            ? 'bg-muted border-border text-muted-foreground'
+            : equation?.isBalanced 
+              ? 'bg-[#EBF5EC] border-[#D1E9D4] text-[#2E6B24]' 
+              : 'bg-[#FFF3E0] border-[#FFB74D] text-[#E65100]'
         }`}>
-          {equation?.isBalanced ? (
+          {equation?.status === 'no_data' ? (
+            <><span>Skewed</span></>
+          ) : equation?.isBalanced ? (
             <>
               <svg className="h-3.5 w-3.5 text-[#2E6B24]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -609,9 +613,7 @@ export default function LedgerBudgetDashboard() {
               <span>Balanced</span>
             </>
           ) : (
-            <>
-              <span>Out of Balance</span>
-            </>
+            <><span>Out of Balance</span></>
           )}
         </div>
       </footer>

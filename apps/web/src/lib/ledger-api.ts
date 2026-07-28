@@ -69,6 +69,7 @@ export interface AccountingEquation {
   liabilities: number;
   equity: number;
   isBalanced: boolean;
+  status?: 'balanced' | 'skewed' | 'no_data';
 }
 
 export async function fetchLedgerSummary(period: string) {
