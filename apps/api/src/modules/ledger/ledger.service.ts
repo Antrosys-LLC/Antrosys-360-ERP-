@@ -363,12 +363,12 @@ export async function getBudgetTrackers() {
 }
 
 export async function getMonthlyTrend(periodStr: string) {
-  // Determine target month from period string (e.g. "May 2026", "2026-05")
   let targetDate = new Date();
-  if (periodStr.match(/^\d{4}-\d{2}$/)) {
+  const range = parsePeriodToDates(periodStr);
+  if (range) {
+    targetDate = new Date(range.end);
+  } else if (periodStr.match(/^\d{4}-\d{2}$/)) {
     targetDate = new Date(periodStr + '-01');
-  } else if (periodStr === 'May 2026') {
-    targetDate = new Date('2026-05-01');
   }
 
   const months = [];

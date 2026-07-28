@@ -25,8 +25,8 @@ const DATE_FILTERS = ['Today', 'This week', 'May 2026', 'Q2 2026', 'FY 2026'];
 
 export default function LedgerBudgetDashboard() {
   const queryClient = useQueryClient();
-  const [period, setPeriod] = useState('May 2026');
-  const [customMonth, setCustomMonth] = useState('2026-05');
+  const [period, setPeriod] = useState(() => new Date().toLocaleString('default', { month: 'long', year: 'numeric' }));
+  const [customMonth, setCustomMonth] = useState(() => new Date().toISOString().slice(0, 7));
   
   // Filtering state
   const [showFilter, setShowFilter] = useState(false);
@@ -213,7 +213,7 @@ export default function LedgerBudgetDashboard() {
                   }
                 }}
                 className={`rounded-md px-3 py-1.5 text-sm font-medium border-none outline-none transition-all cursor-pointer ${
-                  period === customMonth || period === 'May 2026'
+                  period === customMonth
                     ? "bg-card text-primary shadow-sm"
                     : "bg-transparent text-muted-foreground hover:text-foreground"
                 }`}

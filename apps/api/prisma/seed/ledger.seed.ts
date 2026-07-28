@@ -42,18 +42,25 @@ export async function seedLedgerData(prisma: PrismaClient) {
   const now = new Date();
   const currentYear = now.getFullYear();
 
-  await prisma.ledgerPeriodSummary.create({
-    data: {
-      periodLabel: 'May 2026',
-      periodStart: new Date(Date.UTC(currentYear, 4, 1)),
-      periodEnd: new Date(Date.UTC(currentYear, 4, 31)),
-      openingBalance: dec(14500000),
-      currencyCode: 'PKR',
-      assetsTotal: dec(150000000),
-      liabilitiesTotal: dec(60000000),
-      equityTotal: dec(90000000),
-    },
-  });
+  const summaries = [
+    { label: 'May 2026', startMonth: 4, endMonth: 4, opening: 14500000 },
+    { label: 'Q2 2026',  startMonth: 3, endMonth: 5, opening: 14000000 },
+    { label: 'FY 2026',  startMonth: 0, endMonth: 11, opening: 12000000 },
+  ];
+  for (const s of summaries) {
+    await prisma.ledgerPeriodSummary.create({
+      data: {
+        periodLabel: s.label,
+        periodStart: new Date(Date.UTC(currentYear, s.startMonth, 1)),
+        periodEnd: new Date(Date.UTC(currentYear, s.endMonth + 1, 0)),
+        openingBalance: dec(s.opening),
+        currencyCode: 'PKR',
+        assetsTotal: dec(150000000),
+        liabilitiesTotal: dec(60000000),
+        equityTotal: dec(90000000),
+      },
+    });
+  }
 
   const periodStart = new Date(Date.UTC(currentYear, 0, 1));
   const periodEnd = new Date(Date.UTC(currentYear, 11, 31));
