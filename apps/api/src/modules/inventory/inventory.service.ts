@@ -57,6 +57,7 @@ export async function getReorderRecommendations() {
     id: item.id,
     name: item.name,
     sku: item.sku,
+    supplier: item.supplier,
     current: item.qty,
     recommendedOrder: Math.max(item.maxStockLevel - item.qty, item.minStockLevel),
     unitCost: Number(item.unitCost),

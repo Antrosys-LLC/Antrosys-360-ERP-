@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import apiClient from '@/lib/api-client';
 
 // ==========================================
 // MOCK DATA (Ready for API replacement)
@@ -454,6 +455,8 @@ export default function InvoiceBuilder() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [confirmSendOpen, setConfirmSendOpen] = useState(false);
   const [confirmSaveDraftOpen, setConfirmSaveDraftOpen] = useState(false);
+  const [confirmPaymentOpen, setConfirmPaymentOpen] = useState(false);
+  const [paymentLoading, setPaymentLoading] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
   const [draftSent, setDraftSent] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -614,6 +617,31 @@ export default function InvoiceBuilder() {
       title: 'Draft saved',
       description: 'Your invoice draft has been saved successfully. You can edit it on next login.',
     });
+  };
+
+  const handleRecordPayment = async () => {
+    setPaymentLoading(true);
+    try {
+      await apiClient.patch(`/invoices/${mockData.header.id}`, { status: 'PAID' });
+      setStatus('Paid');
+      setConfirmPaymentOpen(false);
+      logActivity('Payment recorded');
+      toast({
+        title: 'Payment recorded!',
+        description: `Invoice ${mockData.header.id} marked as PAID. Ledger entries created.`,
+      });
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.response?.data?.details?.fieldErrors 
+        ? JSON.stringify(err.response.data.details.fieldErrors) 
+        : 'Failed to record payment. Ensure the invoice ID exists in the database.';
+      toast({
+        title: 'Payment failed',
+        description: msg,
+        variant: 'destructive',
+      });
+    } finally {
+      setPaymentLoading(false);
+    }
   };
 
   const handleSendInvoiceConfirmed = () => {
@@ -858,6 +886,15 @@ export default function InvoiceBuilder() {
                 <Send className="w-4 h-4" />
                 <span>Send invoice</span>
               </button>
+              {(status === 'Sent' || status === 'PARTIALLY_PAID') && (
+                <button
+                  onClick={() => setConfirmPaymentOpen(true)}
+                  className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-md text-sm font-medium hover:bg-emerald-700 transition shadow-sm"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Record Payment</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -1519,6 +1556,44 @@ export default function InvoiceBuilder() {
             >
               <Send className="w-4 h-4" />
               Send invoice
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Record Payment confirmation dialog */}
+      <Dialog open={confirmPaymentOpen} onOpenChange={setConfirmPaymentOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              Record Payment
+            </DialogTitle>
+            <DialogDescription>
+              Mark invoice <strong>{mockData.header.id}</strong> as <strong>PAID</strong>?
+              This will create ledger entries (CREDIT to Revenue, DEBIT to Cash) via the backend.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmPaymentOpen(false)}
+              disabled={paymentLoading}
+              className="px-4 py-2 border border-border rounded-md text-sm font-medium hover:bg-muted transition disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleRecordPayment}
+              disabled={paymentLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-md text-sm font-medium hover:bg-emerald-700 transition disabled:opacity-50"
+            >
+              {paymentLoading ? (
+                <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Recording...</>
+              ) : (
+                <><CheckCircle2 className="w-4 h-4" /> Confirm Payment</>
+              )}
             </button>
           </DialogFooter>
         </DialogContent>
