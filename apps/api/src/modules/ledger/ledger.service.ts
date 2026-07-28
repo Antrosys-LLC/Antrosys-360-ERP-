@@ -430,25 +430,25 @@ export async function getChartOfAccounts() {
 }
 
 export async function getAccountingEquation(periodLabel: string) {
-  const range = parsePeriodToDates(periodLabel);
-  const cumulativeDate = range ? { lte: range.end } : undefined;
+  // Use same period range as top stats (getLedgerSummary) for sync
+  const summary = await prisma.ledgerPeriodSummary.findUnique({
+    where: { periodLabel },
+  });
 
-  // Check if there are ANY entries in this period
+  const range = summary
+    ? { start: summary.periodStart, end: summary.periodEnd }
+    : parsePeriodToDates(periodLabel);
+
+  if (!range) return { assets: 0, liabilities: 0, equity: 0, isBalanced: false, status: 'no_data' as const };
+
+  const periodFilter = { gte: range.start, lte: range.end };
+
   const totalEntries = await prisma.ledgerEntry.count({
-    where: {
-      isVoided: false,
-      ...(cumulativeDate ? { date: cumulativeDate } : {}),
-    },
+    where: { isVoided: false, date: periodFilter },
   });
 
   if (totalEntries === 0) {
-    return {
-      assets: 0,
-      liabilities: 0,
-      equity: 0,
-      isBalanced: false,
-      status: 'no_data' as const,
-    };
+    return { assets: 0, liabilities: 0, equity: 0, isBalanced: false, status: 'no_data' as const };
   }
 
   const sumByPrefix = async (prefix: string, entryType: 'DEBIT' | 'CREDIT') => {
@@ -459,12 +459,7 @@ export async function getAccountingEquation(periodLabel: string) {
     if (!ids.length) return 0;
     const result = await prisma.ledgerEntry.aggregate({
       _sum: { amount: true },
-      where: {
-        accountId: { in: ids },
-        entryType,
-        isVoided: false,
-        ...(cumulativeDate ? { date: cumulativeDate } : {}),
-      },
+      where: { accountId: { in: ids }, entryType, isVoided: false, date: periodFilter },
     });
     return Number(result._sum.amount || 0);
   };

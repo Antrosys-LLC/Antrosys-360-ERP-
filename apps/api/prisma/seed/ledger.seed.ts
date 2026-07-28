@@ -76,5 +76,54 @@ export async function seedLedgerData(prisma: PrismaClient) {
     ],
   });
 
+  const accounts = await prisma.ledgerAccount.findMany({ orderBy: { code: 'asc' } });
+  const accountMap = Object.fromEntries(accounts.map(a => [a.code, a.id]));
+
+  const months = [0, 1, 2, 3, 4, 5]; // Jan through Jun 2026
+  const entryData: { date: Date; ref: string; description: string; entryType: 'DEBIT' | 'CREDIT'; amount: number; accountId: string; createdByUserId: string }[] = [];
+
+  const monthlyRevenue = 2500000;
+  const monthlyPayroll = 367000;
+  const monthlyMarketing = 158000;
+  const monthlyOperations = 242000;
+  const monthlyCapex = 375000;
+
+  for (const m of months) {
+    const d = new Date(Date.UTC(currentYear, m, 15));
+
+    entryData.push({
+      date: d, ref: `REV-${String(m + 1).padStart(2, '0')}`,
+      description: 'Monthly Revenue',
+      entryType: 'CREDIT', amount: monthlyRevenue,
+      accountId: accountMap['4000'], createdByUserId: cfoUser.id,
+    });
+    entryData.push({
+      date: d, ref: `PAY-${String(m + 1).padStart(2, '0')}`,
+      description: 'Payroll Processing',
+      entryType: 'DEBIT', amount: monthlyPayroll,
+      accountId: accountMap['6100'], createdByUserId: cfoUser.id,
+    });
+    entryData.push({
+      date: d, ref: `MKT-${String(m + 1).padStart(2, '0')}`,
+      description: 'Marketing Campaign',
+      entryType: 'DEBIT', amount: monthlyMarketing,
+      accountId: accountMap['6200'], createdByUserId: cfoUser.id,
+    });
+    entryData.push({
+      date: d, ref: `OPS-${String(m + 1).padStart(2, '0')}`,
+      description: 'Operations Overhead',
+      entryType: 'DEBIT', amount: monthlyOperations,
+      accountId: accountMap['6300'], createdByUserId: cfoUser.id,
+    });
+    entryData.push({
+      date: d, ref: `CAP-${String(m + 1).padStart(2, '0')}`,
+      description: 'Asset Acquisition',
+      entryType: 'DEBIT', amount: monthlyCapex,
+      accountId: accountMap['1000'], createdByUserId: cfoUser.id,
+    });
+  }
+
+  await prisma.ledgerEntry.createMany({ data: entryData });
+
   console.log('✅ Ledger & Budget seed data created');
 }
