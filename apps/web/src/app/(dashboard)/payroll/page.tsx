@@ -12,17 +12,19 @@ import {
   ChevronRight,
   Info,
   Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import {
   animateRunPayrollSteps,
   approvePayrollLines,
-  bulkActionDelay,
+  disbursePayroll,
   exportPayrollLedger,
   fetchPayrollDashboard,
   fetchPayrollEmployees,
   fetchPayrollPeriods,
   generatePayrollPayslips,
   runPayroll,
+  submitPayrollForApproval,
   updatePayrollLineStatus,
   updatePayrollPayslipConfig,
   type PayrollDashboardData,
@@ -47,6 +49,16 @@ function mapStatusFilter(statusFilter: string): string | undefined {
   if (statusFilter === 'Pending') return 'PENDING';
   if (statusFilter === 'Verified') return 'VERIFIED';
   return undefined;
+}
+
+function statusLabel(code: string): string {
+  const map: Record<string, string> = {
+    PROCESSING: 'Processing',
+    ON_HOLD: 'On hold',
+    PENDING: 'Pending',
+    VERIFIED: 'Verified',
+  };
+  return map[code] ?? code;
 }
 
 export default function PayrollDashboard() {
@@ -75,6 +87,10 @@ export default function PayrollDashboard() {
   });
 
   const payrollIdRef = useRef<string | null>(null);
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+  const employeesRef = useRef(employees);
+  employeesRef.current = employees;
   const payrollId = dashboard?.payroll?.id ?? null;
   payrollIdRef.current = payrollId;
   const currencyCode = dashboard?.currencyCode ?? 'PKR';
@@ -86,8 +102,10 @@ export default function PayrollDashboard() {
       setInitialLoading(true);
       setError(null);
       try {
+        const savedPeriod = typeof window !== 'undefined' ? localStorage.getItem('payroll-period-key') : null;
+        const dashPromise = savedPeriod ? fetchPayrollDashboard({ period: savedPeriod }) : fetchPayrollDashboard();
         const [dash, periodList] = await Promise.all([
-          fetchPayrollDashboard(),
+          dashPromise,
           fetchPayrollPeriods(),
         ]);
         if (cancelled) return;
@@ -98,6 +116,7 @@ export default function PayrollDashboard() {
           setOptions(dash.payslipGeneration.config);
         }
         if (dash.payroll?.id) {
+          if (cancelled) return;
           const empData = await fetchPayrollEmployees(dash.payroll.id, { page: 1, limit: 12 });
           if (!cancelled) {
             setEmployees(empData.items);
@@ -147,13 +166,14 @@ export default function PayrollDashboard() {
   }, [payrollId, page, search, department, statusFilter, gradeFilter, initialLoading]);
 
   const toggleOption = async (key: keyof PayslipConfig) => {
-    const next = { ...options, [key]: !options[key] };
+    const current = optionsRef.current;
+    const next = { ...current, [key]: !current[key] };
     setOptions(next);
     if (payrollId) {
       try {
         await updatePayrollPayslipConfig(payrollId, next);
       } catch {
-        setOptions(options);
+        setOptions(current);
       }
     }
   };
@@ -207,14 +227,16 @@ export default function PayrollDashboard() {
     setBulkLoading(true);
     setError(null);
 
+    const abortController = new AbortController();
+
     try {
       const runPromise = runPayroll({ period });
-
-      await animateRunPayrollSteps((lifecycle) => {
+      const animPromise = animateRunPayrollSteps((lifecycle) => {
         setRunLifecycleOverride(lifecycle);
       });
 
       const dash = await runPromise;
+      await animPromise;
       setRunLifecycleOverride(null);
       setDashboard(dash);
       setSelectedPeriodKey(dash.period.key);
@@ -229,6 +251,7 @@ export default function PayrollDashboard() {
       }
       setPeriods(await fetchPayrollPeriods());
     } catch (err: unknown) {
+      abortController.abort();
       setRunLifecycleOverride(null);
       const status = (err as { response?: { status?: number } })?.response?.status;
       setError(status === 409 ? 'Payroll already exists for this period.' : 'Failed to run payroll.');
@@ -244,9 +267,19 @@ export default function PayrollDashboard() {
 
     setBulkLoading(true);
     try {
-      await bulkActionDelay();
       const dash = await approvePayrollLines(payrollId, ids);
       setDashboard(dash);
+      const empData = await fetchPayrollEmployees(payrollId, {
+        search: search || undefined,
+        department: department || undefined,
+        status: mapStatusFilter(statusFilter),
+        grade: gradeFilter || undefined,
+        page,
+        limit: 12,
+      });
+      setEmployees(empData.items);
+      setPagination(empData.pagination);
+      setSelected({});
     } catch {
       setError('Failed to approve selected employees.');
     } finally {
@@ -258,9 +291,20 @@ export default function PayrollDashboard() {
     if (!payrollId) return;
     setBulkLoading(true);
     try {
-      await bulkActionDelay();
       const result = await generatePayrollPayslips(payrollId, scope);
       setDashboard(result.dashboard);
+      if (payrollId) {
+        const empData = await fetchPayrollEmployees(payrollId, {
+          search: search || undefined,
+          department: department || undefined,
+          status: mapStatusFilter(statusFilter),
+          grade: gradeFilter || undefined,
+          page,
+          limit: 12,
+        });
+        setEmployees(empData.items);
+        setPagination(empData.pagination);
+      }
     } catch {
       setError('Failed to generate payslips.');
     } finally {
@@ -268,19 +312,56 @@ export default function PayrollDashboard() {
     }
   };
 
+  const handleSubmitForApproval = async () => {
+    if (!payrollId) return;
+    setBulkLoading(true);
+    try {
+      const dash = await submitPayrollForApproval(payrollId);
+      setDashboard(dash);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setError(msg ?? 'Failed to submit payroll for approval.');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleDisburse = async () => {
+    if (!payrollId) return;
+    setBulkLoading(true);
+    try {
+      const dash = await disbursePayroll(payrollId);
+      setDashboard(dash);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setError(msg ?? 'Failed to disburse payroll.');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   const handleExport = async () => {
     if (!payrollId) return;
+    setBulkLoading(true);
     try {
       await exportPayrollLedger(payrollId);
     } catch {
       setError('Failed to export payroll ledger.');
+    } finally {
+      setBulkLoading(false);
     }
   };
 
   const handlePeriodChange = async (periodKey: string) => {
     if (periodKey === selectedPeriodKey) return;
     setSelectedPeriodKey(periodKey);
+    localStorage.setItem('payroll-period-key', periodKey);
     setPage(1);
+    setSelected({});
+    setSearch('');
+    setDepartment('');
+    setStatusFilter('');
+    setGradeFilter('');
     setError(null);
     setRunLifecycleOverride(null);
 
@@ -303,6 +384,35 @@ export default function PayrollDashboard() {
     }
   };
 
+  const handleRetry = () => {
+    setError(null);
+    setInitialLoading(true);
+    (async () => {
+      try {
+        const [dash, periodList] = await Promise.all([
+          fetchPayrollDashboard(),
+          fetchPayrollPeriods(),
+        ]);
+        setDashboard(dash);
+        setSelectedPeriodKey(dash.period.key);
+        setPeriods(periodList);
+        if (dash.payslipGeneration?.config) {
+          setOptions(dash.payslipGeneration.config);
+        }
+        if (dash.payroll?.id) {
+          const empData = await fetchPayrollEmployees(dash.payroll.id, { page: 1, limit: 12 });
+          setEmployees(empData.items);
+          setPagination(empData.pagination);
+          setPage(1);
+        }
+      } catch {
+        setError('Failed to load payroll data.');
+      } finally {
+        setInitialLoading(false);
+      }
+    })();
+  };
+
   if (initialLoading && !dashboard) {
     return (
       <div className="bg-[#F8F9FC] min-h-screen flex items-center justify-center">
@@ -311,13 +421,35 @@ export default function PayrollDashboard() {
     );
   }
 
-  const lifecycle = runLifecycleOverride ?? dashboard?.lifecycle;
+  if (!initialLoading && !dashboard && error) {
+    return (
+      <div className="bg-[#F8F9FC] min-h-screen flex items-center justify-center">
+        <div className="bg-white border border-red-200 rounded-xl shadow-sm p-8 max-w-md text-center space-y-4">
+          <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+            <Info className="w-6 h-6 text-red-500" />
+          </div>
+          <h2 className="text-lg font-bold text-gray-900">Failed to load payroll</h2>
+          <p className="text-sm text-gray-500">{error}</p>
+          <button
+            onClick={handleRetry}
+            className="bg-[#6366F1] hover:bg-[#4F46E5] text-white px-5 py-2 rounded-lg text-sm font-semibold inline-flex items-center gap-2 transition-colors mx-auto"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const lifecycle = dashboard?.lifecycle;
   const metrics = dashboard?.metrics;
   const payslipGen = dashboard?.payslipGeneration;
   const periodLabel =
     periods.find((p) => p.key === selectedPeriodKey)?.label ?? dashboard?.period.label ?? '—';
 
   return (
+    <>
     <div className="bg-[#F8F9FC] min-h-screen text-[#1A1A1A] antialiased">
       <main className="max-w-[1360px] mx-auto p-5 space-y-4">
         {error && (
@@ -356,7 +488,7 @@ export default function PayrollDashboard() {
 
               <button
                 onClick={handleRunPayroll}
-                disabled={bulkLoading || !!payrollId}
+                disabled={bulkLoading || (!!payrollId && dashboard?.payroll?.status !== 'REJECTED')}
                 className="bg-[#6366F1] hover:bg-[#4F46E5] disabled:opacity-60 text-white px-4 py-1.5 rounded-[6px] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors shadow-sm tracking-wide min-w-[120px] justify-center"
               >
                 {bulkLoading ? (
@@ -419,7 +551,7 @@ export default function PayrollDashboard() {
           <p className="text-center text-[11px] text-gray-400 mt-4 font-normal">
             {bulkLoading && runLifecycleOverride ? (
               <>Running payroll cycle for selected period…</>
-            ) : (
+            ) : (lifecycle?.activeProcessingCount ?? 0) > 0 ? (
               <>
                 System is currently processing calculations for{' '}
                 <span className="font-semibold text-gray-700">
@@ -427,6 +559,8 @@ export default function PayrollDashboard() {
                 </span>{' '}
                 active personnel records.
               </>
+            ) : (
+              <>All employee records have been verified.</>
             )}
           </p>
         </section>
@@ -608,25 +742,71 @@ export default function PayrollDashboard() {
                   <option value="L4">L4</option>
                   <option value="L5">L5</option>
                 </select>
-                <button className="p-1.5 border border-[#E5E7EB] rounded-[6px] bg-white hover:bg-gray-50 text-gray-500 transition-colors">
-                  <SlidersHorizontal className="w-3.5 h-3.5" />
-                </button>
               </div>
               <div className="flex items-center gap-2">
+                {(() => {
+                  const ps = dashboard?.payroll?.status;
+                  if (ps === 'PAID') {
+                    return (
+                      <span className="bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-[6px] text-xs font-bold">
+                        Paid
+                      </span>
+                    );
+                  }
+                  if (ps === 'REJECTED') {
+                    return (
+                      <span className="bg-red-50 text-red-500 px-3 py-1.5 rounded-[6px] text-xs font-bold">
+                        Rejected
+                      </span>
+                    );
+                  }
+                  if (ps === 'PENDING_APPROVAL') {
+                    return (
+                      <span className="bg-amber-50 text-amber-600 px-3 py-1.5 rounded-[6px] text-xs font-bold flex items-center gap-1.5">
+                        <Info className="w-3 h-3" />
+                        Awaiting CFO approval
+                      </span>
+                    );
+                  }
+                  if (ps === 'APPROVED') {
+                    return (
+                      <button
+                        onClick={handleDisburse}
+                        disabled={bulkLoading}
+                        className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white px-3.5 py-1.5 rounded-[6px] text-xs font-semibold tracking-wide transition-colors"
+                      >
+                        Disburse payroll
+                      </button>
+                    );
+                  }
+                  return null;
+                })()}
                 <button
                   onClick={handleExport}
-                  className="bg-white border border-[#E5E7EB] hover:bg-gray-50 text-gray-600 px-3 py-1.5 rounded-[6px] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
+                  disabled={bulkLoading}
+                  className="bg-white border border-[#E5E7EB] hover:bg-gray-50 disabled:opacity-50 text-gray-600 px-3 py-1.5 rounded-[6px] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
                 >
                   <Download className="w-3.5 h-3.5 text-gray-400" />
                   Export
                 </button>
-                <button
-                  onClick={handleApproveLines}
-                  disabled={bulkLoading || selectedEmployees.length === 0}
-                  className="bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 text-[#6366F1] px-3.5 py-1.5 rounded-[6px] text-xs font-semibold tracking-wide transition-colors"
-                >
-                  Approve & process
-                </button>
+                {(dashboard?.payroll?.status === 'DRAFT' || dashboard?.payroll?.status === 'REJECTED') && (
+                  <>
+                    <button
+                      onClick={handleApproveLines}
+                      disabled={bulkLoading || selectedEmployees.length === 0}
+                      className="bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 text-[#6366F1] px-3.5 py-1.5 rounded-[6px] text-xs font-semibold tracking-wide transition-colors"
+                    >
+                      Verify & process
+                    </button>
+                    <button
+                      onClick={handleSubmitForApproval}
+                      disabled={bulkLoading}
+                      className="bg-[#6366F1] hover:bg-[#4F46E5] disabled:opacity-60 text-white px-3.5 py-1.5 rounded-[6px] text-xs font-semibold tracking-wide transition-colors shadow-sm"
+                    >
+                      Submit for CFO approval
+                    </button>
+                  </>
+                )}
               </div>
             </section>
 
@@ -706,25 +886,38 @@ export default function PayrollDashboard() {
                         <td className="p-4 text-center">
                           <select
                             value={emp.statusCode}
+                            disabled={dashboard?.payroll?.status !== 'DRAFT' && dashboard?.payroll?.status !== 'REJECTED'}
                             onChange={async (e) => {
                               if (!payrollId) return;
-                              await updatePayrollLineStatus(payrollId, emp.id, {
-                                status: e.target.value,
-                              });
-                              const empData = await fetchPayrollEmployees(payrollId, {
-                                search: search || undefined,
-                                department: department || undefined,
-                                status: mapStatusFilter(statusFilter),
-                                grade: gradeFilter || undefined,
-                                page,
-                                limit: 12,
-                              });
-                              setEmployees(empData.items);
-                              setPagination(empData.pagination);
-                              const dash = await fetchPayrollDashboard({
-                                period: selectedPeriodKey,
-                              });
-                              setDashboard(dash);
+                              const newStatus = e.target.value;
+                              const rollback = employeesRef.current;
+                              setEmployees((prev) =>
+                                prev.map((r) =>
+                                  r.id === emp.id ? { ...r, statusCode: newStatus, status: statusLabel(newStatus) } : r,
+                                ),
+                              );
+                              try {
+                                await updatePayrollLineStatus(payrollId, emp.id, {
+                                  status: newStatus,
+                                });
+                                const [empData, dash] = await Promise.all([
+                                  fetchPayrollEmployees(payrollId, {
+                                    search: search || undefined,
+                                    department: department || undefined,
+                                    status: mapStatusFilter(statusFilter),
+                                    grade: gradeFilter || undefined,
+                                    page,
+                                    limit: 12,
+                                  }),
+                                  fetchPayrollDashboard({ period: selectedPeriodKey }),
+                                ]);
+                                setEmployees(empData.items);
+                                setPagination(empData.pagination);
+                                setDashboard(dash);
+                              } catch {
+                                setEmployees(rollback);
+                                setError('Failed to update line item status.');
+                              }
                             }}
                             className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide border-0 cursor-pointer
                               ${emp.status === 'Processing' ? 'bg-purple-50 text-[#6366F1]' : ''}
@@ -841,7 +1034,7 @@ export default function PayrollDashboard() {
                   ))}
                 </div>
 
-                <div className="lg:col-span-4 lg:border-l lg:border-r lg:border-gray-150 lg:px-6">
+                <div className="lg:col-span-4 lg:border-l lg:border-r lg:border-gray-200 lg:px-6">
                   <span className="text-[10px] font-bold tracking-wider text-gray-400 uppercase block mb-3">
                     Templates
                   </span>
@@ -950,6 +1143,100 @@ export default function PayrollDashboard() {
           </>
         )}
       </main>
+
+      {bulkLoading && runLifecycleOverride && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden animate-[fadeIn_0.3s_ease-out]">
+            <div className="p-6 pb-4">
+              <div className="flex items-center gap-3 mb-1">
+                <Loader2 className="w-5 h-5 animate-spin text-[#6366F1]" />
+                <h3 className="text-base font-bold text-gray-900">Running Payroll</h3>
+              </div>
+              <p className="text-xs text-gray-400 ml-8">
+                Processing payroll for {periodLabel}
+              </p>
+            </div>
+
+            <div className="px-6 pb-2">
+              <div className="space-y-0">
+                {(runLifecycleOverride.steps ?? []).map((step, idx) => {
+                  const isComplete = step.status === 'complete';
+                  const isCurrent = step.status === 'current';
+                  const delay = idx * 0.12;
+                  return (
+                    <div
+                      key={idx}
+                      className="flex items-center gap-3 py-2.5 transition-all duration-500"
+                      style={{
+                        opacity: isComplete || isCurrent ? 1 : 0.35,
+                        animation: isCurrent ? `slideIn 0.4s ease-out ${delay}s both` : undefined,
+                      }}
+                    >
+                      <div
+                        className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-500
+                          ${isComplete ? 'bg-[#10B981] text-white scale-100' : ''}
+                          ${isCurrent ? 'bg-[#EEEEFF] border-2 border-[#6366F1] text-[#6366F1] scale-110' : ''}
+                          ${step.status === 'upcoming' ? 'bg-white border-2 border-gray-200 text-gray-300 scale-100' : ''}
+                        `}
+                      >
+                        {isComplete ? (
+                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                        ) : isCurrent ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#6366F1]" />
+                        ) : (
+                          <span className="text-xs font-bold">{step.step}</span>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span
+                          className={`text-sm font-semibold transition-colors duration-300
+                            ${isComplete ? 'text-gray-900' : ''}
+                            ${isCurrent ? 'text-[#6366F1]' : ''}
+                            ${step.status === 'upcoming' ? 'text-gray-400' : ''}
+                          `}
+                        >
+                          {step.label}
+                        </span>
+                      </div>
+                      {isComplete && (
+                        <Check className="w-4 h-4 text-[#10B981] stroke-[2.5] animate-[scaleIn_0.3s_ease-out]" />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="px-6 pb-6 pt-2">
+              <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[#6366F1] rounded-full transition-all duration-700 ease-out"
+                  style={{ width: `${Math.min(runLifecycleOverride.progressPct ?? 0, 100)}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-gray-400 mt-1.5 text-right font-medium">
+                {runLifecycleOverride.progressPct ?? 0}%
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+
+    <style dangerouslySetInnerHTML={{__html: `
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes scaleIn {
+  from { transform: scale(0); }
+  to { transform: scale(1); }
+}
+    `}} />
+    </>
   );
 }

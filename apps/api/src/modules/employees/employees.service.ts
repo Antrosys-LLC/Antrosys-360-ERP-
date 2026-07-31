@@ -1,4 +1,4 @@
-import { Department, EmploymentStatus, Gender, PayslipStatus, AttendanceStatus } from '@prisma/client';
+import { Department, EmploymentStatus, Gender, PayslipStatus, AttendanceStatus, LeaveRequestStatus } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { enumOptions } from '../../shared/enum-labels';
 import { normalizeDepartment, resolveDepartmentTeam } from '../../shared/department/department-utils';
@@ -136,10 +136,14 @@ export async function updateEmployee(id: string, data: UpdatePersonalBody) {
   if (data.dateOfBirth) {
     updateData.dateOfBirth = new Date(data.dateOfBirth);
   }
-  if (data.gender) {
-    const gender = normalizeGender(data.gender);
-    if (gender) updateData.gender = gender;
-    else delete updateData.gender;
+  if (data.gender !== undefined) {
+    if (data.gender) {
+      const gender = normalizeGender(data.gender);
+      if (gender) updateData.gender = gender;
+      else delete updateData.gender;
+    } else {
+      delete updateData.gender;
+    }
   }
 
   const updated = await prisma.employee.update({
@@ -287,7 +291,7 @@ export async function listManagerOptions(query: ManagerOptionsQuery) {
   const employees = await prisma.employee.findMany({
     where: {
       isActive: true,
-      user: { role: { not: 'EMPLOYEE' } },
+      user: { role: { not: 'EMPLOYEE' }, isActive: true },
       ...(query.excludeId ? { id: { not: query.excludeId } } : {}),
     },
     select: {
@@ -477,6 +481,15 @@ export async function downloadEmployeePayslip(employeeId: string, payslipId: str
           employeeCode: true,
           department: true,
           designation: true,
+          employeeType: true,
+          location: true,
+          joiningDate: true,
+        },
+      },
+      payroll: {
+        select: {
+          periodStart: true,
+          periodEnd: true,
         },
       },
     },
@@ -484,26 +497,78 @@ export async function downloadEmployeePayslip(employeeId: string, payslipId: str
 
   if (!payslip) return null;
 
-  const employeeName = `${payslip.employee.firstName} ${payslip.employee.lastName}`;
+  const employee = payslip.employee;
+  const employeeName = `${employee.firstName} ${employee.lastName}`;
   const periodLabel = payslipPeriodLabel(new Date(payslip.periodStart));
-  const filename = `payslip-${payslip.employee.employeeCode ?? employeeId}-${periodLabel.replace(/\s+/g, '-')}.pdf`;
+  const periodStart = payslip.payroll?.periodStart ?? payslip.periodStart;
+  const periodEnd = payslip.payroll?.periodEnd ?? payslip.periodEnd;
+
+  const filename = `payslip-${employee.employeeCode ?? employeeId}-${periodLabel.replace(/\s+/g, '-')}.pdf`;
+
+  const lineItem = await prisma.payrollLineItem.findUnique({
+    where: { payslipId: payslip.id },
+    select: {
+      baseSalary: true,
+      allowances: true,
+      overtime: true,
+      bonuses: true,
+      incomeTax: true,
+      providentFund: true,
+      healthInsurance: true,
+    },
+  });
+
+  const year = new Date(payslip.periodStart).getFullYear();
+  const yearStart = new Date(Date.UTC(year, 0, 1));
+  const yearEnd = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
+  const yearPayslips = await prisma.employeePayslip.findMany({
+    where: {
+      employeeId,
+      periodStart: { gte: yearStart, lte: yearEnd },
+    },
+    select: { grossPay: true, deductionsTotal: true, netPay: true },
+  });
+  let ytdGross = 0;
+  let ytdDeductions = 0;
+  let ytdNet = 0;
+  for (const p of yearPayslips) {
+    ytdGross += Number(p.grossPay);
+    ytdDeductions += Number(p.deductionsTotal);
+    ytdNet += Number(p.netPay);
+  }
+
+  const monthStr = String(periodStart.getMonth() + 1).padStart(2, '0');
+  const yearStr = String(periodStart.getFullYear());
+  const payslipNumber = `PSL-${employee.employeeCode ?? 'EMP'}-${monthStr}${yearStr}`;
 
   const buffer = await buildPayslipPdf({
     employeeName,
-    employeeCode: payslip.employee.employeeCode,
-    department: payslip.employee.department?.replace(/_/g, ' ') ?? null,
-    designation: payslip.employee.designation,
+    employeeCode: employee.employeeCode,
+    department: employee.department?.replace(/_/g, ' ') ?? null,
+    designation: employee.designation,
+    employeeType: employee.employeeType ?? null,
+    workLocation: employee.location ?? null,
+    joiningDate: employee.joiningDate,
+    periodStart,
+    periodEnd,
     periodLabel,
-    grossAmount: Number(payslip.grossPay),
-    grossPay: Number(payslip.grossPay),
-    deductionsAmount: Number(payslip.deductionsTotal),
-    deductionsTotal: Number(payslip.deductionsTotal),
-    taxAmount: Number(payslip.taxAmount),
-    netAmount: Number(payslip.netPay),
-    netPay: Number(payslip.netPay),
+    payslipNumber,
+    paymentDate: payslip.paidAt ?? payslip.createdAt,
     currencyCode: payslip.currencyCode,
     status: PAYSLIP_STATUS_LABEL[payslip.status],
-    generatedAt: new Date(),
+    basicSalary: Number(lineItem?.baseSalary ?? payslip.grossPay),
+    allowances: Number(lineItem?.allowances ?? 0),
+    overtime: Number(lineItem?.overtime ?? 0),
+    bonuses: Number(lineItem?.bonuses ?? 0),
+    grossPay: Number(payslip.grossPay),
+    incomeTax: Number(lineItem?.incomeTax ?? payslip.taxAmount),
+    providentFund: Number(lineItem?.providentFund ?? 0),
+    healthInsurance: Number(lineItem?.healthInsurance ?? 0),
+    deductionsTotal: Number(payslip.deductionsTotal),
+    netPay: Number(payslip.netPay),
+    ytdGross,
+    ytdDeductions,
+    ytdNet,
   });
 
   return { buffer, filename };
@@ -605,6 +670,43 @@ function countPastWorkingDays(
   return count;
 }
 
+async function leaveDayNumbersForMonth(
+  employeeId: string,
+  month: number,
+  year: number,
+): Promise<Set<number>> {
+  const { monthStart, monthEnd } = attendanceMonthBounds(month, year);
+  const leaves = await prisma.leaveRequest.findMany({
+    where: {
+      employeeId,
+      status: LeaveRequestStatus.APPROVED,
+      startDate: { lte: monthEnd },
+      endDate: { gte: monthStart },
+    },
+    select: { startDate: true, endDate: true },
+  });
+
+  const days = new Set<number>();
+  for (const leave of leaves) {
+    const start = startOfUtcDay(leave.startDate);
+    const end = startOfUtcDay(leave.endDate);
+    for (let cursor = new Date(start); cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+      if (cursor.getUTCFullYear() === year && cursor.getUTCMonth() + 1 === month) {
+        days.add(cursor.getUTCDate());
+      }
+    }
+  }
+  return days;
+}
+
+async function fetchEmployeeAttendanceRecords(employeeId: string, month: number, year: number) {
+  const { monthStart, monthEnd } = attendanceMonthBounds(month, year);
+  return prisma.attendance.findMany({
+    where: { employeeId, date: { gte: monthStart, lte: monthEnd } },
+    orderBy: { date: 'desc' },
+  });
+}
+
 export async function getEmployeeAttendanceLogs(employeeId: string, query: EmployeeAttendanceQuery) {
   const employee = await prisma.employee.findUnique({
     where: { id: employeeId },
@@ -620,14 +722,8 @@ export async function getEmployeeAttendanceLogs(employeeId: string, query: Emplo
   const { monthStart, monthEnd } = attendanceMonthBounds(query.month, query.year);
   const availableMonths = listAvailableAttendanceMonths(employee.joiningDate);
 
-  const [attendanceRecords, holidays] = await Promise.all([
-    prisma.attendance.findMany({
-      where: {
-        employeeId,
-        date: { gte: monthStart, lte: monthEnd },
-      },
-      orderBy: { date: 'desc' },
-    }),
+  const [attendanceRecords, holidays, leaveDayNumbers] = await Promise.all([
+    fetchEmployeeAttendanceRecords(employeeId, query.month, query.year),
     prisma.companyHoliday.findMany({
       where: {
         OR: [
@@ -636,6 +732,7 @@ export async function getEmployeeAttendanceLogs(employeeId: string, query: Emplo
         ],
       },
     }),
+    leaveDayNumbersForMonth(employeeId, query.month, query.year),
   ]);
 
   const holidayRanges = holidays.map((holiday) => ({
@@ -657,6 +754,7 @@ export async function getEmployeeAttendanceLogs(employeeId: string, query: Emplo
     attendanceMap,
     holidayRanges,
     halfDayThreshold,
+    leaveDayNumbers,
   );
 
   const profileWeeks = calendar.weeks.map((week) =>
@@ -755,26 +853,39 @@ export async function exportEmployeeAttendanceCsv(
     return null;
   }
 
-  const logs = await getEmployeeAttendanceLogs(employeeId, query);
-  if (!logs) {
-    return null;
-  }
-
-  const { monthStart, monthEnd } = attendanceMonthBounds(query.month, query.year);
-  const attendanceRecords = await prisma.attendance.findMany({
-    where: {
-      employeeId,
-      date: { gte: monthStart, lte: monthEnd },
-    },
-    orderBy: { date: 'asc' },
-  });
+  const attendanceRecords = await fetchEmployeeAttendanceRecords(employeeId, query.month, query.year);
 
   let totalHours = 0;
   let totalOvertime = 0;
+  let attendedDays = 0;
   for (const record of attendanceRecords) {
     totalHours += record.hours ? Number(record.hours) : 0;
     totalOvertime += record.overtimeHours ? Number(record.overtimeHours) : 0;
+    if (
+      record.status === AttendanceStatus.PRESENT ||
+      record.status === AttendanceStatus.LATE ||
+      record.status === AttendanceStatus.HALF_DAY
+    ) {
+      attendedDays += 1;
+    }
   }
+
+  const { monthStart, monthEnd } = attendanceMonthBounds(query.month, query.year);
+  const holidays = await prisma.companyHoliday.findMany({
+    where: {
+      OR: [
+        { date: { gte: monthStart, lte: monthEnd } },
+        { endDate: { gte: monthStart }, date: { lte: monthEnd } },
+      ],
+    },
+  });
+  const holidayRanges = holidays.map((holiday) => ({
+    date: holiday.date,
+    endDate: holiday.endDate,
+  }));
+  const workingDaysPast = countPastWorkingDays(query.month, query.year, holidayRanges);
+  const attendancePercentage =
+    workingDaysPast > 0 ? Math.round((attendedDays / workingDaysPast) * 100) : 0;
 
   const csvEmployee = {
     firstName: employee.firstName,
@@ -791,7 +902,7 @@ export async function exportEmployeeAttendanceCsv(
     {
       totalHours,
       totalOvertime,
-      attendancePercentage: logs.summary.attendancePercentage,
+      attendancePercentage,
     },
   );
 
