@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
-import { Mail, Phone, Hash, Pencil, CheckCircle2, ChevronRight, ChevronDown, Download, Loader2, Trash2 } from 'lucide-react';
+import { Mail, Phone, Hash, Pencil, CheckCircle2, ChevronLeft, ChevronRight, ChevronDown, Download, Loader2, Trash2, CalendarDays } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import axios from 'axios';
@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { usePermission } from '@/hooks/usePermission';
 
 type ProfileLoadError = 'missing_id' | 'not_found' | 'forbidden' | 'network';
 
@@ -138,6 +139,108 @@ interface AttendanceApiData {
     totalHours: string;
     overtimeHours: string;
     attendancePercentage: number;
+  };
+}
+
+type LeaveStatusFilter = 'ALL' | 'PENDING' | 'PENDING_OPS_HEAD' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+interface LeaveBalanceItem {
+  type: string;
+  totalDays: number;
+  takenDays: number;
+  remainingDays: number;
+}
+
+interface LeaveApiRawRow {
+  id: string;
+  type: string;
+  startDate: string;
+  endDate: string;
+  durationDays: number;
+  status: string;
+  approvedBy?: { firstName: string; lastName: string } | null;
+  reason?: string | null;
+}
+
+interface LeaveHistoryRow {
+  id: string;
+  range: string;
+  type: string;
+  days: number;
+  status: string;
+  statusColor: string;
+  approver: string;
+  reason: string | null;
+}
+
+const MAX_VISIBLE_LEAVE_ROWS = 8;
+const LEAVE_TABLE_HEADER_PX = 41;
+const LEAVE_TABLE_ROW_PX = 44;
+const LEAVE_PAGE_SIZE = 20;
+
+const LEAVE_STATUS_FILTERS: { value: LeaveStatusFilter; label: string }[] = [
+  { value: 'ALL', label: 'All' },
+  { value: 'PENDING', label: 'Pending' },
+  { value: 'PENDING_OPS_HEAD', label: 'Ops review' },
+  { value: 'APPROVED', label: 'Approved' },
+  { value: 'REJECTED', label: 'Rejected' },
+  { value: 'CANCELLED', label: 'Cancelled' },
+];
+
+const LEAVE_TYPE_LABELS: Record<string, string> = {
+  ANNUAL: 'Annual',
+  SICK: 'Sick',
+  CASUAL: 'Casual',
+  WFH: 'WFH',
+  UNPAID: 'Unpaid',
+  OTHER: 'Other',
+};
+
+const LEAVE_TYPE_COLORS: Record<string, string> = {
+  ANNUAL: 'bg-[#7B6AE6]/10 text-[#7B6AE6]',
+  SICK: 'bg-rose-100/60 text-rose-700',
+  CASUAL: 'bg-amber-100/70 text-amber-800',
+  WFH: 'bg-blue-50 text-blue-500',
+  UNPAID: 'bg-slate-100 text-slate-600',
+  OTHER: 'bg-emerald-100/70 text-emerald-800',
+};
+
+function getLeaveStatusColor(status: string): string {
+  switch (status) {
+    case 'APPROVED':
+      return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    case 'PENDING':
+      return 'bg-amber-50 text-amber-700 border-amber-200';
+    case 'PENDING_OPS_HEAD':
+      return 'bg-blue-50 text-blue-700 border-blue-200';
+    case 'REJECTED':
+      return 'bg-rose-50 text-rose-700 border-rose-200';
+    case 'CANCELLED':
+      return 'bg-slate-100 text-slate-600 border-slate-200';
+    default:
+      return 'bg-muted/40 text-muted-foreground border-border';
+  }
+}
+
+function formatDisplayDate(value: string | Date | null | undefined): string {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '—';
+  return parsed.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function toLeaveHistoryRow(raw: LeaveApiRawRow): LeaveHistoryRow {
+  const start = formatDisplayDate(raw.startDate);
+  const end = formatDisplayDate(raw.endDate);
+  return {
+    id: raw.id,
+    range: start === end ? start : `${start} – ${end}`,
+    type: LEAVE_TYPE_LABELS[raw.type] ?? raw.type,
+    days: raw.durationDays,
+    status: raw.status,
+    statusColor: getLeaveStatusColor(raw.status),
+    approver: raw.approvedBy ? `${raw.approvedBy.firstName} ${raw.approvedBy.lastName}` : '—',
+    reason: raw.reason ?? null,
   };
 }
 
@@ -434,6 +537,7 @@ function EmployeeDashboardContent() {
   const idParam = searchParams.get('id') ?? searchParams.get('employeeId');
   const { toast } = useToast();
   const [canEditProfile, setCanEditProfile] = useState(false);
+  const canViewLeaveHistory = usePermission('leave:read');
 
   const employeesDirectoryHref = '/hr/employees';
   const employeesDirectoryLabel = 'Employees';
@@ -537,6 +641,15 @@ function EmployeeDashboardContent() {
   const [attendanceData, setAttendanceData] = useState<AttendanceApiData | null>(null);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [attendanceExporting, setAttendanceExporting] = useState(false);
+
+  const [leaveBalances, setLeaveBalances] = useState<LeaveBalanceItem[]>([]);
+  const [leaveRows, setLeaveRows] = useState<LeaveHistoryRow[]>([]);
+  const [leaveTotal, setLeaveTotal] = useState(0);
+  const [leaveLoading, setLeaveLoading] = useState(false);
+  const [leaveAccessDenied, setLeaveAccessDenied] = useState(false);
+  const [leaveStatusFilter, setLeaveStatusFilter] = useState<LeaveStatusFilter>('ALL');
+  const [leaveTypeFilter, setLeaveTypeFilter] = useState('ALL');
+  const [leavePage, setLeavePage] = useState(1);
 
   const fetchPayslips = useCallback(async (year: number) => {
     if (!idParam) return;
@@ -749,6 +862,14 @@ function EmployeeDashboardContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, idParam]);
 
+  useEffect(() => {
+    if (activeTab === 'Leave history' && idParam && canViewLeaveHistory) {
+      fetchLeaveHistory(leavePage, leaveStatusFilter, leaveTypeFilter);
+    }
+    // Refetch only when opening the tab or switching employees
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, idParam]);
+
   const handlePayslipsYearChange = (year: number) => {
     setPayslipsYear(year);
     fetchPayslips(year);
@@ -759,6 +880,64 @@ function EmployeeDashboardContent() {
     if (!month || !year) return;
     setAttendanceMonth({ month, year });
     fetchAttendance(month, year);
+  };
+
+  const fetchLeaveHistory = useCallback(async (page: number, status: LeaveStatusFilter, type: string) => {
+    if (!idParam) return;
+
+    try {
+      setLeaveLoading(true);
+      setLeaveAccessDenied(false);
+      const { default: apiClient } = await import('@/lib/api-client');
+      const params: Record<string, string | number> = {
+        employeeId: idParam,
+        page,
+        limit: LEAVE_PAGE_SIZE,
+      };
+      if (status !== 'ALL') params.status = status;
+      if (type !== 'ALL') params.type = type;
+
+      const [balancesRes, requestsRes] = await Promise.all([
+        apiClient.get('/operations/leave/balances', { params: { employeeId: idParam } }),
+        apiClient.get('/operations/leave', { params }),
+      ]);
+      setLeaveBalances(balancesRes.data.data as LeaveBalanceItem[]);
+      setLeaveRows((requestsRes.data.data.items as LeaveApiRawRow[]).map(toLeaveHistoryRow));
+      setLeaveTotal(requestsRes.data.data.total);
+    } catch (error) {
+      console.error('Failed to load leave history:', error);
+      if (axios.isAxiosError(error) && error.response?.status === 403) {
+        setLeaveRows([]);
+        setLeaveBalances([]);
+        setLeaveTotal(0);
+        setLeaveAccessDenied(true);
+        return;
+      }
+      toast({
+        variant: 'destructive',
+        title: 'Failed to load leave history',
+        description: 'Could not fetch leave records. Please try again.',
+      });
+    } finally {
+      setLeaveLoading(false);
+    }
+  }, [idParam, toast]);
+
+  const handleLeaveStatusFilterChange = (status: LeaveStatusFilter) => {
+    setLeaveStatusFilter(status);
+    setLeavePage(1);
+    fetchLeaveHistory(1, status, leaveTypeFilter);
+  };
+
+  const handleLeaveTypeFilterChange = (type: string) => {
+    setLeaveTypeFilter(type);
+    setLeavePage(1);
+    fetchLeaveHistory(1, leaveStatusFilter, type);
+  };
+
+  const handleLeavePageChange = (page: number) => {
+    setLeavePage(page);
+    fetchLeaveHistory(page, leaveStatusFilter, leaveTypeFilter);
   };
 
   const openEditProfile = () => {
@@ -979,7 +1158,7 @@ function EmployeeDashboardContent() {
     { name: "Assets" },
     { name: "Payslips" },
     { name: "Performance" },
-    { name: "Leave history" },
+    ...(canViewLeaveHistory ? [{ name: "Leave history" }] : []),
     { name: "Attendance logs" }
   ];
 
@@ -992,6 +1171,13 @@ function EmployeeDashboardContent() {
   const attendanceTableScrollable = attendanceRowCount > MAX_VISIBLE_ATTENDANCE_ROWS;
   const attendanceTableMaxHeight =
     ATTENDANCE_TABLE_HEADER_PX + ATTENDANCE_TABLE_ROW_PX * MAX_VISIBLE_ATTENDANCE_ROWS;
+
+  const leaveRowCount = leaveRows.length;
+  const leaveTableScrollable = leaveRowCount > MAX_VISIBLE_LEAVE_ROWS;
+  const leaveTableMaxHeight = LEAVE_TABLE_HEADER_PX + LEAVE_TABLE_ROW_PX * MAX_VISIBLE_LEAVE_ROWS;
+  const leaveTotalPages = Math.max(1, Math.ceil(leaveTotal / LEAVE_PAGE_SIZE));
+  const leaveRowsStart = leaveTotal === 0 ? 0 : (leavePage - 1) * LEAVE_PAGE_SIZE + 1;
+  const leaveRowsEnd = Math.min(leavePage * LEAVE_PAGE_SIZE, leaveTotal);
 
   const selectedAttendanceMonthKey = attendanceMonthKey(attendanceMonth.month, attendanceMonth.year);
   const attendanceMonthSelectOptions = attendanceMonthOptions.some(
@@ -1372,14 +1558,177 @@ fill="none"
           </div>
         )}
 
-        {/* LEAVE HISTORY STUB */}
+        {/* LEAVE HISTORY VIEW */}
         {activeTab === "Leave history" && (
-          <div className="bg-white text-card-foreground border border-border rounded-[var(--radius)] p-12 shadow-sm flex flex-col items-center justify-center text-center min-h-[320px]">
-            <div className="w-14 h-14 rounded-full bg-[#7B6AE6]/10 flex items-center justify-center mb-4">
-              <Phone className="w-6 h-6 text-[#7B6AE6]" />
+          <div className="space-y-6">
+            {leaveBalances.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                {leaveBalances.map((balance) => (
+                  <div
+                    key={balance.type}
+                    className="bg-white text-card-foreground border border-border rounded-[var(--radius)] p-4 shadow-sm"
+                  >
+                    <span
+                      className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        LEAVE_TYPE_COLORS[balance.type] ?? 'bg-muted/40 text-muted-foreground'
+                      }`}
+                    >
+                      {LEAVE_TYPE_LABELS[balance.type] ?? balance.type}
+                    </span>
+                    <div className="mt-3 text-xl font-bold text-foreground">
+                      {balance.takenDays}
+                      <span className="text-xs font-medium text-muted-foreground"> / {balance.totalDays}</span>
+                    </div>
+                    <div className="mt-1 text-[11px] font-semibold text-muted-foreground">
+                      {balance.remainingDays} remaining
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="bg-white text-card-foreground border border-border rounded-[var(--radius)] overflow-hidden shadow-sm flex flex-col">
+              <div className="p-6 pb-4 flex flex-col lg:flex-row justify-between lg:items-center gap-4">
+                <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight">Leave history</h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1 bg-muted/40 border border-border rounded-full p-1 overflow-x-auto no-scrollbar">
+                    {LEAVE_STATUS_FILTERS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => handleLeaveStatusFilterChange(option.value)}
+                        disabled={leaveLoading}
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-bold whitespace-nowrap transition-colors disabled:opacity-50 ${
+                          leaveStatusFilter === option.value
+                            ? 'bg-[#7B6AE6] text-white shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="relative">
+                    <select
+                      value={leaveTypeFilter}
+                      onChange={(e) => handleLeaveTypeFilterChange(e.target.value)}
+                      disabled={leaveLoading}
+                      className="appearance-none bg-white border border-border rounded-[var(--radius)] pl-3 pr-8 py-1.5 text-xs font-semibold text-foreground shadow-sm focus:outline-none cursor-pointer disabled:opacity-50"
+                    >
+                      <option value="ALL">All types</option>
+                      {Object.entries(LEAVE_TYPE_LABELS).map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3.5 h-3.5 text-muted-foreground absolute right-2.5 top-2.5 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+
+              {leaveLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                </div>
+              ) : leaveAccessDenied ? (
+                <div className="flex flex-col items-center justify-center text-center py-16 px-6">
+                  <div className="w-14 h-14 rounded-full bg-rose-100/60 flex items-center justify-center mb-4">
+                    <CalendarDays className="w-6 h-6 text-rose-600" />
+                  </div>
+                  <h3 className="text-base font-bold text-foreground tracking-tight mb-1">No access to leave records</h3>
+                  <p className="text-sm text-muted-foreground max-w-md">
+                    You can only view leave history for yourself or employees within your scope.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div
+                    className={`overflow-x-auto w-full ${leaveTableScrollable ? 'overflow-y-auto custom-scrollbar' : ''}`}
+                    style={leaveTableScrollable ? { maxHeight: leaveTableMaxHeight } : undefined}
+                  >
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className={`border-t border-b border-border text-muted-foreground font-bold bg-white ${leaveTableScrollable ? 'sticky top-0 z-10' : ''}`}>
+                          <th className="px-6 py-3 font-semibold">Date range</th>
+                          <th className="px-6 py-3 font-semibold">Type</th>
+                          <th className="px-6 py-3 font-semibold text-right">Days</th>
+                          <th className="px-6 py-3 font-semibold">Status</th>
+                          <th className="px-6 py-3 font-semibold">Approver</th>
+                          <th className="px-6 py-3 font-semibold">Reason</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {leaveRows.length ? (
+                          leaveRows.map((row) => (
+                            <tr
+                              key={row.id}
+                              className="border-b last:border-0 border-border bg-white hover:bg-muted/10 transition-colors"
+                            >
+                              <td className="px-6 py-3.5 font-bold text-foreground whitespace-nowrap">{row.range}</td>
+                              <td className="px-6 py-3.5">
+                                <span
+                                  className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    LEAVE_TYPE_COLORS[row.type] ?? 'bg-muted/40 text-muted-foreground'
+                                  }`}
+                                >
+                                  {row.type}
+                                </span>
+                              </td>
+                              <td className="px-6 py-3.5 text-right font-bold text-foreground">{row.days}</td>
+                              <td className="px-6 py-3.5">
+                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${row.statusColor}`}>
+                                  {row.status === 'PENDING_OPS_HEAD' ? 'Pending ops review' : row.status.replace(/_/g, ' ')}
+                                </span>
+                              </td>
+                              <td className="px-6 py-3.5 font-medium text-muted-foreground">{row.approver}</td>
+                              <td className="px-6 py-3.5 font-medium text-muted-foreground max-w-[240px] truncate" title={row.reason ?? undefined}>
+                                {row.reason ?? '—'}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={6} className="px-6 py-12 text-center text-sm text-muted-foreground">
+                              No leave requests recorded.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="p-6 pt-4 flex flex-wrap items-center justify-between gap-3">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      {leaveTotal === 0
+                        ? 'No records'
+                        : `Showing ${leaveRowsStart}–${leaveRowsEnd} of ${leaveTotal} requests`}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleLeavePageChange(leavePage - 1)}
+                        disabled={leavePage <= 1 || leaveLoading}
+                        className="p-1.5 border border-border rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                        aria-label="Previous page"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <span className="text-xs font-bold text-foreground">
+                        Page {leavePage} of {leaveTotalPages}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleLeavePageChange(leavePage + 1)}
+                        disabled={leavePage >= leaveTotalPages || leaveLoading}
+                        className="p-1.5 border border-border rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                        aria-label="Next page"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
-            <h2 className="text-lg font-bold text-foreground tracking-tight mb-1">Leave history</h2>
-            <p className="text-sm text-muted-foreground max-w-md">Leave balances, approved requests, and absence records will appear here.</p>
           </div>
         )}
 

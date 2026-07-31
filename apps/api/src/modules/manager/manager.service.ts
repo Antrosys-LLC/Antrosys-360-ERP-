@@ -352,6 +352,10 @@ export async function updateLeaveStatus(leaveId: string, status: 'APPROVED' | 'R
     throw new Error('Leave request is not pending');
   }
 
+  if (leave.employeeId === employee.id) {
+    throw new Error('You cannot approve your own leave request');
+  }
+
   // Sub-manager check: can only edit leaves for direct team
   if (userRole === 'SUB_MANAGER') {
     const managedTeam = await prisma.team.findUnique({

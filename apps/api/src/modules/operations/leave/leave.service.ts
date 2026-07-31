@@ -4,10 +4,12 @@ import { DEFAULT_LEAVE_QUOTA } from "../../../shared/leaveBalance/leave-quota.co
 import { incrementLeaveBalanceOnApproval } from "../../../shared/leaveBalance/increment-leave-balance";
 import { notifyUsersByRoles } from "../../../shared/notifications/notify-by-role";
 import { requiresOpsHeadApproval as checkOpsHeadRequired } from "../../../shared/leaveBalance/requires-ops-head-approval";
+import { canUserReadEmployeeLeaves } from "../../employees/employees.scope";
 import type {
   CreateLeaveRequestBody,
   UpdateLeaveStatusBody,
   ListLeaveRequestsQuery,
+  ListLeaveBalancesQuery,
 } from "./leave.schema";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -37,6 +39,43 @@ function countCalendarDays(start: Date, end: Date): number {
 
 async function getEmployee(userId: string) {
   return prisma.employee.findFirst({ where: { userId } });
+}
+
+const LEAVE_APPROVER_ALL_ROLES = ["CEO", "HR_HEAD", "OPERATIONS_HEAD", "MANAGER"];
+
+/**
+ * Determines whether an approver may act on a leave request.
+ * - CEO / HR_HEAD / OPERATIONS_HEAD / MANAGER: any employee
+ * - SUB_MANAGER: employees within the team they manage (Team.managerId)
+ * - Everyone else: only direct reports (Employee.managerId)
+ * Self-approval is always rejected.
+ */
+async function canApproveEmployeeLeave(
+  userRole: string,
+  approverEmployeeId: string,
+  requesterEmployee: { id: string; managerId: string | null },
+): Promise<boolean> {
+  if (approverEmployeeId === requesterEmployee.id) return false;
+
+  if (LEAVE_APPROVER_ALL_ROLES.includes(userRole)) return true;
+
+  if (userRole === "SUB_MANAGER") {
+    const managedTeam = await prisma.team.findUnique({
+      where: { managerId: approverEmployeeId },
+      select: { id: true },
+    });
+
+    if (!managedTeam) return false;
+
+    const target = await prisma.employee.findUnique({
+      where: { id: requesterEmployee.id },
+      select: { teamId: true },
+    });
+
+    return target?.teamId === managedTeam.id;
+  }
+
+  return requesterEmployee.managerId === approverEmployeeId;
 }
 
 async function getLeaveBalance(
@@ -76,9 +115,20 @@ async function upsertLeaveBalance(
 }
 
 // ─── Leave Balances (monthly, resets 1st of each month) ────────────────────
-export async function getMyLeaveBalances(userId: string) {
+export async function getMyLeaveBalances(
+  userId: string,
+  userRole: string,
+  query: ListLeaveBalancesQuery = {},
+) {
   const employee = await getEmployee(userId);
   if (!employee) return [];
+
+  const targetEmployeeId = query.employeeId ?? employee.id;
+
+  if (targetEmployeeId !== employee.id) {
+    const allowed = await canUserReadEmployeeLeaves(userId, userRole, targetEmployeeId);
+    if (!allowed) throw new Error("FORBIDDEN_LEAVE_SCOPE");
+  }
 
   const year = new Date().getFullYear();
   const month = new Date().getMonth() + 1;
@@ -93,7 +143,7 @@ export async function getMyLeaveBalances(userId: string) {
 
   // Upsert ensures balances exist on first access
   const upserts = types.map((type) =>
-    upsertLeaveBalance(employee.id, type, year, month),
+    upsertLeaveBalance(targetEmployeeId, type, year, month),
   );
   const balances = await Promise.all(upserts);
 
@@ -114,11 +164,18 @@ export async function getMyLeaveBalances(userId: string) {
 export async function getLeaveRequests(
   query: ListLeaveRequestsQuery,
   userId: string,
+  userRole: string,
 ) {
   const { status, type, employeeId: filterEmployeeId, page, limit } = query;
   const skip = (page - 1) * limit;
 
   const requestingEmployee = await getEmployee(userId);
+
+  const targetEmployeeId = filterEmployeeId ?? requestingEmployee?.id;
+  if (targetEmployeeId && targetEmployeeId !== requestingEmployee?.id) {
+    const allowed = await canUserReadEmployeeLeaves(userId, userRole, targetEmployeeId);
+    if (!allowed) throw new Error("FORBIDDEN_LEAVE_SCOPE");
+  }
 
   const where: Prisma.LeaveRequestWhereInput = {
     ...(status && { status }),
@@ -261,6 +318,7 @@ export async function updateLeaveStatus(
   leaveId: string,
   body: UpdateLeaveStatusBody,
   approverId: string,
+  userRole: string,
 ) {
   const approverEmployee = await getEmployee(approverId);
   if (!approverEmployee) throw new Error("APPROVER_NO_EMPLOYEE_RECORD");
@@ -271,7 +329,28 @@ export async function updateLeaveStatus(
       include: { employee: true },
     });
     if (!existing) return null;
-    if (existing.status !== "PENDING") throw new Error("LEAVE_NOT_PENDING");
+    if (existing.status !== "PENDING" && existing.status !== "PENDING_OPS_HEAD") {
+      throw new Error("LEAVE_NOT_PENDING");
+    }
+
+    // ─── Approval scope checks ────────────────────────────────────────────
+    if (existing.status === "PENDING_OPS_HEAD") {
+      if (userRole !== "OPERATIONS_HEAD") {
+        throw new Error("OPS_HEAD_APPROVAL_REQUIRED");
+      }
+    } else {
+      const canApprove = await canApproveEmployeeLeave(
+        userRole,
+        approverEmployee.id,
+        existing.employee,
+      );
+      if (!canApprove) {
+        if (existing.employeeId === approverEmployee.id) {
+          throw new Error("SELF_APPROVAL_FORBIDDEN");
+        }
+        throw new Error("APPROVER_FORBIDDEN");
+      }
+    }
 
     const isFinalApproval =
       body.status === "APPROVED" && !existing.requiresOpsHeadApproval;
@@ -388,7 +467,7 @@ export async function getPendingApprovals(userId: string) {
   const where: Prisma.LeaveRequestWhereInput =
     subordinateIds.length > 0
       ? { status: "PENDING", employeeId: { in: subordinateIds } }
-      : { status: "PENDING" };
+      : { status: "PENDING", employeeId: "NONE" };
 
   return prisma.leaveRequest.findMany({
     where,

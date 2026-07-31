@@ -1,7 +1,7 @@
 import apiClient from '@/lib/api-client';
 
 export type LeaveType = 'ANNUAL' | 'SICK' | 'CASUAL' | 'WFH' | 'UNPAID' | 'OTHER';
-export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+export type LeaveStatus = 'PENDING' | 'PENDING_OPS_HEAD' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
 
 export interface ApiLeaveBalance {
   type: LeaveType;
@@ -56,6 +56,7 @@ export async function fetchLeaveMetrics(): Promise<ApiLeaveMetrics> {
 export async function fetchLeaveRequests(params?: {
   status?: LeaveStatus;
   type?: LeaveType;
+  employeeId?: string;
   page?: number;
   limit?: number;
 }): Promise<{ items: ApiLeaveRequest[]; total: number }> {
