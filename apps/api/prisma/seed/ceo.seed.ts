@@ -26,98 +26,92 @@ export async function seedCeoData() {
   const year = now.getUTCFullYear();
   const month = now.getUTCMonth() + 1;
 
-  await prisma.operatingExpense.deleteMany();
-  await prisma.companyMetricTarget.deleteMany();
-  await prisma.systemServiceHealth.deleteMany();
-
-  const existingClients = await prisma.client.findMany();
-  if (existingClients.length === 0) {
-    await prisma.client.createMany({
-      data: [
-        { name: 'Nexus Corp', email: 'billing@nexus.com', pipelineStage: 'ACTIVE', monthlyRevenue: dec(42000), annualRevenue: dec(504000), isAtRisk: false },
-        { name: 'Apex Holdings', email: 'finance@apex.com', pipelineStage: 'ACTIVE', monthlyRevenue: dec(28000), annualRevenue: dec(336000), isAtRisk: false },
-        { name: 'BrightX Corp', email: 'ap@brightx.com', pipelineStage: 'AT_RISK', monthlyRevenue: dec(18000), isAtRisk: true, renewalDueAt: dateOnly(year, month, 28) },
-        { name: 'Vanta AI', email: 'ops@vanta.ai', pipelineStage: 'NEGOTIATION', monthlyRevenue: dec(12000) },
-        { name: 'Orbit Systems', email: 'hello@orbit.io', pipelineStage: 'PROPOSAL' },
-        { name: 'Pulse Labs', email: 'team@pulselabs.com', pipelineStage: 'PROSPECT' },
-      ],
-    });
-  } else {
-    const updates = [
-      { name: 'Acme Corp', pipelineStage: 'ACTIVE' as const, monthlyRevenue: 35000, annualRevenue: 420000 },
-      { name: 'Globex Industries', pipelineStage: 'ACTIVE' as const, monthlyRevenue: 22000, annualRevenue: 264000 },
-      { name: 'Initech LLC', pipelineStage: 'AT_RISK' as const, monthlyRevenue: 15000, isAtRisk: true, renewalDueAt: dateOnly(year, month, 25) },
-    ];
-    for (const u of updates) {
-      await prisma.client.updateMany({
-        where: { name: u.name },
-        data: {
-          pipelineStage: u.pipelineStage,
-          monthlyRevenue: dec(u.monthlyRevenue),
-          annualRevenue: u.annualRevenue ? dec(u.annualRevenue) : undefined,
-          isAtRisk: u.isAtRisk ?? false,
-          renewalDueAt: u.renewalDueAt,
-        },
-      });
-    }
-    await prisma.client.createMany({
-      data: [
-        { name: 'Nexus Corp', email: 'billing@nexus.com', pipelineStage: 'ACTIVE', monthlyRevenue: dec(42000), annualRevenue: dec(504000) },
-        { name: 'Prospect Alpha', pipelineStage: 'PROSPECT' },
-        { name: 'Prospect Beta', pipelineStage: 'PROSPECT' },
-        { name: 'Deal Gamma', pipelineStage: 'PROPOSAL' },
-        { name: 'Deal Delta', pipelineStage: 'NEGOTIATION' },
-      ],
-      skipDuplicates: true,
-    });
-  }
-
   const periodStart = dateOnly(year, month, 1);
   const periodEnd = dateOnly(year, month, 28);
   const fyStart = dateOnly(year, 1, 1);
   const fyEnd = dateOnly(year, 12, 31);
 
-  await prisma.companyMetricTarget.createMany({
-    data: [
-      {
-        metricKey: 'monthly_revenue_target',
-        periodStart,
-        periodEnd,
-        targetValue: dec(1000000),
-        label: 'Monthly revenue target',
+  const metricTargets = [
+    {
+      metricKey: 'monthly_revenue_target',
+      periodStart,
+      periodEnd,
+      targetValue: dec(1000000),
+      label: 'Monthly revenue target',
+    },
+    {
+      metricKey: 'fy_headcount_plan',
+      periodStart: fyStart,
+      periodEnd: fyEnd,
+      targetValue: dec(300),
+      label: 'FY headcount plan',
+    },
+  ];
+
+  for (const m of metricTargets) {
+    await prisma.companyMetricTarget.upsert({
+      where: { metricKey_periodStart: { metricKey: m.metricKey, periodStart: m.periodStart } },
+      update: {},
+      create: {
+        metricKey: m.metricKey,
+        periodStart: m.periodStart,
+        periodEnd: m.periodEnd,
+        targetValue: m.targetValue,
+        label: m.label,
       },
-      {
-        metricKey: 'fy_headcount_plan',
-        periodStart: fyStart,
-        periodEnd: fyEnd,
-        targetValue: dec(300),
-        label: 'FY headcount plan',
-      },
-    ],
-  });
+    });
+  }
 
   const expenseDay = dateOnly(year, month, 10);
-  await prisma.operatingExpense.createMany({
-    data: [
-      { category: 'OPERATIONS', amount: dec(67000), expenseDate: expenseDay, createdByUserId: financeManager.id, description: 'Facilities & ops' },
-      { category: 'SOFTWARE', amount: dec(44000), expenseDate: expenseDay, createdByUserId: financeManager.id, description: 'SaaS licenses' },
-      { category: 'TAX_LEGAL', amount: dec(39000), expenseDate: expenseDay, createdByUserId: financeManager.id, description: 'Tax & legal retainer' },
-      { category: 'BENEFITS', amount: dec(29000), expenseDate: expenseDay, createdByUserId: financeManager.id, description: 'Employee benefits' },
-      { category: 'OTHER', amount: dec(18000), expenseDate: expenseDay, createdByUserId: financeManager.id, description: 'Misc overhead' },
-    ],
-  });
+  const expenses: {
+    category: 'OPERATIONS' | 'SOFTWARE' | 'TAX_LEGAL' | 'BENEFITS' | 'OTHER';
+    amount: Prisma.Decimal;
+    expenseDate: Date;
+    createdByUserId: string;
+    description: string;
+  }[] = [
+    { category: 'OPERATIONS', amount: dec(67000), expenseDate: expenseDay, createdByUserId: financeManager.id, description: 'Facilities & ops' },
+    { category: 'SOFTWARE', amount: dec(44000), expenseDate: expenseDay, createdByUserId: financeManager.id, description: 'SaaS licenses' },
+    { category: 'TAX_LEGAL', amount: dec(39000), expenseDate: expenseDay, createdByUserId: financeManager.id, description: 'Tax & legal retainer' },
+    { category: 'BENEFITS', amount: dec(29000), expenseDate: expenseDay, createdByUserId: financeManager.id, description: 'Employee benefits' },
+    { category: 'OTHER', amount: dec(18000), expenseDate: expenseDay, createdByUserId: financeManager.id, description: 'Misc overhead' },
+  ];
 
-  await prisma.systemServiceHealth.createMany({
-    data: [
-      { serviceKey: 'api_gateway', label: 'API gateway', status: 'OPERATIONAL' },
-      { serviceKey: 'stripe_billing', label: 'Stripe billing', status: 'OPERATIONAL' },
-      { serviceKey: 'payroll_engine', label: 'Payroll engine', status: 'OPERATIONAL' },
-      { serviceKey: 'auth_sso', label: 'Auth / SSO', status: 'OPERATIONAL' },
-      { serviceKey: 'file_storage', label: 'File storage', status: 'DEGRADED', notes: 'Elevated latency in EU region' },
-      { serviceKey: 'email_service', label: 'Email service', status: 'OPERATIONAL' },
-      { serviceKey: 'audit_logging', label: 'Audit logging', status: 'OPERATIONAL' },
-    ],
-  });
+  for (const expense of expenses) {
+    const existing = await prisma.operatingExpense.findFirst({
+      where: { category: expense.category, expenseDate: expense.expenseDate, description: expense.description },
+    });
+    if (existing) continue;
+    await prisma.operatingExpense.create({ data: expense });
+  }
+
+  const services: {
+    serviceKey: string;
+    label: string;
+    status: 'OPERATIONAL' | 'DEGRADED';
+    notes?: string;
+  }[] = [
+    { serviceKey: 'api_gateway', label: 'API gateway', status: 'OPERATIONAL' },
+    { serviceKey: 'stripe_billing', label: 'Stripe billing', status: 'OPERATIONAL' },
+    { serviceKey: 'payroll_engine', label: 'Payroll engine', status: 'OPERATIONAL' },
+    { serviceKey: 'auth_sso', label: 'Auth / SSO', status: 'OPERATIONAL' },
+    { serviceKey: 'file_storage', label: 'File storage', status: 'DEGRADED', notes: 'Elevated latency in EU region' },
+    { serviceKey: 'email_service', label: 'Email service', status: 'OPERATIONAL' },
+    { serviceKey: 'audit_logging', label: 'Audit logging', status: 'OPERATIONAL' },
+  ];
+
+  for (const service of services) {
+    await prisma.systemServiceHealth.upsert({
+      where: { serviceKey: service.serviceKey },
+      update: {},
+      create: {
+        serviceKey: service.serviceKey,
+        label: service.label,
+        status: service.status,
+        notes: service.notes ?? null,
+      },
+    });
+  }
 
   const hrEmployee = hrHead ? await prisma.employee.findUnique({ where: { userId: hrHead.id } }) : null;
   const payroll = await prisma.payroll.findFirst({ where: { status: 'PENDING_APPROVAL' } });
@@ -141,14 +135,20 @@ export async function seedCeoData() {
     }
   }
 
-  await prisma.auditLog.createMany({
-    data: [
-      { userId: financeManager.id, action: 'Payroll run initiated', createdAt: new Date(Date.now() - 4 * 60000) },
-      { userId: financeManager.id, action: 'Client Nexus Corp — Invoice sent $42K', createdAt: new Date(Date.now() - 3 * 3600000) },
-      { userId: ceoUser.id, action: 'Audit log exported for board package', createdAt: new Date(Date.now() - 5 * 3600000) },
-      { userId: ceoUser.id, action: 'Override request escalated to CEO', createdAt: new Date(Date.now() - 2 * 3600000) },
-    ],
-  });
+  const auditLogs = [
+    { userId: financeManager.id, action: 'Payroll run initiated', createdAt: new Date(Date.now() - 4 * 60000) },
+    { userId: financeManager.id, action: 'Client Nexus Corp — Invoice sent $42K', createdAt: new Date(Date.now() - 3 * 3600000) },
+    { userId: ceoUser.id, action: 'Audit log exported for board package', createdAt: new Date(Date.now() - 5 * 3600000) },
+    { userId: ceoUser.id, action: 'Override request escalated to CEO', createdAt: new Date(Date.now() - 2 * 3600000) },
+  ];
+
+  for (const log of auditLogs) {
+    const existing = await prisma.auditLog.findFirst({
+      where: { userId: log.userId, action: log.action },
+    });
+    if (existing) continue;
+    await prisma.auditLog.create({ data: log });
+  }
 
   console.log('✅ CEO dashboard seed data created');
 }

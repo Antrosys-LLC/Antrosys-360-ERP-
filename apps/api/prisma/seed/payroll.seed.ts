@@ -132,6 +132,9 @@ export async function seedPayrollData(prisma: PrismaClient) {
   const financeManager = await prisma.user.findUnique({
     where: { email: 'finance_manager@antrosys.com' },
   });
+  const cfoUser = await prisma.user.findUnique({
+    where: { email: 'cfo@antrosys.com' },
+  });
 
   const employees = await prisma.employee.findMany({
     where: { isActive: true, employmentStatus: 'ACTIVE' },
@@ -151,12 +154,7 @@ export async function seedPayrollData(prisma: PrismaClient) {
     }
     await prisma.employeeCompensation.upsert({
       where: { employeeId: emp.id },
-      update: {
-        baseSalary: toPayrollDecimal(defaults.base),
-        allowances: toPayrollDecimal(defaults.allowances),
-        currencyCode: APP_DEFAULT_CURRENCY,
-        effectiveFrom: start,
-      },
+      update: {},
       create: {
         employeeId: emp.id,
         baseSalary: toPayrollDecimal(defaults.base),
@@ -169,15 +167,17 @@ export async function seedPayrollData(prisma: PrismaClient) {
 
   console.log(`  ✅ Seeded compensation for ${employees.length} employees`);
 
-  let payroll = await prisma.payroll.findFirst({
-    where: { periodStart: start, status: { not: 'REJECTED' } },
-    orderBy: { createdAt: 'desc' },
+  // Current-month batch — created once with PENDING_APPROVAL so the CFO/CEO
+  // dashboards can surface its approval task. Never overwritten on re-run.
+  const batchNumber = `PAY-${year}-${String(month).padStart(2, '0')}`;
+  let payroll = await prisma.payroll.findUnique({
+    where: { batchNumber },
   });
 
   if (!payroll) {
     payroll = await prisma.payroll.create({
       data: {
-        batchNumber: `PAY-${year}-${String(month).padStart(2, '0')}`,
+        batchNumber,
         periodStart: start,
         periodEnd: end,
         totalGross: toPayrollDecimal(0),
@@ -185,23 +185,45 @@ export async function seedPayrollData(prisma: PrismaClient) {
         employeeCount: 0,
         currencyCode: APP_DEFAULT_CURRENCY,
         lifecycleStep: 'CFO_APPROVAL',
-        status: 'DRAFT',
+        status: 'PENDING_APPROVAL',
         submittedByUserId: financeManager?.id,
         payslipConfig: { email: true, pdf: true, whatsapp: false, template: 'standard' },
       },
     });
-  } else {
-    await prisma.payroll.update({
-      where: { id: payroll.id },
-      data: {
-        lifecycleStep: 'CFO_APPROVAL',
-        currencyCode: APP_DEFAULT_CURRENCY,
-        payslipConfig: payroll.payslipConfig ?? { email: true, pdf: true, whatsapp: false, template: 'standard' },
-      },
-    });
   }
 
-  await prisma.payrollLineItem.deleteMany({ where: { payrollId: payroll.id } });
+  // Historical (last month) batch for the payroll list — created once, never
+  // overwritten. Previously owned by cfo.seed, now owned here.
+  const prev = monthsBeforeCurrent(1)[0];
+  const histStart = new Date(Date.UTC(prev.year, prev.month - 1, 16));
+  const histEnd = new Date(Date.UTC(prev.year, prev.month - 1, 28));
+  const histBatchNumber = `PAY-${prev.year}-${String(prev.month).padStart(2, '0')}`;
+  await prisma.payroll.upsert({
+    where: { batchNumber: histBatchNumber },
+    update: {},
+    create: {
+      batchNumber: histBatchNumber,
+      periodStart: histStart,
+      periodEnd: histEnd,
+      totalGross: toPayrollDecimal(880000),
+      totalNet: toPayrollDecimal(810000),
+      taxWithheld: toPayrollDecimal(70000),
+      employeeCount: 245,
+      status: 'PAID',
+      submittedByUserId: financeManager?.id,
+      approvedByUserId: cfoUser?.id,
+      approvedAt: new Date(Date.UTC(prev.year, prev.month - 1, 29)),
+      paidAt: new Date(Date.UTC(prev.year, prev.month - 1, 30)),
+    },
+  });
+
+  const existingLineCount = await prisma.payrollLineItem.count({
+    where: { payrollId: payroll.id },
+  });
+  if (existingLineCount > 0) {
+    console.log(`  ⏭️ Payroll batch ${payroll.batchNumber} already has line items, skipping`);
+    return;
+  }
 
   let totalGross = 0;
   let totalNet = 0;

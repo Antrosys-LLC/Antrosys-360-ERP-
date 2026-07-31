@@ -33,18 +33,6 @@ export async function seedClientsData() {
   const year = now.getUTCFullYear();
   const month = now.getUTCMonth() + 1;
 
-  await prisma.clientTimelineEvent.deleteMany();
-  await prisma.clientTask.deleteMany();
-  await prisma.clientActivity.deleteMany();
-  await prisma.clientContact.deleteMany();
-  await prisma.clientRenewal.deleteMany();
-  await prisma.clientStatus.deleteMany();
-  await prisma.invoiceLineItem.deleteMany();
-  await prisma.invoice.deleteMany();
-  await prisma.document.updateMany({ where: { clientId: { not: null } }, data: { clientId: null } });
-  await prisma.clientProject.deleteMany();
-  await prisma.client.deleteMany();
-
   const clients: Prisma.ClientCreateInput[] = [
     {
       clientCode: 'CLT-001',
@@ -194,8 +182,10 @@ export async function seedClientsData() {
   const createdClients: Record<string, string> = {};
 
   for (const c of clients) {
-    const client = await prisma.client.create({
-      data: {
+    const client = await prisma.client.upsert({
+      where: { clientCode: c.clientCode! },
+      update: {},
+      create: {
         clientCode: c.clientCode,
         name: c.name,
         email: c.email,
@@ -216,9 +206,14 @@ export async function seedClientsData() {
     });
     createdClients[c.name] = client.id;
 
-    await prisma.clientStatus.create({
-      data: { clientId: client.id, status: c.pipelineStage!, note: 'Initial status' },
+    const existingStatus = await prisma.clientStatus.findFirst({
+      where: { clientId: client.id, status: c.pipelineStage! },
     });
+    if (!existingStatus) {
+      await prisma.clientStatus.create({
+        data: { clientId: client.id, status: c.pipelineStage!, note: 'Initial status' },
+      });
+    }
   }
 
   const nexusId = createdClients['Nexus Corp'];
@@ -227,15 +222,20 @@ export async function seedClientsData() {
   const brightxId = createdClients['BrightX Corp'];
   const cloudSyncId = createdClients['CloudSync'];
 
-  await prisma.clientContact.createMany({
-    data: [
-      { clientId: nexusId, name: 'Sarah Chen', email: 'sarah@nexus.com', phone: '+92 300 1112233', role: 'VP Engineering', isPrimary: true },
-      { clientId: nexusId, name: 'James Park', email: 'james@nexus.com', role: 'Finance Director', isPrimary: false },
-      { clientId: apexId, name: 'Maria Lopez', email: 'maria@apex.com', role: 'CFO', isPrimary: true },
-      { clientId: vantaId, name: 'Alex Kim', email: 'alex@vanta.ai', role: 'CTO', isPrimary: true },
-      { clientId: brightxId, name: 'Emma Wilson', email: 'emma@brightx.com', role: 'Head of Ops', isPrimary: true },
-    ],
-  });
+  const contacts = [
+    { clientId: nexusId, name: 'Sarah Chen', email: 'sarah@nexus.com', phone: '+92 300 1112233', role: 'VP Engineering', isPrimary: true },
+    { clientId: nexusId, name: 'James Park', email: 'james@nexus.com', role: 'Finance Director', isPrimary: false },
+    { clientId: apexId, name: 'Maria Lopez', email: 'maria@apex.com', role: 'CFO', isPrimary: true },
+    { clientId: vantaId, name: 'Alex Kim', email: 'alex@vanta.ai', role: 'CTO', isPrimary: true },
+    { clientId: brightxId, name: 'Emma Wilson', email: 'emma@brightx.com', role: 'Head of Ops', isPrimary: true },
+  ];
+  for (const contact of contacts) {
+    const existing = await prisma.clientContact.findFirst({
+      where: { clientId: contact.clientId, email: contact.email },
+    });
+    if (existing) continue;
+    await prisma.clientContact.create({ data: contact });
+  }
 
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -244,35 +244,50 @@ export async function seedClientsData() {
   const thu = new Date();
   thu.setDate(thu.getDate() + 4);
 
-  await prisma.clientTask.createMany({
-    data: [
-      { clientId: brightxId, title: 'Urgent check-in call with BrightX', priority: 'URGENT', status: 'PENDING', dueAt: new Date(year, month - 1, now.getDate(), 14, 0) },
-      { clientId: nexusId, title: 'Send Q3 invoice to Nexus', priority: 'MEDIUM', status: 'PENDING', dueAt: tomorrow },
-      { clientId: vantaId, title: 'Review support tickets for Vanta', priority: 'URGENT', status: 'PENDING', dueAt: tomorrow },
-      { clientId: createdClients['ByteForge'], title: 'Follow up on ByteForge negotiation', priority: 'HIGH', status: 'PENDING', dueAt: wed },
-      { clientId: createdClients['OrbitTech'], title: 'Initial sync with Orbital', priority: 'MEDIUM', status: 'PENDING', dueAt: thu },
-    ],
-  });
+  const tasks = [
+    { clientId: brightxId, title: 'Urgent check-in call with BrightX', priority: 'URGENT', status: 'PENDING', dueAt: new Date(year, month - 1, now.getDate(), 14, 0) },
+    { clientId: nexusId, title: 'Send Q3 invoice to Nexus', priority: 'MEDIUM', status: 'PENDING', dueAt: tomorrow },
+    { clientId: vantaId, title: 'Review support tickets for Vanta', priority: 'URGENT', status: 'PENDING', dueAt: tomorrow },
+    { clientId: createdClients['ByteForge'], title: 'Follow up on ByteForge negotiation', priority: 'HIGH', status: 'PENDING', dueAt: wed },
+    { clientId: createdClients['OrbitTech'], title: 'Initial sync with Orbital', priority: 'MEDIUM', status: 'PENDING', dueAt: thu },
+  ];
+  for (const task of tasks) {
+    const existing = await prisma.clientTask.findFirst({
+      where: { clientId: task.clientId, title: task.title },
+    });
+    if (existing) continue;
+    await prisma.clientTask.create({ data: task });
+  }
 
-  await prisma.clientTimelineEvent.createMany({
-    data: [
-      { clientId: nexusId, eventType: 'EMAIL', title: 'Email sent to Sarah Chen re: Q3 roadmap', description: 'Follow-up on quarterly planning', eventDate: hoursAgo(2) },
-      { clientId: vantaId, eventType: 'ALERT', title: 'Usage alert triggered for Vanta AI', description: 'Product usage dropped 40% this month', eventDate: hoursAgo(5) },
-      { clientId: apexId, eventType: 'PAYMENT', title: 'Payment received from Apex Holdings', description: 'PKR 2.3M invoice #INV-2024-089 paid', eventDate: daysAgo(1) },
-      { clientId: brightxId, eventType: 'STATUS', title: 'BrightX Corp marked at-risk', description: 'Health score dropped below 50', eventDate: daysAgo(1) },
-      { clientId: cloudSyncId, eventType: 'PROPOSAL', title: 'Proposal viewed by CloudSync team', description: '3 stakeholders viewed the proposal document', eventDate: daysAgo(2) },
-    ],
-  });
+  const timelineEvents = [
+    { clientId: nexusId, eventType: 'EMAIL', title: 'Email sent to Sarah Chen re: Q3 roadmap', description: 'Follow-up on quarterly planning', eventDate: hoursAgo(2) },
+    { clientId: vantaId, eventType: 'ALERT', title: 'Usage alert triggered for Vanta AI', description: 'Product usage dropped 40% this month', eventDate: hoursAgo(5) },
+    { clientId: apexId, eventType: 'PAYMENT', title: 'Payment received from Apex Holdings', description: 'PKR 2.3M invoice #INV-2024-089 paid', eventDate: daysAgo(1) },
+    { clientId: brightxId, eventType: 'STATUS', title: 'BrightX Corp marked at-risk', description: 'Health score dropped below 50', eventDate: daysAgo(1) },
+    { clientId: cloudSyncId, eventType: 'PROPOSAL', title: 'Proposal viewed by CloudSync team', description: '3 stakeholders viewed the proposal document', eventDate: daysAgo(2) },
+  ];
+  for (const event of timelineEvents) {
+    const existing = await prisma.clientTimelineEvent.findFirst({
+      where: { clientId: event.clientId, title: event.title },
+    });
+    if (existing) continue;
+    await prisma.clientTimelineEvent.create({ data: event });
+  }
 
-  await prisma.clientActivity.createMany({
-    data: [
-      { clientId: nexusId, type: 'EMAIL', title: 'Q3 roadmap discussion', description: 'Sent follow-up email to Sarah Chen' },
-      { clientId: vantaId, type: 'ALERT', title: 'Usage drop alert', description: 'Automated usage monitoring alert' },
-      { clientId: apexId, type: 'PAYMENT', title: 'Invoice payment received', description: 'PKR 2.3M received' },
-    ],
-  });
+  const activities = [
+    { clientId: nexusId, type: 'EMAIL', title: 'Q3 roadmap discussion', description: 'Sent follow-up email to Sarah Chen' },
+    { clientId: vantaId, type: 'ALERT', title: 'Usage drop alert', description: 'Automated usage monitoring alert' },
+    { clientId: apexId, type: 'PAYMENT', title: 'Invoice payment received', description: 'PKR 2.3M received' },
+  ];
+  for (const activity of activities) {
+    const existing = await prisma.clientActivity.findFirst({
+      where: { clientId: activity.clientId, title: activity.title },
+    });
+    if (existing) continue;
+    await prisma.clientActivity.create({ data: activity });
+  }
 
-  // Recreate finance invoices against the final client set so CEO/CFO metrics stay live.
+  // Finance invoices — sole owner of the invoice domain (upsert by invoice number).
   const financeManager = await prisma.user.findUnique({
     where: { email: 'finance_manager@antrosys.com' },
   });
@@ -312,6 +327,11 @@ export async function seedClientsData() {
       const invDate = dateOnly(year, invMonth, spec.invoiceDay);
       const dueDate = dateOnly(year, invMonth, spec.dueDay);
       const tax = spec.total * 0.1;
+
+      const existing = await prisma.invoice.findUnique({
+        where: { invoiceNumber: spec.number },
+      });
+      if (existing) continue;
 
       await prisma.invoice.create({
         data: {
@@ -357,25 +377,40 @@ export async function seedClientsData() {
       where: { invoiceNumber: 'INV-2026-003' },
     });
     if (cfoUser && fmEmployee && sentInvoice) {
-      await prisma.approvalTask.create({
-        data: {
+      const existingTask = await prisma.approvalTask.findFirst({
+        where: {
           assigneeUserId: cfoUser.id,
-          requesterEmployeeId: fmEmployee.id,
-          actionTitle: `Review Invoice ${sentInvoice.invoiceNumber}`,
-          priority: 'MEDIUM',
           entityType: 'INVOICE',
           entityId: sentInvoice.id,
-          dueAt: new Date(),
+          actionTitle: `Review Invoice ${sentInvoice.invoiceNumber}`,
         },
       });
-      await prisma.financialActivity.create({
-        data: {
-          category: 'INVOICE',
-          title: `Sent invoice ${sentInvoice.invoiceNumber}`,
-          occurredAt: new Date(),
-          metadata: { invoiceId: sentInvoice.id },
-        },
+      if (!existingTask) {
+        await prisma.approvalTask.create({
+          data: {
+            assigneeUserId: cfoUser.id,
+            requesterEmployeeId: fmEmployee.id,
+            actionTitle: `Review Invoice ${sentInvoice.invoiceNumber}`,
+            priority: 'MEDIUM',
+            entityType: 'INVOICE',
+            entityId: sentInvoice.id,
+            dueAt: new Date(),
+          },
+        });
+      }
+      const existingActivity = await prisma.financialActivity.findFirst({
+        where: { category: 'INVOICE', title: `Sent invoice ${sentInvoice.invoiceNumber}` },
       });
+      if (!existingActivity) {
+        await prisma.financialActivity.create({
+          data: {
+            category: 'INVOICE',
+            title: `Sent invoice ${sentInvoice.invoiceNumber}`,
+            occurredAt: new Date(),
+            metadata: { invoiceId: sentInvoice.id },
+          },
+        });
+      }
     }
   }
 

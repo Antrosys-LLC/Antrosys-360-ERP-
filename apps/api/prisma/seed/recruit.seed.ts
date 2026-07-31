@@ -15,35 +15,48 @@ export async function seedRecruitData() {
     return;
   }
 
-  // 2. Cleanup existing recruit data (to avoid duplicates if re-running)
-  await prisma.candidate.deleteMany({});
-  await prisma.jobRequisition.deleteMany({});
-
-  // 3. Create Job Requisitions
-  const req1 = await prisma.jobRequisition.create({
-    data: {
+  // 3. Create Job Requisitions (created once — matched by title + creator)
+  const requisitionSpecs = [
+    {
       title: 'Senior Product Designer',
       department: 'Design Operations',
       status: 'ACTIVE',
-      createdByUserId: creator.id,
-      createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
-    }
-  });
-
-  const req2 = await prisma.jobRequisition.create({
-    data: {
+      daysAgo: 2,
+    },
+    {
       title: 'Lead Frontend Engineer',
       department: 'Engineering',
       status: 'ACTIVE',
-      createdByUserId: creator.id,
-      createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 days ago
+      daysAgo: 5,
+    },
+  ];
+
+  const reqs: string[] = [];
+  for (const spec of requisitionSpecs) {
+    let req = await prisma.jobRequisition.findFirst({
+      where: { title: spec.title, createdByUserId: creator.id },
+    });
+    if (!req) {
+      req = await prisma.jobRequisition.create({
+        data: {
+          title: spec.title,
+          department: spec.department,
+          status: spec.status,
+          createdByUserId: creator.id,
+          createdAt: new Date(Date.now() - spec.daysAgo * 24 * 60 * 60 * 1000),
+        },
+      });
     }
-  });
+    reqs.push(req.id);
+  }
+
+  const req1Id = reqs[0];
+  const req2Id = reqs[1];
 
   // 4. Create Candidates matching the exact mock data from original UI
   const candidatesData = [
     {
-      jobRequisitionId: req1.id,
+      jobRequisitionId: req1Id,
       name: 'Sara Jenkins',
       role: 'UI Designer',
       experience: '4yrs exp',
@@ -54,7 +67,7 @@ export async function seedRecruitData() {
       pipelineStage: PipelineStage.APPLIED,
     },
     {
-      jobRequisitionId: req1.id,
+      jobRequisitionId: req1Id,
       name: 'Bilal Hussain',
       role: 'UX Architect',
       experience: '6yrs exp',
@@ -65,7 +78,7 @@ export async function seedRecruitData() {
       pipelineStage: PipelineStage.APPLIED,
     },
     {
-      jobRequisitionId: req1.id,
+      jobRequisitionId: req1Id,
       name: 'Elena Rodriguez',
       role: 'Visual Designer',
       experience: '2yrs exp',
@@ -75,7 +88,7 @@ export async function seedRecruitData() {
       pipelineStage: PipelineStage.APPLIED,
     },
     {
-      jobRequisitionId: req1.id,
+      jobRequisitionId: req1Id,
       name: 'Marcus Thorne',
       role: 'Product Lead',
       experience: '',
@@ -85,7 +98,7 @@ export async function seedRecruitData() {
       pipelineStage: PipelineStage.SCREENING,
     },
     {
-      jobRequisitionId: req1.id,
+      jobRequisitionId: req1Id,
       name: 'Linda Chen',
       role: 'Systems Analyst',
       experience: '',
@@ -100,7 +113,7 @@ export async function seedRecruitData() {
       interviewLocation: 'Zoom',
     },
     {
-      jobRequisitionId: req2.id,
+      jobRequisitionId: req2Id,
       name: 'David Miller',
       role: 'Sr. Frontend Engineer',
       experience: '',
@@ -110,7 +123,7 @@ export async function seedRecruitData() {
       pipelineStage: PipelineStage.OFFER,
     },
     {
-      jobRequisitionId: req2.id,
+      jobRequisitionId: req2Id,
       name: 'Jessica Wong',
       role: 'Frontend Dev',
       experience: '3yrs exp',
@@ -123,6 +136,10 @@ export async function seedRecruitData() {
   ];
 
   for (const c of candidatesData) {
+    const existing = await prisma.candidate.findFirst({
+      where: { name: c.name, jobRequisitionId: c.jobRequisitionId },
+    });
+    if (existing) continue;
     await prisma.candidate.create({
       data: c
     });

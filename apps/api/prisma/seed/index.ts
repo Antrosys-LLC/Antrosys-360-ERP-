@@ -1,4 +1,4 @@
-import { PrismaClient, Role, Department, Gender, EmploymentStatus, LeaveType } from '@prisma/client';
+import { PrismaClient, Role, Department, Gender, EmploymentStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import process from 'process';
 
@@ -28,6 +28,7 @@ interface SeedUser {
   employeeType?: string;
   location?: string;
   employmentStatus?: EmploymentStatus;
+  joiningDate?: Date;
   socialHandle?: string;
   performanceScore?: number;
   kpiScore?: number;
@@ -44,6 +45,7 @@ const seedUsers: SeedUser[] = [
   { email: 'manager@antrosys.com', role: 'MANAGER', firstName: 'General', lastName: 'Manager', department: 'OPERATIONS', designation: 'General Manager', gender: 'MALE' },
   { email: 'sub_manager@antrosys.com', role: 'SUB_MANAGER', firstName: 'Sub', lastName: 'Manager', department: 'OPERATIONS', designation: 'Sub Manager', gender: 'MALE' },
   { email: 'team_lead@antrosys.com', role: 'TEAM_LEAD', firstName: 'Team', lastName: 'Lead', department: 'ENGINEERING', designation: 'Team Lead', gender: 'FEMALE' },
+  { email: 'employee@antrosys.com', role: 'EMPLOYEE', firstName: 'Employee', lastName: 'Demo', department: 'OPERATIONS', designation: 'Employee', gender: 'MALE' },
 
   {
     email: 'sara.javed@antrosys.com',
@@ -51,7 +53,7 @@ const seedUsers: SeedUser[] = [
     firstName: 'Sara',
     lastName: 'Javed',
     department: 'ENGINEERING',
-    designation: 'Senior Engineer',
+    designation: 'Senior Frontend Developer',
     gender: 'FEMALE',
     employeeCode: 'EMP-00142',
     preferredName: 'Sara',
@@ -67,6 +69,7 @@ const seedUsers: SeedUser[] = [
     employeeType: 'Permanent',
     location: 'Islamabad HQ',
     employmentStatus: 'ACTIVE',
+    joiningDate: new Date('2023-05-15'),
     socialHandle: '@sara.eng',
     performanceScore: 88,
     kpiScore: 72,
@@ -107,6 +110,7 @@ function employeeProfileData(seedUser: SeedUser) {
     grade: seedUser.grade,
     employeeType: seedUser.employeeType,
     location: seedUser.location,
+    joiningDate: seedUser.joiningDate ?? new Date('2024-01-01'),
     socialHandle: seedUser.socialHandle,
     performanceScore: seedUser.performanceScore,
     kpiScore: seedUser.kpiScore,
@@ -140,7 +144,6 @@ async function main() {
       create: {
         userId: user.id,
         ...profile,
-        joiningDate: new Date('2024-01-01'),
         isActive: true,
       },
     });
@@ -230,37 +233,6 @@ async function main() {
     }
   }
 
-  console.log('✈️ Seeding leave requests...');
-  const leaveData: {
-    email: string;
-    type: LeaveType;
-    duration: number;
-    reason: string;
-  }[] = [
-    { email: 'sara.javed@antrosys.com', type: LeaveType.SICK, duration: 1, reason: 'Flu & headache' },
-    { email: 'fawad.khan@antrosys.com', type: LeaveType.ANNUAL, duration: 3, reason: 'Family trip' },
-    { email: 'omar.mirza@antrosys.com', type: LeaveType.CASUAL, duration: 1, reason: 'Personal errand' },
-    { email: 'maria.raza@antrosys.com', type: LeaveType.MATERNITY, duration: 90, reason: 'Maternity leave starts' },
-    { email: 'nadia.qureshi@antrosys.com', type: LeaveType.ANNUAL, duration: 5, reason: 'Travel plan' },
-  ];
-
-  for (const item of leaveData) {
-    const emp = await prisma.employee.findFirst({ where: { user: { email: item.email } } });
-    if (emp) {
-      await prisma.leaveRequest.create({
-        data: {
-          employeeId: emp.id,
-          type: item.type,
-          startDate: new Date(),
-          endDate: new Date(Date.now() + item.duration * 24 * 60 * 60 * 1000),
-          durationDays: item.duration,
-          status: 'PENDING',
-          reason: item.reason,
-        },
-      });
-    }
-  }
-
   console.log('📢 Seeding announcements timelines...');
   const opsHead = await prisma.employee.findFirst({
     where: { user: { email: 'operations_head@antrosys.com' } },
@@ -274,13 +246,18 @@ async function main() {
     ];
 
     for (const ann of announcements) {
-      await prisma.announcement.create({
-        data: {
-          title: ann.title,
-          content: ann.content,
-          authorId: opsHead.id,
-        },
+      const existing = await prisma.announcement.findFirst({
+        where: { title: ann.title, authorId: opsHead.id },
       });
+      if (!existing) {
+        await prisma.announcement.create({
+          data: {
+            title: ann.title,
+            content: ann.content,
+            authorId: opsHead.id,
+          },
+        });
+      }
     }
   }
 
@@ -315,42 +292,50 @@ async function main() {
     },
   });
 
-  const { seedCfoData } = await import('./cfo.seed');
-  await seedCfoData();
-
-  const { seedCeoData } = await import('./ceo.seed');
-  await seedCeoData();
-
-  const { seedClientsData } = await import('./clients.seed');
-  await seedClientsData();
-
-  const { seedRecruitData } = await import('./recruit.seed');
-  await seedRecruitData();
-  const { seedBizIntelData } = await import('./biz_intel.seed');
-  await seedBizIntelData(prisma);
+  // HR module data (postings, onboarding) — needs employees only.
   const { seedHrData } = await import('./hr.seed');
   await seedHrData();
 
+  // Leave domain (balances + requests) — single owner of leave data.
   const { seedLeaveData } = await import('./leave.seed');
   await seedLeaveData();
 
   const { seedOperationHeadData } = await import('./operation_head.seed');
   await seedOperationHeadData(prisma);
 
-  const { seedLedgerData } = await import('./ledger.seed');
-  await seedLedgerData(prisma);
-
+  // Payroll (compensation, current batch, payslips) — runs before CFO/CEO so
+  // their approval tasks can reference the current PENDING_APPROVAL batch.
   const { seedPayslipsData, seedPayrollData } = await import('./payroll.seed');
   await seedPayslipsData(prisma);
   await seedPayrollData(prisma);
-  const { seedEmployeeDashboardData } = await import('./employee_dashboard.seed');
-  await seedEmployeeDashboardData();
+
+  const { seedLedgerData } = await import('./ledger.seed');
+  await seedLedgerData(prisma);
+
+  // Clients + finance invoices — sole owner of the client domain.
+  const { seedClientsData } = await import('./clients.seed');
+  await seedClientsData();
+
+  // CFO & CEO dashboards reference clients/payroll created above.
+  const { seedCfoData } = await import('./cfo.seed');
+  await seedCfoData();
+
+  const { seedCeoData } = await import('./ceo.seed');
+  await seedCeoData();
+
+  const { seedRecruitData } = await import('./recruit.seed');
+  await seedRecruitData();
+  const { seedBizIntelData } = await import('./biz_intel.seed');
+  await seedBizIntelData(prisma);
 
   const { seedBankFeedsData } = await import('./bank_feeds.seed');
   await seedBankFeedsData(prisma);
 
   const { seedInventoryData } = await import('./inventory.seed');
   await seedInventoryData();
+
+  const { seedEmployeeDashboardData } = await import('./employee_dashboard.seed');
+  await seedEmployeeDashboardData();
 
   console.log('\n🎉 Seed completed successfully!');
 }

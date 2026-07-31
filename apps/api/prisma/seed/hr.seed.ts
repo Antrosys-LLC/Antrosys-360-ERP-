@@ -1,7 +1,6 @@
 import {
   PrismaClient,
   Department,
-  Gender,
   EmploymentStatus,
   ApplicationStage,
   JobPostingStatus,
@@ -22,18 +21,6 @@ function daysFromNow(days: number) {
   return d;
 }
 
-const EMAIL_DEPARTMENT: Record<string, Department> = {
-  'ceo@antrosys.com': 'OTHER',
-  'cfo@antrosys.com': 'FINANCE',
-  'finance_manager@antrosys.com': 'FINANCE',
-  'operations_head@antrosys.com': 'OPERATIONS',
-  'hr_head@antrosys.com': 'HR',
-  'project_manager@antrosys.com': 'OTHER',
-  'manager@antrosys.com': 'OPERATIONS',
-  'sub_manager@antrosys.com': 'OPERATIONS',
-  'team_lead@antrosys.com': 'ENGINEERING',
-};
-
 export async function seedHrData() {
   console.log('👥 Seeding HR dashboard data...');
 
@@ -42,24 +29,6 @@ export async function seedHrData() {
     console.warn('  ⚠️ HR head user not found — skipping HR seed');
     return;
   }
-
-  const allEmployees = await prisma.employee.findMany({ include: { user: true } });
-  const genders: Gender[] = ['MALE', 'FEMALE', 'MALE', 'FEMALE', 'MALE', 'FEMALE', 'OTHER'];
-  for (let i = 0; i < allEmployees.length; i++) {
-    const emp = allEmployees[i];
-    const department = EMAIL_DEPARTMENT[emp.user.email] ?? 'OPERATIONS';
-    await prisma.employee.update({
-      where: { id: emp.id },
-      data: {
-        gender: genders[i % genders.length],
-        department,
-        employmentStatus: 'ACTIVE',
-      },
-    });
-  }
-
-  await prisma.jobApplication.deleteMany({ where: { email: { contains: '@example.com' } } });
-  await prisma.jobPosting.deleteMany({ where: { createdByUserId: hrHead.id } });
 
   const jobSpecs: { title: string; department: Department; status: JobPostingStatus }[] = [
     { title: 'Senior Product Designer', department: 'ENGINEERING', status: 'OPEN' },
@@ -72,16 +41,21 @@ export async function seedHrData() {
 
   const postings = [];
   for (const spec of jobSpecs) {
-    const posting = await prisma.jobPosting.create({
-      data: {
-        title: spec.title,
-        department: spec.department,
-        description: `${spec.title} role at Antrosys`,
-        status: spec.status,
-        postedAt: daysAgo(30),
-        createdByUserId: hrHead.id,
-      },
+    let posting = await prisma.jobPosting.findFirst({
+      where: { title: spec.title, createdByUserId: hrHead.id },
     });
+    if (!posting) {
+      posting = await prisma.jobPosting.create({
+        data: {
+          title: spec.title,
+          department: spec.department,
+          description: `${spec.title} role at Antrosys`,
+          status: spec.status,
+          postedAt: daysAgo(30),
+          createdByUserId: hrHead.id,
+        },
+      });
+    }
     postings.push(posting);
   }
 
@@ -110,6 +84,10 @@ export async function seedHrData() {
   for (const spec of candidateSpecs) {
     const appliedAt = daysAgo(spec.appliedDaysAgo);
     const posting = postings[spec.jobIndex];
+    const existing = await prisma.jobApplication.findFirst({
+      where: { email: spec.email, jobPostingId: posting.id },
+    });
+    if (existing) continue;
     await prisma.jobApplication.create({
       data: {
         jobPostingId: posting.id,
@@ -133,7 +111,6 @@ export async function seedHrData() {
     joiningDaysAgo: number;
     phase?: OnboardingPhase;
   }[] = [
-    { email: 'sara.javed@antrosys.com', status: 'ONBOARDING', joiningDaysAgo: 15, phase: 'IT_SETUP' },
     { email: 'fawad.khan@antrosys.com', status: 'ACTIVE', joiningDaysAgo: 26 },
     { email: 'hina.baig@antrosys.com', status: 'OFFER_SIGNED', joiningDaysAgo: 5 },
     { email: 'omar.mirza@antrosys.com', status: 'ONBOARDING', joiningDaysAgo: 8, phase: 'DOCUMENTATION' },
@@ -195,6 +172,10 @@ export async function seedHrData() {
       for (const task of CHECKLIST) {
         const taskPhaseIdx = PHASE_ORDER.indexOf(task.phase);
         const completed = taskPhaseIdx < phaseIdx;
+        const existingTask = await prisma.employeeTask.findFirst({
+          where: { employeeId: emp.id, title: task.title },
+        });
+        if (existingTask) continue;
         await prisma.employeeTask.create({
           data: {
             employeeId: emp.id,
@@ -208,39 +189,56 @@ export async function seedHrData() {
         });
       }
 
-      await prisma.onboardingMeeting.create({
-        data: {
-          employeeId: emp.id,
+      const meetingSpecs = [
+        {
           title: 'HR Orientation',
           description: 'Welcome session covering company culture, policies and benefits.',
-          scheduledAt: daysFromNow(1),
+          scheduledDaysFromNow: 1,
           durationMins: 45,
           location: 'Zoom',
-          phase: 'HR_ORIENTATION',
-          createdByUserId: hrHead.id,
+          phase: 'HR_ORIENTATION' as OnboardingPhase,
         },
-      });
-      await prisma.onboardingMeeting.create({
-        data: {
-          employeeId: emp.id,
+        {
           title: 'Team Intro & Lunch',
           description: 'Meet your new teammates.',
-          scheduledAt: daysFromNow(3),
+          scheduledDaysFromNow: 3,
           durationMins: 60,
           location: 'Room 4 / Cafeteria',
-          phase: 'TEAM_INTRO',
-          createdByUserId: hrHead.id,
+          phase: 'TEAM_INTRO' as OnboardingPhase,
         },
-      });
+      ];
+      for (const meeting of meetingSpecs) {
+        const existingMeeting = await prisma.onboardingMeeting.findFirst({
+          where: { employeeId: emp.id, title: meeting.title },
+        });
+        if (existingMeeting) continue;
+        await prisma.onboardingMeeting.create({
+          data: {
+            employeeId: emp.id,
+            title: meeting.title,
+            description: meeting.description,
+            scheduledAt: daysFromNow(meeting.scheduledDaysFromNow),
+            durationMins: meeting.durationMins,
+            location: meeting.location,
+            phase: meeting.phase,
+            createdByUserId: hrHead.id,
+          },
+        });
+      }
 
-      await prisma.message.create({
-        data: {
-          senderId: hrHead.id,
-          recipientId: emp.id,
-          subject: 'Welcome to Antrosys!',
-          body: `Hi ${emp.firstName},\n\nWelcome aboard! We're thrilled to have you. Please work through your onboarding checklist and reach out if you need anything.\n\nBest,\nThe HR Team`,
-        },
+      const existingMessage = await prisma.message.findFirst({
+        where: { senderId: hrHead.id, recipientId: emp.id, subject: 'Welcome to Antrosys!' },
       });
+      if (!existingMessage) {
+        await prisma.message.create({
+          data: {
+            senderId: hrHead.id,
+            recipientId: emp.id,
+            subject: 'Welcome to Antrosys!',
+            body: `Hi ${emp.firstName},\n\nWelcome aboard! We're thrilled to have you. Please work through your onboarding checklist and reach out if you need anything.\n\nBest,\nThe HR Team`,
+          },
+        });
+      }
     }
   }
 
