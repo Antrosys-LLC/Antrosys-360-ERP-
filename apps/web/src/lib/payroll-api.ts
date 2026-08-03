@@ -108,6 +108,9 @@ export interface PayslipConfig {
 }
 
 function unwrap<T>(data: { status: string; data: T }): T {
+  if (data.status !== 'success') {
+    throw new Error('API returned non-success status');
+  }
   return data.data;
 }
 
@@ -177,6 +180,13 @@ export async function submitPayrollForApproval(payrollId: string) {
   return unwrap(data);
 }
 
+export async function disbursePayroll(payrollId: string) {
+  const { data } = await apiClient.post<{ status: string; data: PayrollDashboardData }>(
+    `/payroll/${payrollId}/disburse`,
+  );
+  return unwrap(data);
+}
+
 export async function updatePayrollPayslipConfig(payrollId: string, config: PayslipConfig) {
   const { data } = await apiClient.patch<{ status: string; data: PayslipConfig }>(
     `/payroll/${payrollId}/payslip-config`,
@@ -201,10 +211,13 @@ export async function exportPayrollLedger(payrollId: string) {
     responseType: 'blob',
   });
   const blob = response.data as Blob;
+  const disposition = response.headers?.['content-disposition'] as string | undefined;
+  const match = disposition?.match(/filename="?(.+?)"?$/);
+  const filename = match?.[1] ?? `payroll-export.csv`;
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `payroll-export.csv`;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -224,13 +237,15 @@ const RUN_STEP_LABELS = [
   'Disbursement',
 ];
 
-export const RUN_PAYROLL_STEP_MS = 900;
+export const RUN_PAYROLL_STEP_MS = 800;
 
 /** Step-by-step lifecycle animation while run-payroll API executes. */
 export async function animateRunPayrollSteps(
   onUpdate: (lifecycle: PayrollDashboardData['lifecycle']) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < RUN_STEP_LABELS.length; i++) {
+    if (signal?.aborted) return;
     onUpdate({
       steps: RUN_STEP_LABELS.map((label, idx) => ({
         step: idx + 1,
@@ -242,15 +257,4 @@ export async function animateRunPayrollSteps(
     });
     await new Promise((resolve) => setTimeout(resolve, RUN_PAYROLL_STEP_MS));
   }
-
-  onUpdate({
-    steps: RUN_STEP_LABELS.map((label, idx) => ({
-      step: idx + 1,
-      label,
-      status: idx < 3 ? 'complete' : 'upcoming',
-    })),
-    progressPct: 62,
-    activeProcessingCount: 0,
-  });
-  await new Promise((resolve) => setTimeout(resolve, 450));
 }

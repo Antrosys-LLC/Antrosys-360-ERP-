@@ -290,7 +290,7 @@ const profileSchema = z.object({
   gender: z.string().nullable().optional(),
   nationality: z.string().nullable().optional(),
   cnic: z.string().nullable().optional(),
-  personalEmail: z.string().email('Invalid email').nullable().optional().or(z.literal('')),
+  personalEmail: z.string().email('Invalid email').nullable().optional(),
   personalPhone: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
   emergencyContactName: z.string().nullable().optional(),
@@ -309,7 +309,7 @@ const employmentSchema = z
     location: z.string().nullable().optional(),
     employeeType: z.string().nullable().optional(),
     contractType: z.string().nullable().optional(),
-    employmentStatus: z.string().min(1, 'Employment status is required'),
+    employmentStatus: z.string().nullable().optional(),
     joiningDate: z
       .string()
       .nullable()
@@ -455,7 +455,7 @@ function employeeToEmploymentFormValues(employee: {
     location: employee.location || '',
     employeeType: employee.employeeType || '',
     contractType: employee.contractType || '',
-    employmentStatus: employee.employmentStatus || 'ACTIVE',
+    employmentStatus: employee.employmentStatus ?? '',
     joiningDate: toDateInputValue(employee.joiningDate),
     probationEnd: toDateInputValue(employee.probationEnd),
     managerId: employee.managerId || '',
@@ -877,7 +877,14 @@ function EmployeeDashboardContent() {
 
   const handleAttendanceMonthChange = (monthKey: string) => {
     const [year, month] = monthKey.split('-').map(Number);
-    if (!month || !year) return;
+    if (!month || !year) {
+      toast({
+        variant: 'destructive',
+        title: 'Invalid month selection',
+        description: 'Could not parse the selected month. Please try again.',
+      });
+      return;
+    }
     setAttendanceMonth({ month, year });
     fetchAttendance(month, year);
   };
@@ -1254,11 +1261,19 @@ function EmployeeDashboardContent() {
                   a.remove();
                   URL.revokeObjectURL(url);
                   toast({ title: 'HR Letter Downloaded', description: 'Experience certificate has been generated.' });
-                } catch {
+                } catch (error) {
+                  let description = 'Could not generate the HR letter. Please try again.';
+                  if (axios.isAxiosError(error)) {
+                    if (error.response?.status === 403) {
+                      description = 'You do not have permission to download this letter.';
+                    } else if (error.response?.status === 404) {
+                      description = 'Employee record not found. The letter cannot be generated.';
+                    }
+                  }
                   toast({
                     variant: 'destructive',
                     title: 'Download failed',
-                    description: 'Could not generate the HR letter. Please try again.',
+                    description,
                   });
                 }
               }}
@@ -1925,7 +1940,7 @@ fill="none"
                   {personalInformation?.fields.map((field, idx) => (
                     <div key={idx} className="space-y-1">
                       <span className="block text-xs font-medium text-muted-foreground tracking-tight">{field.label}</span>
-                      <span className="block text-sm text-foreground font-semibold">{field.value}</span>
+                      <span className="block text-sm text-foreground font-semibold">{displayOrDash(field.value)}</span>
                     </div>
                   ))}
                 </div>
@@ -2108,7 +2123,13 @@ fill="none"
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Gender</Label>
-                    <Input {...profileForm.register('gender')} className="text-sm" />
+                    <select {...profileForm.register('gender')} className={selectFieldClassName}>
+                      <option value="">Not specified</option>
+                      <option value="MALE">Male</option>
+                      <option value="FEMALE">Female</option>
+                      <option value="OTHER">Other</option>
+                      <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
+                    </select>
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Nationality</Label>
@@ -2221,7 +2242,7 @@ fill="none"
                     )}
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Work Mode</Label>
+                    <Label className="text-xs">Employee Type</Label>
                     <Input
                       {...employmentForm.register('employeeType')}
                       list="employee-type-options"

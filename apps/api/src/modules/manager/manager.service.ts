@@ -13,7 +13,7 @@ import {
 } from './manager-team-stats';
 
 function mapOverrideStatus(status: string): AttendanceStatus {
-  if (status === 'ON LEAVE') return AttendanceStatus.LEAVE;
+  if (status === 'ON LEAVE' || status === 'LEAVE') return AttendanceStatus.LEAVE;
   if (status === 'PRESENT') return AttendanceStatus.PRESENT;
   if (status === 'ABSENT') return AttendanceStatus.ABSENT;
   if (status === 'LATE') return AttendanceStatus.LATE;
@@ -62,7 +62,7 @@ async function loadTeamSnapshot(teamId: string, today: Date) {
     }),
   ]);
 
-  const attendanceTable = buildAttendanceTable(teamEmployees, attendancesToday);
+  const attendanceTable = buildAttendanceTable(teamEmployees, attendancesToday, approvedTeamLeaves, today);
   const teamSchedule = computeTeamScheduleStats(
     attendanceTable,
     approvedTeamLeaves,
@@ -156,6 +156,33 @@ export async function getDashboardData(userId: string, userRole: string) {
     },
   });
 
+  const [leaveRequests, approvedTeamLeaves] = await Promise.all([
+    prisma.leaveRequest.findMany({
+      where: {
+        employeeId: { in: teamEmployeeIds },
+        status: 'PENDING',
+      },
+      include: {
+        employee: {
+          select: {
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.leaveRequest.findMany({
+      where: {
+        employeeId: { in: teamEmployeeIds },
+        status: 'APPROVED',
+        endDate: { gte: today },
+      },
+    }),
+  ]);
+
+  const leavesPendingCount = leaveRequests.length;
+
   const attendanceTable = buildAttendanceTable(
     teamEmployees.map((emp) => ({
       id: emp.id,
@@ -166,35 +193,9 @@ export async function getDashboardData(userId: string, userRole: string) {
       performanceScore: emp.performanceScore,
     })),
     attendancesToday,
+    approvedTeamLeaves,
+    today,
   );
-
-  const leaveRequests = await prisma.leaveRequest.findMany({
-    where: {
-      employeeId: { in: teamEmployeeIds },
-      status: 'PENDING',
-    },
-    include: {
-      employee: {
-        select: {
-          firstName: true,
-          lastName: true,
-        },
-      },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
-
-  const leavesPendingCount = leaveRequests.length;
-
-  const approvedTeamLeaves = await prisma.leaveRequest.findMany({
-    where: {
-      employeeId: { in: teamEmployeeIds },
-      status: 'APPROVED',
-      endDate: { gte: today },
-    },
-  });
-
-  const allTeamLeaves = [...leaveRequests, ...approvedTeamLeaves];
 
   const teamSchedule = computeTeamScheduleStats(
     attendanceTable,
@@ -237,12 +238,11 @@ export async function getDashboardData(userId: string, userRole: string) {
     ];
     const avatarColor = colors[hash % colors.length];
     
-    // Check overlap
+    // Check overlap against approved leaves only (not pending)
     const reqStart = new Date(req.startDate).getTime();
     const reqEnd = new Date(req.endDate).getTime();
     
-    const overlapDetected = allTeamLeaves.some(otherReq => {
-       if (otherReq.id === req.id) return false;
+    const overlapDetected = approvedTeamLeaves.some(otherReq => {
        const otherStart = new Date(otherReq.startDate).getTime();
        const otherEnd = new Date(otherReq.endDate).getTime();
        return reqStart <= otherEnd && reqEnd >= otherStart;
@@ -448,6 +448,7 @@ export async function approveAllLeaves(userId: string, userRole: string) {
     const pendingLeaves = await tx.leaveRequest.findMany({
       where: {
         status: 'PENDING',
+        employeeId: { not: employee.id },
         ...targetFilter,
       },
       include: { employee: true },
@@ -625,7 +626,7 @@ export async function overrideAttendance(targetEmployeeId: string, status: strin
 
     const attendanceStatus = mapOverrideStatus(status);
     const checkInTime = attendanceStatus === AttendanceStatus.PRESENT || attendanceStatus === AttendanceStatus.LATE ? new Date() : null;
-    const checkOutTime = attendanceStatus === AttendanceStatus.ABSENT || attendanceStatus === AttendanceStatus.LEAVE ? null : null;
+    const checkOutTime = attendanceStatus === AttendanceStatus.PRESENT ? new Date() : null;
     const workingHours = attendanceStatus === AttendanceStatus.PRESENT ? 8.0 : attendanceStatus === AttendanceStatus.LATE ? 6.5 : 0;
 
     if (existingAttendance) {
@@ -715,24 +716,15 @@ export async function toggleFlag(targetEmployeeId: string, isFlagged: boolean, u
     },
   });
 
-  return prisma.$transaction(async (tx) => {
-    let result;
+  if (!existingAttendance) {
+    throw new Error('No attendance record exists for today. Cannot flag.');
+  }
 
-    if (existingAttendance) {
-      result = await tx.attendance.update({
-        where: { id: existingAttendance.id },
-        data: { isFlagged },
-      });
-    } else {
-      result = await tx.attendance.create({
-        data: {
-          employeeId: targetEmployeeId,
-          date: today,
-          status: 'ABSENT',
-          isFlagged,
-        },
-      });
-    }
+  return prisma.$transaction(async (tx) => {
+    const result = await tx.attendance.update({
+      where: { id: existingAttendance.id },
+      data: { isFlagged },
+    });
 
     // Notify employee if flagged
     if (isFlagged) {
