@@ -17,12 +17,7 @@ export async function seedBizIntelData(prisma: PrismaClient) {
     return;
   }
 
-  // 1. Clear existing BI data to prevent duplicates
-  await prisma.bIExecution.deleteMany();
-  await prisma.bISchedule.deleteMany();
-  await prisma.bIReport.deleteMany();
-
-  // 2. Seed BI Reports
+  // 1. Seed BI Reports (created once — matched by title + creator)
   const reports = [
     {
       title: 'Monthly P&L',
@@ -133,48 +128,63 @@ export async function seedBizIntelData(prisma: PrismaClient) {
 
   const seededReports = [];
   for (const report of reports) {
-    const r = await prisma.bIReport.create({
-      data: {
-        ...report,
-        createdById: creator.id,
-      },
+    let r = await prisma.bIReport.findFirst({
+      where: { title: report.title, createdById: creator.id },
     });
+    if (!r) {
+      r = await prisma.bIReport.create({
+        data: {
+          ...report,
+          createdById: creator.id,
+        },
+      });
+    }
     seededReports.push(r);
   }
   console.log(`✅ Seeded ${seededReports.length} BI Reports.`);
 
-  // 3. Seed Schedules
+  // 2. Seed Schedules
   const monthlyPlReport = seededReports.find((r) => r.title === 'Monthly P&L');
   const salesPipelineReport = seededReports.find((r) => r.title === 'Sales Pipeline');
 
   if (monthlyPlReport) {
-    await prisma.bISchedule.create({
-      data: {
-        reportId: monthlyPlReport.id,
-        title: 'Monthly P&L',
-        cronExpression: '0 9 1 * *',
-        info: '1st of Month, 9:00 AM',
-        deliveryMethod: 'pdf',
-        isActive: true,
-      },
+    const existing = await prisma.bISchedule.findFirst({
+      where: { reportId: monthlyPlReport.id, title: 'Monthly P&L' },
     });
+    if (!existing) {
+      await prisma.bISchedule.create({
+        data: {
+          reportId: monthlyPlReport.id,
+          title: 'Monthly P&L',
+          cronExpression: '0 9 1 * *',
+          info: '1st of Month, 9:00 AM',
+          deliveryMethod: 'pdf',
+          isActive: true,
+        },
+      });
+    }
   }
 
   if (salesPipelineReport) {
-    await prisma.bISchedule.create({
-      data: {
-        reportId: salesPipelineReport.id,
-        title: 'Weekly Sales',
-        cronExpression: '0 8 * * 1',
-        info: 'Every Mon, 8:00 AM',
-        deliveryMethod: 'email',
-        isActive: true,
-      },
+    const existing = await prisma.bISchedule.findFirst({
+      where: { reportId: salesPipelineReport.id, title: 'Weekly Sales' },
     });
+    if (!existing) {
+      await prisma.bISchedule.create({
+        data: {
+          reportId: salesPipelineReport.id,
+          title: 'Weekly Sales',
+          cronExpression: '0 8 * * 1',
+          info: 'Every Mon, 8:00 AM',
+          deliveryMethod: 'email',
+          isActive: true,
+        },
+      });
+    }
   }
   console.log('✅ Seeded BI Schedules.');
 
-  // 4. Seed executions (Recent activity)
+  // 3. Seed executions (Recent activity)
   const revenueReport = seededReports.find((r) => r.title === 'Revenue overview');
   const headcountReport = seededReports.find((r) => r.title === 'Headcount & attrition');
   const payrollReport = seededReports.find((r) => r.title === 'Payroll cost analysis');
@@ -207,6 +217,10 @@ export async function seedBizIntelData(prisma: PrismaClient) {
   ];
 
   for (const execution of executions) {
+    const existing = await prisma.bIExecution.findFirst({
+      where: { reportId: execution.reportId, name: execution.name },
+    });
+    if (existing) continue;
     await prisma.bIExecution.create({
       data: execution,
     });
