@@ -4,6 +4,7 @@ import {
   updateLeaveStatusBodySchema,
   leaveRequestParamsSchema,
   listLeaveRequestsQuerySchema,
+  listLeaveBalancesQuerySchema,
 } from './leave.schema';
 import * as leaveService from './leave.service';
 
@@ -25,11 +26,26 @@ function requireUser(reply: FastifyReply, userId: string | undefined): userId is
 
 export async function getLeaveBalancesHandler(request: FastifyRequest, reply: FastifyReply) {
   if (!requireUser(reply, request.user?.id)) return;
-  const balances = await leaveService.getMyLeaveBalances(request.user!.id);
-  if (!balances) {
-    return reply.code(422).send({ error: 'Employee record not found for user' });
+
+  const parsed = listLeaveBalancesQuerySchema.safeParse(request.query);
+  if (!parsed.success) return validationError(reply, parsed.error.flatten());
+
+  try {
+    const balances = await leaveService.getMyLeaveBalances(
+      request.user!.id,
+      request.user!.role,
+      parsed.data,
+    );
+    if (!balances) {
+      return reply.code(422).send({ error: 'Employee record not found for user' });
+    }
+    return reply.code(200).send({ status: 'success', data: balances });
+  } catch (err: any) {
+    if (err.message === 'FORBIDDEN_LEAVE_SCOPE') {
+      return reply.code(403).send({ error: 'You can only view leave balances within your scope' });
+    }
+    return reply.code(500).send({ error: 'Failed to fetch leave balances' });
   }
-  return reply.code(200).send({ status: 'success', data: balances });
 }
 
 export async function listLeaveRequestsHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -37,8 +53,22 @@ export async function listLeaveRequestsHandler(request: FastifyRequest, reply: F
   if (!parsed.success) return validationError(reply, parsed.error.flatten());
   if (!requireUser(reply, request.user?.id)) return;
 
-  const result = await leaveService.getLeaveRequests(parsed.data, request.user!.id);
-  return reply.code(200).send({ status: 'success', data: result });
+  try {
+    const result = await leaveService.getLeaveRequests(
+      parsed.data,
+      request.user!.id,
+      request.user!.role,
+    );
+    return reply.code(200).send({ status: 'success', data: result });
+  } catch (err: any) {
+    if (err.message === 'FORBIDDEN_LEAVE_SCOPE') {
+      return reply.code(403).send({ error: 'You can only view leaves within your scope' });
+    }
+    if (err.message === 'NO_EMPLOYEE_RECORD') {
+      return reply.code(422).send({ error: 'Employee record not found for user' });
+    }
+    return reply.code(500).send({ error: 'Failed to fetch leave requests' });
+  }
 }
 
 export async function createLeaveRequestHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -105,6 +135,7 @@ export async function updateLeaveStatusHandler(request: FastifyRequest, reply: F
       paramsParsed.data.leaveId,
       bodyParsed.data,
       request.user!.id,
+      request.user!.role,
     );
     if (!updated) {
       return reply.code(404).send({ error: 'Leave request not found' });
@@ -115,7 +146,16 @@ export async function updateLeaveStatusHandler(request: FastifyRequest, reply: F
       return reply.code(422).send({ error: 'Approver employee record not found' });
     }
     if (err.message === 'LEAVE_NOT_PENDING') {
-      return reply.code(400).send({ error: 'Leave request is not in PENDING state' });
+      return reply.code(400).send({ error: 'Leave request is not in a pending state' });
+    }
+    if (err.message === 'SELF_APPROVAL_FORBIDDEN') {
+      return reply.code(403).send({ error: 'You cannot approve your own leave request' });
+    }
+    if (err.message === 'APPROVER_FORBIDDEN') {
+      return reply.code(403).send({ error: 'You are not allowed to approve this leave request' });
+    }
+    if (err.message === 'OPS_HEAD_APPROVAL_REQUIRED') {
+      return reply.code(403).send({ error: 'Only the Operations Head can act on this request' });
     }
     return reply.code(500).send({ error: 'Failed to update leave request' });
   }
