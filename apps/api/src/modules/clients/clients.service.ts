@@ -15,6 +15,10 @@ import type {
   ListTimelineQuery,
   CreateContactBody,
   UpdateContactBody,
+  StartOnboardingBody,
+  UpdateOnboardingBody,
+  CreateOnboardingItemBody,
+  UpdateOnboardingItemBody,
 } from './clients.schema';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -88,6 +92,44 @@ async function pushTimeline(
   });
 }
 
+// ─── Onboarding defaults ──────────────────────────────────────────────────
+
+const defaultOnboardingItems = [
+  { title: 'Schedule kickoff call', description: 'Book the initial kickoff meeting with key client stakeholders.', category: 'KICKOFF', sortOrder: 10 },
+  { title: 'Confirm key stakeholders & contacts', description: 'Capture the primary and secondary contacts in the client account.', category: 'KICKOFF', sortOrder: 20 },
+  { title: 'Align on goals & success metrics', description: 'Document the client objectives and measurable success criteria.', category: 'KICKOFF', sortOrder: 30 },
+  { title: 'Create account & user access', description: 'Provision accounts, roles, and credentials for the client team.', category: 'SETUP', sortOrder: 40 },
+  { title: 'Set up project workspace', description: 'Create the project(s) and configure engagement settings.', category: 'SETUP', sortOrder: 50 },
+  { title: 'Configure billing & payment terms', description: 'Set currency, payment terms, and the first renewal date.', category: 'SETUP', sortOrder: 60 },
+  { title: 'Collect onboarding documents', description: 'Gather signed agreements, PO, and compliance documents.', category: 'SETUP', sortOrder: 70 },
+  { title: 'Deliver initial onboarding report', description: 'Share the kickoff summary and roadmap with the client.', category: 'HANDBACK', sortOrder: 80 },
+  { title: 'Schedule QBR / handover session', description: 'Book the first business review and hand the account to the account owner.', category: 'HANDBACK', sortOrder: 90 },
+  { title: 'Mark client as active', description: 'Finalize onboarding and move the client to ACTIVE.', category: 'HANDBACK', sortOrder: 100 },
+] satisfies Prisma.ClientOnboardingItemCreateWithoutOnboardingInput[];
+
+async function createOnboardingForClient(
+  tx: Prisma.TransactionClient,
+  clientId: string,
+  userId: string,
+  startDate: Date = new Date(),
+) {
+  return tx.clientOnboarding.create({
+    data: {
+      clientId,
+      status: 'IN_PROGRESS',
+      currentPhase: 'KICKOFF',
+      startDate,
+      createdByUserId: userId,
+      items: { create: defaultOnboardingItems },
+    },
+  });
+}
+
+const onboardingInclude = {
+  items: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
+  assignedTo: { select: { id: true, email: true, role: true } },
+} satisfies Prisma.ClientOnboardingInclude;
+
 // ─── Client CRUD ───────────────────────────────────────────────────────────
 
 export async function listClients(query: ListClientsQuery) {
@@ -141,6 +183,12 @@ export async function getClientById(clientId: string) {
       tasks: { orderBy: { dueAt: 'asc' } },
       timelineEvents: { orderBy: { eventDate: 'desc' }, take: recentTimelineTake },
       invoices: { orderBy: { invoiceDate: 'desc' }, take: 10 },
+      onboarding: {
+        include: {
+          items: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
+          assignedTo: { select: { id: true, email: true, role: true } },
+        },
+      },
     },
   });
   return client ? serializeClient(client) : null;
@@ -170,6 +218,12 @@ export async function createClient(payload: CreateClientBody, userId: string) {
     await tx.clientStatus.create({
       data: { clientId: client.id, status: payload.pipelineStage, note: 'Client created' },
     });
+
+    const shouldOnboard = payload.pipelineStage === 'ONBOARDING' || payload.salesStage === 'CLOSED_WON';
+    if (shouldOnboard) {
+      await createOnboardingForClient(tx, client.id, userId);
+      await pushTimeline(tx, client.id, 'ONBOARDING_STARTED', `Onboarding started for "${client.name}"`);
+    }
 
     await pushTimeline(tx, client.id, 'CREATED', `Client "${client.name}" created`);
     await writeAuditLog(tx, userId, 'CLIENT_CREATE', { clientId: client.id, name: client.name });
@@ -559,6 +613,17 @@ export async function updateClientSalesStage(clientId: string, salesStage: strin
       where: { id: clientId },
       data: { salesStage: salesStage as Prisma.ClientUpdateInput['salesStage'] },
     });
+
+    if (salesStage === 'CLOSED_WON') {
+      const existing = await tx.clientOnboarding.findUnique({ where: { clientId } });
+      if (!existing) {
+        await createOnboardingForClient(tx, clientId, userId);
+        await tx.client.update({ where: { id: clientId }, data: { pipelineStage: 'ONBOARDING' } });
+        await tx.clientStatus.create({ data: { clientId, status: 'ONBOARDING', note: 'Deal won, onboarding auto-started' } });
+        await pushTimeline(tx, clientId, 'ONBOARDING_STARTED', 'Client onboarding started automatically after CLOSED_WON');
+      }
+    }
+
     await pushTimeline(tx, clientId, 'STATUS_CHANGED', `Moved to ${salesStage.replace(/_/g, ' ')}`);
     await writeAuditLog(tx, userId, 'CLIENT_SALES_STAGE_UPDATE', { clientId, salesStage });
     return serializeClient(updated);
@@ -739,6 +804,166 @@ export async function deleteContact(contactId: string, clientId: string, userId:
   return prisma.$transaction(async (tx) => {
     const deleted = await tx.clientContact.delete({ where: { id: contactId } });
     await writeAuditLog(tx, userId, 'CLIENT_CONTACT_DELETE', { clientId, contactId });
+    return deleted;
+  });
+}
+
+// ─── Onboarding ──────────────────────────────────────────────────────────────
+
+export async function getClientOnboarding(clientId: string) {
+  return prisma.clientOnboarding.findUnique({
+    where: { clientId },
+    include: onboardingInclude,
+  });
+}
+
+export async function startClientOnboarding(clientId: string, payload: StartOnboardingBody, userId: string) {
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.clientOnboarding.findUnique({ where: { clientId } });
+    if (existing) {
+      return tx.clientOnboarding.findUnique({ where: { clientId }, include: onboardingInclude });
+    }
+
+    const client = await tx.client.findUnique({ where: { id: clientId }, select: { id: true, pipelineStage: true } });
+    if (!client) return null;
+
+    const onboarding = await createOnboardingForClient(
+      tx,
+      clientId,
+      userId,
+      payload.startDate ? new Date(payload.startDate) : new Date(),
+    );
+
+    if (payload.assignedToUserId) {
+      await tx.clientOnboarding.update({
+        where: { clientId },
+        data: { assignedToUserId: payload.assignedToUserId },
+      });
+    }
+
+    if (client.pipelineStage !== 'ACTIVE' && client.pipelineStage !== 'AT_RISK') {
+      await tx.client.update({ where: { id: clientId }, data: { pipelineStage: 'ONBOARDING' } });
+      await tx.clientStatus.create({ data: { clientId, status: 'ONBOARDING', note: 'Onboarding started' } });
+    }
+
+    await pushTimeline(tx, clientId, 'ONBOARDING_STARTED', 'Client onboarding started');
+    await writeAuditLog(tx, userId, 'CLIENT_ONBOARDING_START', { clientId });
+
+    return tx.clientOnboarding.findUnique({
+      where: { clientId },
+      include: onboardingInclude,
+    }).then((o) => o ?? onboarding);
+  });
+}
+
+export async function updateClientOnboarding(clientId: string, payload: UpdateOnboardingBody, userId: string) {
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.clientOnboarding.findUnique({ where: { clientId } });
+    if (!existing) return null;
+
+    const data: Record<string, unknown> = {};
+    if (payload.currentPhase !== undefined) data.currentPhase = payload.currentPhase;
+    if (payload.status !== undefined) data.status = payload.status;
+    if (payload.assignedToUserId !== undefined) data.assignedToUserId = payload.assignedToUserId;
+    if (payload.startDate !== undefined) data.startDate = payload.startDate ? new Date(payload.startDate) : null;
+
+    const completing = payload.status === 'COMPLETED' || payload.currentPhase === 'COMPLETED';
+    if (completing) {
+      data.status = 'COMPLETED';
+      data.currentPhase = 'COMPLETED';
+      data.completedAt = new Date();
+    } else if (!existing.startDate && (payload.status === 'IN_PROGRESS' || payload.currentPhase)) {
+      data.startDate = data.startDate ?? new Date();
+    }
+
+    const updated = await tx.clientOnboarding.update({
+      where: { clientId },
+      data,
+      include: onboardingInclude,
+    });
+
+    if (payload.currentPhase && payload.currentPhase !== existing.currentPhase && payload.currentPhase !== 'COMPLETED') {
+      await pushTimeline(tx, clientId, 'ONBOARDING_PHASE', `Onboarding moved to ${payload.currentPhase}`);
+    }
+
+    if (completing) {
+      const client = await tx.client.findUnique({ where: { id: clientId }, select: { pipelineStage: true, name: true } });
+      if (client && client.pipelineStage !== 'ACTIVE') {
+        await tx.client.update({ where: { id: clientId }, data: { pipelineStage: 'ACTIVE' } });
+        await tx.clientStatus.create({ data: { clientId, status: 'ACTIVE', note: 'Onboarding completed' } });
+        await pushTimeline(tx, clientId, 'ONBOARDING_COMPLETED', `"${client.name}" onboarding completed`, 'Client promoted to ACTIVE');
+      }
+    }
+
+    await writeAuditLog(tx, userId, 'CLIENT_ONBOARDING_UPDATE', { clientId, changes: Object.keys(data) });
+    return updated;
+  });
+}
+
+export async function addOnboardingItem(clientId: string, payload: CreateOnboardingItemBody, userId: string) {
+  return prisma.$transaction(async (tx) => {
+    const onboarding = await tx.clientOnboarding.findUnique({ where: { clientId } });
+    if (!onboarding) return null;
+
+    const agg = await tx.clientOnboardingItem.aggregate({
+      where: { onboardingId: onboarding.id },
+      _max: { sortOrder: true },
+    });
+    const item = await tx.clientOnboardingItem.create({
+      data: {
+        onboardingId: onboarding.id,
+        title: payload.title,
+        description: payload.description ?? null,
+        category: payload.category,
+        isRequired: payload.isRequired,
+        sortOrder: payload.sortOrder ?? (agg._max.sortOrder ?? 0) + 10,
+      },
+    });
+    await writeAuditLog(tx, userId, 'CLIENT_ONBOARDING_ITEM_CREATE', { clientId, itemId: item.id });
+    return item;
+  });
+}
+
+export async function updateOnboardingItem(itemId: string, clientId: string, payload: UpdateOnboardingItemBody, userId: string) {
+  return prisma.$transaction(async (tx) => {
+    const onboarding = await tx.clientOnboarding.findUnique({ where: { clientId } });
+    if (!onboarding) return null;
+
+    const existing = await tx.clientOnboardingItem.findUnique({ where: { id: itemId } });
+    if (!existing || existing.onboardingId !== onboarding.id) return null;
+
+    const data: Record<string, unknown> = {};
+    if (payload.title !== undefined) data.title = payload.title;
+    if (payload.description !== undefined) data.description = payload.description;
+    if (payload.category !== undefined) data.category = payload.category;
+    if (payload.isRequired !== undefined) data.isRequired = payload.isRequired;
+    if (payload.sortOrder !== undefined) data.sortOrder = payload.sortOrder;
+    if (payload.completed !== undefined) data.completedAt = payload.completed ? new Date() : null;
+
+    const updated = await tx.clientOnboardingItem.update({ where: { id: itemId }, data });
+
+    if (payload.completed === true && !existing.completedAt) {
+      await pushTimeline(tx, clientId, 'ONBOARDING_ITEM_COMPLETED', `Onboarding item "${existing.title}" completed`);
+      if (onboarding.status === 'NOT_STARTED') {
+        await tx.clientOnboarding.update({ where: { clientId }, data: { status: 'IN_PROGRESS' } });
+      }
+    }
+
+    await writeAuditLog(tx, userId, 'CLIENT_ONBOARDING_ITEM_UPDATE', { clientId, itemId });
+    return updated;
+  });
+}
+
+export async function deleteOnboardingItem(itemId: string, clientId: string, userId: string) {
+  return prisma.$transaction(async (tx) => {
+    const onboarding = await tx.clientOnboarding.findUnique({ where: { clientId } });
+    if (!onboarding) return null;
+
+    const existing = await tx.clientOnboardingItem.findUnique({ where: { id: itemId } });
+    if (!existing || existing.onboardingId !== onboarding.id) return null;
+
+    const deleted = await tx.clientOnboardingItem.delete({ where: { id: itemId } });
+    await writeAuditLog(tx, userId, 'CLIENT_ONBOARDING_ITEM_DELETE', { clientId, itemId });
     return deleted;
   });
 }

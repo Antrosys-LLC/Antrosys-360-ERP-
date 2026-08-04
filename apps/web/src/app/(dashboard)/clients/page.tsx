@@ -30,6 +30,7 @@ export default function ClientManagementDashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const canWrite = usePermission("clients:write");
+  const canOnboard = usePermission("clients:onboard");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -258,6 +259,7 @@ export default function ClientManagementDashboard() {
           onUpdate={refresh}
           onCreateInvoice={() => setInvoiceTabRequest((n) => n + 1)}
           invoiceTabRequest={invoiceTabRequest}
+          canOnboard={canOnboard}
         />
       </section>
 
@@ -291,7 +293,7 @@ export default function ClientManagementDashboard() {
         />
       </section>
 
-      <ClientDialog open={dialogOpen} onOpenChange={setDialogOpen} client={null} onSaved={refresh} />
+      <ClientDialog open={dialogOpen} onOpenChange={setDialogOpen} client={null} onSaved={refresh} canOnboard={canOnboard} />
     </div>
   );
 }

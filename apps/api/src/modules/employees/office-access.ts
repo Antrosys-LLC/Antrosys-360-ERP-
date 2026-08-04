@@ -19,6 +19,7 @@ const PERMISSION_TO_MODULE: Partial<Record<Permission, string>> = {
   'manpower:write': 'Manpower',
   'clients:read': 'Clients',
   'clients:write': 'Clients',
+  'clients:onboard': 'Clients',
   'reports:read': 'Reports',
   'announcements:read': 'Announcements',
   'announcements:write': 'Announcements',
