@@ -122,6 +122,7 @@ export function computeTeamKpis(
   members: Pick<TeamEmployeeRow, 'kpiScore' | 'performanceScore'>[],
   teamSchedule: TeamScheduleStats,
   pendingLeaveCount: number,
+  fallbackBenchmark: { kpi: number; performance: number } = { kpi: 0, performance: 0 }
 ): TeamKpiMetrics {
   const scoredMembers = members.filter(
     (member) => member.kpiScore != null || member.performanceScore != null,
@@ -133,7 +134,7 @@ export function computeTeamKpis(
           scoredMembers.reduce((sum, member) => sum + (member.kpiScore ?? member.performanceScore ?? 0), 0) /
             scoredMembers.length,
         )
-      : 0;
+      : fallbackBenchmark.kpi;
 
   const avgPerformance =
     scoredMembers.length > 0
@@ -143,7 +144,7 @@ export function computeTeamKpis(
             0,
           ) / scoredMembers.length,
         )
-      : 0;
+      : fallbackBenchmark.performance;
 
   return {
     sprintVelocity: avgKpi,

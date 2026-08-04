@@ -320,7 +320,16 @@ export async function getDashboardData(userId: string, userRole: string) {
       totalEmployees,
       absentCount,
       leavesPendingCount,
-      deptKpiAvg: Math.round((kpis.sprintVelocity + kpis.bugResolution + kpis.codeReview) / 3),
+      deptKpiAvg:
+        teams.length > 0
+          ? Math.round(
+              teams.reduce(
+                (sum, t) =>
+                  sum + (t.kpis.sprintVelocity + t.kpis.bugResolution + t.kpis.codeReview) / 3,
+                0,
+              ) / teams.length,
+            )
+          : Math.round((kpis.sprintVelocity + kpis.bugResolution + kpis.codeReview) / 3),
     },
     attendance: attendanceTable,
     leaves: formattedLeaves,
