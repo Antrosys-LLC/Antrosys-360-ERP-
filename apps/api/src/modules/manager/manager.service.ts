@@ -10,7 +10,7 @@ import {
   computeTeamScheduleStats,
   getTodayUtc,
   TeamKpiReport,
-} from './manager-team-stats';
+} from '../../shared/utils/team-stats';
 
 function mapOverrideStatus(status: string): AttendanceStatus {
   if (status === 'ON LEAVE') return AttendanceStatus.LEAVE;
@@ -212,7 +212,7 @@ export async function getDashboardData(userId: string, userRole: string) {
     leavesPendingCount,
   );
 
-  let teams: Awaited<ReturnType<typeof loadTeamSnapshot>>[] = [];
+  let teams: NonNullable<Awaited<ReturnType<typeof loadTeamSnapshot>>>[] = [];
   if (userRole === 'MANAGER') {
     const allTeams = await prisma.team.findMany({ select: { id: true }, orderBy: { name: 'asc' } });
     const snapshots = await Promise.all(allTeams.map((team) => loadTeamSnapshot(team.id, today)));
