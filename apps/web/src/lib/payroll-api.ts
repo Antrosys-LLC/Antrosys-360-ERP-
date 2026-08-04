@@ -224,12 +224,6 @@ export async function exportPayrollLedger(payrollId: string) {
   window.URL.revokeObjectURL(url);
 }
 
-export async function disbursePayroll(payrollId: string) {
-  const { data } = await apiClient.post<{ status: string; data: PayrollDashboardData }>(
-    `/payroll/${payrollId}/disburse`,
-  );
-  return unwrap(data);
-}
 
 /** UX micro-delay for bulk actions (2–3s). Individual CRUD stays instant. */
 export function bulkActionDelay(ms = 2500): Promise<void> {
