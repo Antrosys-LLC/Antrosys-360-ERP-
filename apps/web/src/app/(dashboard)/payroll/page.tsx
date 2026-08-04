@@ -17,10 +17,7 @@ import {
 import {
   animateRunPayrollSteps,
   approvePayrollLines,
-<<<<<<< HEAD
   bulkActionDelay,
-=======
->>>>>>> main
   disbursePayroll,
   exportPayrollLedger,
   fetchPayrollDashboard,
@@ -535,7 +532,6 @@ export default function PayrollDashboard() {
                 <Calendar className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
 
-<<<<<<< HEAD
               <div className="flex items-center gap-2">
                 {dashboard?.payroll?.status === 'APPROVED' && (
                   <button
@@ -550,21 +546,10 @@ export default function PayrollDashboard() {
                     )}
                     Disburse Payroll
                   </button>
-=======
-              <button
-                onClick={handleRunPayroll}
-                disabled={bulkLoading || (!!payrollId && dashboard?.payroll?.status !== 'REJECTED')}
-                className="bg-[#6366F1] hover:bg-[#4F46E5] disabled:opacity-60 text-white px-4 py-1.5 rounded-[6px] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors shadow-sm tracking-wide min-w-[120px] justify-center"
-              >
-                {bulkLoading ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <Play className="w-3 h-3 fill-current stroke-none" />
->>>>>>> main
                 )}
                 <button
                   onClick={handleRunPayroll}
-                  disabled={bulkLoading || !!payrollId}
+                  disabled={bulkLoading || (!!payrollId && dashboard?.payroll?.status !== 'REJECTED')}
                   className="bg-[#6366F1] hover:bg-[#4F46E5] disabled:opacity-60 text-white px-4 py-1.5 rounded-[6px] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors shadow-sm tracking-wide min-w-[120px] justify-center"
                 >
                   {bulkLoading ? (
@@ -967,31 +952,12 @@ export default function PayrollDashboard() {
                             onChange={async (e) => {
                               if (!payrollId) return;
                               const newStatus = e.target.value;
-<<<<<<< HEAD
                               if (newStatus === 'ON_HOLD') {
                                 setPendingHoldEmployee(emp);
                                 setHoldReasonText('');
                                 setHoldModalOpen(true);
                                 return;
                               }
-                              await updatePayrollLineStatus(payrollId, emp.id, {
-                                status: newStatus,
-                              });
-                              const empData = await fetchPayrollEmployees(payrollId, {
-                                search: search || undefined,
-                                department: department || undefined,
-                                status: mapStatusFilter(statusFilter),
-                                grade: gradeFilter || undefined,
-                                page,
-                                limit: 12,
-                              });
-                              setEmployees(empData.items);
-                              setPagination(empData.pagination);
-                              const dash = await fetchPayrollDashboard({
-                                period: selectedPeriodKey,
-                              });
-                              setDashboard(dash);
-=======
                               const rollback = employeesRef.current;
                               setEmployees((prev) =>
                                 prev.map((r) =>
@@ -1020,7 +986,6 @@ export default function PayrollDashboard() {
                                 setEmployees(rollback);
                                 setError('Failed to update line item status.');
                               }
->>>>>>> main
                             }}
                             className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide border-0 cursor-pointer
                               ${emp.status === 'Processing' ? 'bg-purple-50 text-[#6366F1]' : ''}
