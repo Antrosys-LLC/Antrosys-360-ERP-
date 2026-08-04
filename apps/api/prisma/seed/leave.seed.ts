@@ -21,7 +21,7 @@ export async function seedLeaveData() {
   const teamLeadEmp = await prisma.employee.findFirst({ where: { userId: teamLead?.id } });
   const managerEmp = await prisma.employee.findFirst({ where: { userId: mainManager?.id } });
 
-  if (!saraEmp || !fawadEmp || !teamLeadEmp || !managerEmp) {
+  if (!saraEmp || !fawadEmp || !omarEmp || !teamLeadEmp || !managerEmp) {
     console.error('Required employees not found, skipping leave seed.');
     return;
   }

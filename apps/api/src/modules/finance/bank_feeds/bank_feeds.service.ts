@@ -6,6 +6,7 @@ const transactionInclude = {
   account: {
     select: { id: true, bankName: true, accountType: true, currencyCode: true },
   },
+  matchedEntry: true,
 } as const;
 
 export async function listAccounts() {
