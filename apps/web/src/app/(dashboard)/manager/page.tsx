@@ -174,16 +174,16 @@ function formatHours(h: number): string {
 function getStatusBadge(status: string) {
   switch (status) {
     case 'PRESENT':
-      return { label: 'Present', className: 'bg-[#EBF7EE] text-[#2F7A47] dark:bg-emerald-950/20 dark:text-emerald-400' };
+      return { label: 'Present', className: 'bg-[#EBF7EE] text-[#2F7A47] dark:bg-emerald-950/20 dark:text-emerald-400', dotColor: 'bg-[#EBF7EE]' };
     case 'ABSENT':
-      return { label: 'Absent', className: 'bg-[#FDECEF] text-[#C93B4E] dark:bg-rose-950/20 dark:text-rose-400' };
+      return { label: 'Absent', className: 'bg-[#FDECEF] text-[#C93B4E] dark:bg-rose-950/20 dark:text-rose-400', dotColor: 'bg-[#FDECEF]' };
     case 'LATE':
-      return { label: 'Late', className: 'bg-[#FEF5E7] text-[#C98B2C] dark:bg-amber-950/20 dark:text-amber-400' };
+      return { label: 'Late', className: 'bg-[#FEF5E7] text-[#C98B2C] dark:bg-amber-950/20 dark:text-amber-400', dotColor: 'bg-[#FEF5E7]' };
     case 'LEAVE':
     case 'ON LEAVE':
-      return { label: 'On leave', className: 'bg-[#ECEFF3] text-[#5A6E85] dark:bg-slate-800 dark:text-slate-400' };
+      return { label: 'On leave', className: 'bg-[#ECEFF3] text-[#5A6E85] dark:bg-slate-800 dark:text-slate-400', dotColor: 'bg-[#ECEFF3]' };
     default:
-      return { label: status, className: 'bg-muted text-muted-foreground' };
+      return { label: status, className: 'bg-muted text-muted-foreground', dotColor: 'bg-muted' };
   }
 }
 
@@ -210,7 +210,7 @@ function resolveAttachmentLink(attachment: string): { href: string; label: strin
   if (attachment.startsWith('http://') || attachment.startsWith('https://')) {
     return { href: attachment, label };
   }
-  const apiOrigin = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1').replace(/\/api\/v\d+\/?$/, '');
+  const apiOrigin = new URL(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1').origin;
   const href = attachment.startsWith('/') ? `${apiOrigin}${attachment}` : attachment;
   return { href, label };
 }
@@ -233,7 +233,7 @@ function timeAgo(isoString: string): string {
   if (diffHrs < 24) return `${diffHrs}h ago`;
   if (diffDays === 1) return 'Yesterday';
   if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
 function formatLeaveDates(startDate: string, endDate: string): string {
@@ -242,10 +242,10 @@ function formatLeaveDates(startDate: string, endDate: string): string {
     const e = new Date(endDate);
     if (isNaN(s.getTime()) || isNaN(e.getTime())) return '-';
     
-    const sMonth = s.toLocaleDateString('en-US', { month: 'short' });
-    const sDate = s.getDate();
-    const eMonth = e.toLocaleDateString('en-US', { month: 'short' });
-    const eDate = e.getDate();
+    const sMonth = s.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+    const sDate = s.getUTCDate();
+    const eMonth = e.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+    const eDate = e.getUTCDate();
     
     if (sMonth === eMonth) {
       if (sDate === eDate) return `${sMonth} ${sDate}`;
@@ -713,6 +713,7 @@ export default function ManagerDashboard() {
   const [approveAllConfirmOpen, setApproveAllConfirmOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedKpiTeamId, setSelectedKpiTeamId] = useState<string | null>(null);
+  const [pendingLeaveIds, setPendingLeaveIds] = useState<Set<string>>(new Set());
 
   // Fetch dashboard data
   const { data, isLoading, isError, refetch } = useQuery<DashboardData>({
@@ -727,6 +728,9 @@ export default function ManagerDashboard() {
   const leaveStatusMutation = useMutation({
     mutationFn: ({ leaveId, status }: { leaveId: string; status: 'APPROVED' | 'REJECTED' }) =>
       patchLeaveStatus(leaveId, status),
+    onMutate: (variables) => {
+      setPendingLeaveIds((prev) => new Set(prev).add(variables.leaveId));
+    },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['manager-dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
@@ -744,6 +748,13 @@ export default function ManagerDashboard() {
         variant: 'destructive',
         title: 'Leave update failed',
         description: getMutationErrorMessage(error, 'Could not update the leave request.'),
+      });
+    },
+    onSettled: (_data, _error, variables) => {
+      setPendingLeaveIds((prev) => {
+        const next = new Set(prev);
+        next.delete(variables.leaveId);
+        return next;
       });
     },
   });
@@ -1155,16 +1166,16 @@ export default function ManagerDashboard() {
                     <button
                       onClick={() => leaveStatusMutation.mutate({ leaveId: req.id, status: 'REJECTED' })}
                       className="flex-1 rounded-md bg-[#FDECEF] dark:bg-rose-950/30 py-2 text-sm font-bold text-[#C93B4E] dark:text-rose-400 hover:bg-[#f8dadd] dark:hover:bg-rose-900/40 transition-colors"
-                      disabled={leaveStatusMutation.isPending}
+                      disabled={pendingLeaveIds.has(req.id)}
                     >
-                      Decline
+                      {pendingLeaveIds.has(req.id) ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Decline'}
                     </button>
                     <button
                       onClick={() => leaveStatusMutation.mutate({ leaveId: req.id, status: 'APPROVED' })}
                       className="flex-1 rounded-md bg-[#5A4FCF] dark:bg-indigo-600 py-2 text-sm font-bold text-white hover:bg-[#4d44b4] dark:hover:bg-indigo-700 transition-colors"
-                      disabled={leaveStatusMutation.isPending}
+                      disabled={pendingLeaveIds.has(req.id)}
                     >
-                      Approve
+                      {pendingLeaveIds.has(req.id) ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Approve'}
                     </button>
                   </div>
                 </div>

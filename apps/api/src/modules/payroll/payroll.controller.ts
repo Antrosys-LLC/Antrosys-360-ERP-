@@ -102,7 +102,15 @@ export async function submitForApprovalHandler(request: FastifyRequest, reply: F
 
   const result = await payrollService.submitForApproval(paramsParsed.data.payrollId, request.user!.id);
   if (!result) return reply.code(404).send({ error: 'Payroll batch not found' });
-  if ('error' in result) return reply.code(422).send({ error: 'Unable to submit payroll for approval' });
+  if ('error' in result) {
+    const errorMap: Record<string, string> = {
+      INVALID_STATE: 'Payroll must be in DRAFT status before submission',
+      MISSING_ACTORS: 'Cannot submit — no active CFO user or requester employee record found',
+      NO_VERIFIED_LINES: 'At least one employee must be verified before submitting for CFO approval',
+    };
+    const msg = errorMap[(result as { error: string }).error] ?? 'Unable to submit payroll for approval';
+    return reply.code(422).send({ error: msg });
+  }
 
   const dashboard = await payrollService.getDashboard({ payrollId: paramsParsed.data.payrollId });
   return reply.code(200).send({ status: 'success', data: dashboard });
@@ -167,7 +175,12 @@ export async function disbursePayrollHandler(request: FastifyRequest, reply: Fas
 
   const result = await payrollService.disbursePayroll(paramsParsed.data.payrollId);
   if (!result) return reply.code(404).send({ error: 'Payroll batch not found' });
-  if ('error' in result) return reply.code(422).send({ error: 'Payroll must be approved before disbursement' });
+  if ('error' in result) {
+    if (result.error === 'UNVERIFIED_LINES') {
+      return reply.code(422).send({ error: `${result.blockedCount} employee(s) have on-hold/pending status. Resolve before disbursement.` });
+    }
+    return reply.code(422).send({ error: 'Payroll must be approved before disbursement' });
+  }
 
   const dashboard = await payrollService.getDashboard({ payrollId: paramsParsed.data.payrollId });
   return reply.code(200).send({ status: 'success', data: dashboard });

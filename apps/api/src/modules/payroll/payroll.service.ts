@@ -13,6 +13,7 @@ import { payslipPeriodLabel } from '../../shared/payslip/payslip-period-label';
 import { sendMail } from '../../shared/email/mail.service';
 import {
   calculatePayrollLine,
+  defaultCompensation,
   syncPayslipsFromPayrollBatch,
   toPayrollDecimal,
   upsertPayslipFromLineItem,
@@ -147,19 +148,6 @@ function deriveLifecycleUi(
   lifecycleStep: PayrollLifecycleStep,
   status: PayrollStatus,
 ): { steps: { step: number; label: string; status: 'complete' | 'current' | 'upcoming' }[]; progressPct: number } {
-  // Payroll run finished — steps 1–3 complete, CFO approval is next (not active until submitted)
-  if (lifecycleStep === 'CFO_APPROVAL' && status === 'DRAFT') {
-    return {
-      steps: LIFECYCLE_LABELS.map((label, idx) => ({
-        step: idx + 1,
-        label,
-        status: idx < 3 ? 'complete' : 'upcoming',
-      })),
-      progressPct: 62,
-    };
-  }
-
-  // Legacy batches still marked PAYROLL_RUN after calculations
   if (lifecycleStep === 'PAYROLL_RUN' && status === 'DRAFT') {
     return {
       steps: LIFECYCLE_LABELS.map((label, idx) => ({
@@ -171,6 +159,17 @@ function deriveLifecycleUi(
     };
   }
 
+  if (status === 'REJECTED') {
+    return {
+      steps: LIFECYCLE_LABELS.map((label, idx) => ({
+        step: idx + 1,
+        label,
+        status: 'upcoming' as const,
+      })),
+      progressPct: 0,
+    };
+  }
+
   const currentIndex = LIFECYCLE_STEPS.indexOf(lifecycleStep);
   let effectiveIndex = currentIndex;
 
@@ -179,8 +178,6 @@ function deriveLifecycleUi(
     effectiveIndex = LIFECYCLE_STEPS.indexOf('DISBURSEMENT');
   } else if (status === 'PENDING_APPROVAL') {
     effectiveIndex = LIFECYCLE_STEPS.indexOf('CFO_APPROVAL');
-  } else if (status === 'REJECTED') {
-    effectiveIndex = LIFECYCLE_STEPS.indexOf('PAYROLL_RUN');
   }
 
   const steps = LIFECYCLE_LABELS.map((label, idx) => {
@@ -329,10 +326,7 @@ async function findPayrollForQuery(query: DashboardQuery) {
 
   const { periodStart } = parsePeriod(query.period);
   return prisma.payroll.findFirst({
-    where: {
-      periodStart,
-      status: { not: 'REJECTED' },
-    },
+    where: { periodStart },
     orderBy: { createdAt: 'desc' },
     include: { lineItems: true },
   });
@@ -453,7 +447,7 @@ export async function getDashboard(query: DashboardQuery) {
     employeeCount: payroll.employeeCount,
     lifecycle: {
       ...lifecycle,
-      activeProcessingCount: activeProcessingCount || payroll.employeeCount,
+      activeProcessingCount: activeProcessingCount ?? payroll.employeeCount,
     },
     metrics: buildMetrics(totals, currencyCode),
     payslipGeneration: {
@@ -558,7 +552,11 @@ export async function runPayroll(userId: string, body: RunPayrollBody) {
     include: { compensation: true },
   });
 
-  const batchNumber = `PAY-${year}-${String(month).padStart(2, '0')}`;
+  const baseBatchNumber = `PAY-${year}-${String(month).padStart(2, '0')}`;
+  const rejectedCount = await prisma.payroll.count({
+    where: { periodStart, periodEnd, status: 'REJECTED' },
+  });
+  const batchNumber = rejectedCount > 0 ? `${baseBatchNumber}-v${rejectedCount + 1}` : baseBatchNumber;
 
   const payroll = await prisma.$transaction(async (tx) => {
     const created = await tx.payroll.create({
@@ -579,17 +577,13 @@ export async function runPayroll(userId: string, body: RunPayrollBody) {
 
     for (const emp of employees) {
       const comp = emp.compensation;
-      const baseSalary = comp ? Number(comp.baseSalary) : 120000;
-      const allowances = comp ? Number(comp.allowances) : Math.round(baseSalary * 0.15);
+      const defaults = defaultCompensation(emp.grade);
+      const baseSalary = comp ? Number(comp.baseSalary) : defaults.base;
+      const allowances = comp ? Number(comp.allowances) : defaults.allowances;
       const hourlyRate = baseSalary / 176;
       const overtime = await sumOvertimePay(emp.id, periodStart, periodEnd, hourlyRate);
       const bonusPct = emp.grade === 'L5' ? 0.04 : 0;
       const calc = calculatePayrollLine({ baseSalary, allowances }, overtime, bonusPct);
-
-      let status: PayrollLineStatus = 'PROCESSING';
-      if (emp.lastName.toLowerCase().includes('hassan') || emp.firstName.toLowerCase() === 'madiha') {
-        status = 'ON_HOLD';
-      }
 
       await tx.payrollLineItem.create({
         data: {
@@ -606,8 +600,7 @@ export async function runPayroll(userId: string, body: RunPayrollBody) {
           deductionsTotal: toDecimal(calc.deductionsTotal),
           taxAmount: toDecimal(calc.taxAmount),
           netPay: toDecimal(calc.netPay),
-          status,
-          holdReason: status === 'ON_HOLD' ? 'Pending clearance' : null,
+          status: 'PROCESSING',
         },
       });
     }
@@ -617,10 +610,6 @@ export async function runPayroll(userId: string, body: RunPayrollBody) {
 
   await recalculateBatchTotals(payroll.id);
   await syncPayslipsFromPayrollBatch(payroll.id);
-  await prisma.payroll.update({
-    where: { id: payroll.id },
-    data: { lifecycleStep: 'CFO_APPROVAL' },
-  });
   return { payrollId: payroll.id };
 }
 
@@ -633,30 +622,34 @@ export async function updateLineItem(payrollId: string, lineItemId: string, body
   const payroll = await prisma.payroll.findUnique({ where: { id: payrollId } });
   if (!payroll) return null;
 
-  const updated = await prisma.payrollLineItem.update({
-    where: { id: lineItemId },
-    data: {
-      status: body.status,
-      holdReason: body.status === 'ON_HOLD' ? body.holdReason ?? 'On hold' : null,
-    },
-  });
+  const updated = await prisma.$transaction(async (tx) => {
+    const updated = await tx.payrollLineItem.update({
+      where: { id: lineItemId },
+      data: {
+        status: body.status,
+        holdReason: body.status === 'ON_HOLD' ? body.holdReason ?? 'On hold' : null,
+      },
+    });
 
-  if (body.status === 'ON_HOLD' || body.status === 'PENDING') {
-    if (updated.payslipId) {
-      await prisma.employeePayslip.update({
-        where: { id: updated.payslipId },
-        data: { status: 'CANCELLED' },
-      });
+    if (body.status === 'ON_HOLD' || body.status === 'PENDING') {
+      if (updated.payslipId) {
+        await tx.employeePayslip.update({
+          where: { id: updated.payslipId },
+          data: { status: 'CANCELLED' },
+        });
+      }
+    } else {
+      await upsertPayslipFromLineItem(
+        tx,
+        updated,
+        payroll,
+        periodLabelFromStart(payroll.periodStart),
+        'PROCESSING',
+      );
     }
-  } else {
-    await upsertPayslipFromLineItem(
-      prisma,
-      updated,
-      payroll,
-      periodLabelFromStart(payroll.periodStart),
-      'PROCESSING',
-    );
-  }
+
+    return updated;
+  });
 
   return updated;
 }
@@ -664,22 +657,34 @@ export async function updateLineItem(payrollId: string, lineItemId: string, body
 export async function approveLines(payrollId: string, body: ApproveLinesBody) {
   const payroll = await prisma.payroll.findUnique({ where: { id: payrollId } });
   if (!payroll) return null;
-
-  await prisma.payrollLineItem.updateMany({
-    where: { payrollId, id: { in: body.lineItemIds } },
-    data: { status: 'VERIFIED' },
-  });
+  if (payroll.status !== 'DRAFT' && payroll.status !== 'REJECTED') return null;
 
   const periodLabel = periodLabelFromStart(payroll.periodStart);
-  const lines = await prisma.payrollLineItem.findMany({
-    where: { payrollId, id: { in: body.lineItemIds } },
+
+  const result = await prisma.$transaction(async (tx) => {
+    const updateResult = await tx.payrollLineItem.updateMany({
+      where: { payrollId, id: { in: body.lineItemIds } },
+      data: { status: 'VERIFIED' },
+    });
+
+    const lines = await tx.payrollLineItem.findMany({
+      where: { payrollId, id: { in: body.lineItemIds } },
+    });
+    for (const line of lines) {
+      await upsertPayslipFromLineItem(tx, line, payroll, periodLabel, 'PROCESSING');
+    }
+
+    await logFinancialActivity(tx, {
+      category: 'PAYROLL',
+      title: `Approved ${updateResult.count} employee lines in ${payroll.batchNumber}`,
+      metadata: { payrollId, batchNumber: payroll.batchNumber, count: updateResult.count },
+    });
+
+    return updateResult.count;
   });
-  for (const line of lines) {
-    await upsertPayslipFromLineItem(prisma, line, payroll, periodLabel, 'PROCESSING');
-  }
 
   await recalculateBatchTotals(payrollId);
-  return { updated: body.lineItemIds.length };
+  return { updated: result };
 }
 
 export async function submitForApproval(payrollId: string, userId: string) {
@@ -688,6 +693,10 @@ export async function submitForApproval(payrollId: string, userId: string) {
     include: { lineItems: true },
   });
   if (!payroll) return null;
+  if (payroll.status !== 'DRAFT' && payroll.status !== 'REJECTED') return { error: 'INVALID_STATE' as const };
+
+  const verifiedCount = payroll.lineItems.filter((li) => li.status === 'VERIFIED').length;
+  if (verifiedCount === 0) return { error: 'NO_VERIFIED_LINES' as const };
 
   const cfoUser = await prisma.user.findFirst({ where: { role: 'CFO', isActive: true } });
   const requester = await prisma.employee.findFirst({ where: { userId } });
@@ -704,19 +713,19 @@ export async function submitForApproval(payrollId: string, userId: string) {
       where: { entityType: 'PAYROLL', entityId: payrollId, status: 'PENDING' },
     });
 
-    if (!existingTask) {
-      await tx.approvalTask.create({
-        data: {
-          assigneeUserId: cfoUser.id,
-          requesterEmployeeId: requester.id,
-          actionTitle: `Approve Payroll ${payroll.batchNumber}`,
-          priority: 'HIGH',
-          entityType: 'PAYROLL',
-          entityId: payrollId,
-          dueAt: new Date(),
-        },
-      });
-    }
+      if (!existingTask) {
+        await tx.approvalTask.create({
+          data: {
+            assigneeUserId: cfoUser.id,
+            requesterEmployeeId: requester.id,
+            actionTitle: `Approve Payroll ${payroll.batchNumber}`,
+            priority: 'HIGH',
+            entityType: 'PAYROLL',
+            entityId: payrollId,
+            dueAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+        });
+      }
 
     await logFinancialActivity(tx, {
       category: 'PAYROLL',
@@ -742,21 +751,29 @@ export async function exportLedgerCsv(payrollId: string) {
     orderBy: { employee: { lastName: 'asc' } },
   });
 
+  function esc(val: unknown): string {
+    const s = String(val ?? '');
+    if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  }
+
   const header = 'Employee Code,Name,Department,Grade,Base Salary,Allowances,Deductions,Tax,Net Pay,Status';
   const rows = lines.map((line) => {
     const name = `${line.employee.firstName} ${line.employee.lastName}`;
-    const dept = line.employee.department ?? '';
+    const empCode = line.employee.employeeCode ?? line.employeeId.slice(0, 8).toUpperCase();
     return [
-      line.employee.employeeCode ?? '',
-      `"${name}"`,
-      dept,
-      line.employee.grade ?? '',
+      esc(empCode),
+      esc(name),
+      esc(line.employee.department ?? ''),
+      esc(line.employee.grade ?? ''),
       Number(line.baseSalary),
       Number(line.allowances),
       Number(line.deductionsTotal),
       Number(line.taxAmount),
       Number(line.netPay),
-      LINE_STATUS_LABEL[line.status],
+      esc(LINE_STATUS_LABEL[line.status]),
     ].join(',');
   });
 
@@ -788,6 +805,9 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
               employeeCode: true,
               department: true,
               designation: true,
+              employeeType: true,
+              location: true,
+              joiningDate: true,
               user: { select: { email: true } },
             },
           },
@@ -797,11 +817,14 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
   });
 
   if (!payroll) return null;
+  if (payroll.status === 'PAID' || payroll.status === 'APPROVED' || payroll.status === 'REJECTED' || payroll.status === 'PENDING_APPROVAL') {
+    return null;
+  }
 
   const config = parsePayslipConfig(payroll.payslipConfig);
   const eligible = payroll.lineItems.filter((line) => {
     if (body.scope === 'verified_only') {
-      return line.status === 'VERIFIED' || line.status === 'PROCESSING';
+      return line.status === 'VERIFIED';
     }
     return line.status !== 'ON_HOLD' && line.status !== 'PENDING';
   });
@@ -809,6 +832,32 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
   let generated = 0;
   let skipped = payroll.lineItems.length - eligible.length;
   const periodLabel = periodLabelFromStart(payroll.periodStart);
+
+  const periodStart = payroll.periodStart;
+  const periodEnd = payroll.periodEnd;
+  const monthStr = String(periodStart.getMonth() + 1).padStart(2, '0');
+  const yearStr = String(periodStart.getFullYear());
+
+  const year = periodStart.getFullYear();
+  const ytdStart = new Date(Date.UTC(year, 0, 1));
+
+  const eligibleEmployeeIds = eligible.map(l => l.employee.id);
+  const allYtdPayslips = await prisma.employeePayslip.findMany({
+    where: {
+      employeeId: { in: eligibleEmployeeIds },
+      periodStart: { gte: ytdStart, lt: periodStart },
+      status: { not: 'CANCELLED' },
+    },
+    select: { employeeId: true, grossPay: true, deductionsTotal: true, netPay: true },
+  });
+  const ytdByEmployee = new Map<string, { gross: number; deductions: number; net: number }>();
+  for (const p of allYtdPayslips) {
+    const entry = ytdByEmployee.get(p.employeeId) ?? { gross: 0, deductions: 0, net: 0 };
+    entry.gross += Number(p.grossPay);
+    entry.deductions += Number(p.deductionsTotal);
+    entry.net += Number(p.netPay);
+    ytdByEmployee.set(p.employeeId, entry);
+  }
 
   for (const line of eligible) {
     await upsertPayslipFromLineItem(
@@ -821,22 +870,42 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
 
     if (config.pdf || config.email) {
       const employeeName = `${line.employee.firstName} ${line.employee.lastName}`;
+
+      const ytd = ytdByEmployee.get(line.employee.id) ?? { gross: 0, deductions: 0, net: 0 };
+      const ytdGross = ytd.gross;
+      const ytdDeductions = ytd.deductions;
+      const ytdNet = ytd.net;
+
+      const payslipNumber = `PSL-${line.employee.employeeCode ?? 'EMP'}-${monthStr}${yearStr}`;
+
       const buffer = await buildPayslipPdf({
         employeeName,
         employeeCode: line.employee.employeeCode,
         department: line.employee.department?.replace(/_/g, ' ') ?? null,
         designation: line.employee.designation,
+        employeeType: line.employee.employeeType ?? null,
+        workLocation: line.employee.location ?? null,
+        joiningDate: line.employee.joiningDate,
+        periodStart,
+        periodEnd,
         periodLabel,
-        grossAmount: Number(line.grossPay),
-        grossPay: Number(line.grossPay),
-        deductionsAmount: Number(line.deductionsTotal),
-        deductionsTotal: Number(line.deductionsTotal),
-        taxAmount: Number(line.taxAmount),
-        netAmount: Number(line.netPay),
-        netPay: Number(line.netPay),
+        payslipNumber,
+        paymentDate: new Date(),
         currencyCode: payroll.currencyCode,
         status: 'Processing',
-        generatedAt: new Date(),
+        basicSalary: Number(line.baseSalary),
+        allowances: Number(line.allowances),
+        overtime: Number(line.overtime),
+        bonuses: Number(line.bonuses),
+        grossPay: Number(line.grossPay),
+        incomeTax: Number(line.incomeTax),
+        providentFund: Number(line.providentFund),
+        healthInsurance: Number(line.healthInsurance),
+        deductionsTotal: Number(line.deductionsTotal),
+        netPay: Number(line.netPay),
+        ytdGross,
+        ytdDeductions,
+        ytdNet,
       });
 
       if (config.email && line.employee.user.email) {
@@ -874,7 +943,15 @@ export async function disbursePayroll(payrollId: string) {
     return { error: 'NOT_APPROVED' as const };
   }
 
-  await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
+    const blocked = await tx.payrollLineItem.findMany({
+      where: { payrollId, status: { in: ['ON_HOLD', 'PENDING'] } },
+      select: { id: true },
+    });
+    if (blocked.length > 0) {
+      return { error: 'UNVERIFIED_LINES' as const, blockedCount: blocked.length };
+    }
+
     await tx.payroll.update({
       where: { id: payrollId },
       data: { status: 'PAID', paidAt: new Date(), lifecycleStep: 'DISBURSEMENT' },
@@ -890,9 +967,11 @@ export async function disbursePayroll(payrollId: string) {
       title: `Disbursed payroll ${payroll.batchNumber}`,
       metadata: { payrollId, batchNumber: payroll.batchNumber },
     });
+
+    return { success: true as const };
   });
 
-  return { success: true };
+  return result;
 }
 
 export async function getPayrollById(payrollId: string) {

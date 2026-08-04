@@ -42,10 +42,12 @@ export const listEmployeesQuerySchema = z.object({
   page: z
     .string()
     .optional()
+    .refine((v) => (v ? /^\d+$/.test(v) : true), 'page must be a number')
     .transform((v) => (v ? parseInt(v, 10) : 1)),
   limit: z
     .string()
     .optional()
+    .refine((v) => (v ? /^\d+$/.test(v) : true), 'limit must be a number')
     .transform((v) => (v ? parseInt(v, 10) : 50)),
 });
 
@@ -63,14 +65,13 @@ export const updatePersonalBodySchema = z.object({
   gender: z.string().nullable().optional(),
   nationality: z.string().nullable().optional(),
   cnic: z.string().nullable().optional(),
-  personalEmail: z.union([z.string().email(), z.literal('')]).nullable().optional(),
+  personalEmail: z.string().email().nullable().optional(),
   personalPhone: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
   emergencyContactName: z.string().nullable().optional(),
   emergencyContactRelation: z.string().nullable().optional(),
   emergencyContactPhone: z.string().nullable().optional(),
   homeAddress: z.string().nullable().optional(),
-  socialHandle: z.string().nullable().optional(),
 });
 
 export type UpdatePersonalBody = z.infer<typeof updatePersonalBodySchema>;
@@ -140,6 +141,9 @@ export const employeePayslipsQuerySchema = z.object({
   year: z
     .string()
     .optional()
+    .refine((v) => v === undefined || /^\d{4}$/.test(v), {
+      message: 'Year must be a 4-digit number',
+    })
     .transform((v) => (v ? parseInt(v, 10) : new Date().getFullYear())),
 });
 
@@ -156,8 +160,8 @@ export type EmployeePayslipParams = z.infer<typeof employeePayslipParamsSchema>;
 // ============================================================================
 
 export const employeeAttendanceQuerySchema = z.object({
-  month: z.coerce.number().int().min(1).max(12).optional().default(new Date().getUTCMonth() + 1),
-  year: z.coerce.number().int().min(2000).max(2100).optional().default(new Date().getUTCFullYear()),
+  month: z.coerce.number().int().min(1).max(12).optional().default(() => new Date().getUTCMonth() + 1),
+  year: z.coerce.number().int().min(2000).max(2100).optional().default(() => new Date().getUTCFullYear()),
 });
 
 export type EmployeeAttendanceQuery = z.infer<typeof employeeAttendanceQuerySchema>;
