@@ -243,6 +243,7 @@ export async function getDashboardData(userId: string, userRole: string) {
     
     const overlapDetected = allTeamLeaves.some(otherReq => {
        if (otherReq.id === req.id) return false;
+       if (otherReq.employeeId === req.employeeId) return false;
        const otherStart = new Date(otherReq.startDate).getTime();
        const otherEnd = new Date(otherReq.endDate).getTime();
        return reqStart <= otherEnd && reqEnd >= otherStart;
@@ -608,8 +609,7 @@ export async function overrideAttendance(targetEmployeeId: string, status: strin
     }
   }
 
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
+  const today = getTodayUtc();
 
   const existingAttendance = await prisma.attendance.findUnique({
     where: {
@@ -703,8 +703,7 @@ export async function toggleFlag(targetEmployeeId: string, isFlagged: boolean, u
     }
   }
 
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
+  const today = getTodayUtc();
 
   const existingAttendance = await prisma.attendance.findUnique({
     where: {

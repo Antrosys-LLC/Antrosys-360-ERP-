@@ -17,6 +17,7 @@ import {
   animateRunPayrollSteps,
   approvePayrollLines,
   bulkActionDelay,
+  disbursePayroll,
   exportPayrollLedger,
   fetchPayrollDashboard,
   fetchPayrollEmployees,
@@ -60,6 +61,10 @@ export default function PayrollDashboard() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [disburseConfirmOpen, setDisburseConfirmOpen] = useState(false);
+  const [holdModalOpen, setHoldModalOpen] = useState(false);
+  const [pendingHoldEmployee, setPendingHoldEmployee] = useState<PayrollEmployeeRow | null>(null);
+  const [holdReasonText, setHoldReasonText] = useState('');
 
   const [search, setSearch] = useState('');
   const [department, setDepartment] = useState('');
@@ -277,6 +282,47 @@ export default function PayrollDashboard() {
     }
   };
 
+  const handleDisbursePayroll = async () => {
+    if (!payrollId) return;
+    setBulkLoading(true);
+    setError(null);
+    try {
+      await bulkActionDelay();
+      const updatedDash = await disbursePayroll(payrollId);
+      setDashboard(updatedDash);
+      setDisburseConfirmOpen(false);
+    } catch {
+      setError('Failed to execute bank disbursement.');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleSaveHoldReason = async () => {
+    if (!payrollId || !pendingHoldEmployee) return;
+    try {
+      await updatePayrollLineStatus(payrollId, pendingHoldEmployee.id, {
+        status: 'ON_HOLD',
+        holdReason: holdReasonText.trim() || undefined,
+      });
+      const empData = await fetchPayrollEmployees(payrollId, {
+        search: search || undefined,
+        department: department || undefined,
+        status: mapStatusFilter(statusFilter),
+        grade: gradeFilter || undefined,
+        page,
+        limit: 12,
+      });
+      setEmployees(empData.items);
+      setPagination(empData.pagination);
+      setHoldModalOpen(false);
+      setPendingHoldEmployee(null);
+      setHoldReasonText('');
+    } catch {
+      setError('Failed to update status to On hold.');
+    }
+  };
+
   const handlePeriodChange = async (periodKey: string) => {
     if (periodKey === selectedPeriodKey) return;
     setSelectedPeriodKey(periodKey);
@@ -354,18 +400,34 @@ export default function PayrollDashboard() {
                 <Calendar className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
 
-              <button
-                onClick={handleRunPayroll}
-                disabled={bulkLoading || !!payrollId}
-                className="bg-[#6366F1] hover:bg-[#4F46E5] disabled:opacity-60 text-white px-4 py-1.5 rounded-[6px] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors shadow-sm tracking-wide min-w-[120px] justify-center"
-              >
-                {bulkLoading ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <Play className="w-3 h-3 fill-current stroke-none" />
+              <div className="flex items-center gap-2">
+                {dashboard?.payroll?.status === 'APPROVED' && (
+                  <button
+                    onClick={() => setDisburseConfirmOpen(true)}
+                    disabled={bulkLoading}
+                    className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white px-4 py-1.5 rounded-[6px] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors shadow-sm tracking-wide justify-center"
+                  >
+                    {bulkLoading ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Check className="w-3 h-3 stroke-[3]" />
+                    )}
+                    Disburse Payroll
+                  </button>
                 )}
-                Run payroll
-              </button>
+                <button
+                  onClick={handleRunPayroll}
+                  disabled={bulkLoading || !!payrollId}
+                  className="bg-[#6366F1] hover:bg-[#4F46E5] disabled:opacity-60 text-white px-4 py-1.5 rounded-[6px] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors shadow-sm tracking-wide min-w-[120px] justify-center"
+                >
+                  {bulkLoading ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Play className="w-3 h-3 fill-current stroke-none" />
+                  )}
+                  Run payroll
+                </button>
+              </div>
             </div>
           </div>
           <div className="h-[1px] bg-gray-200/60 w-full mt-3.5" />
@@ -708,8 +770,15 @@ export default function PayrollDashboard() {
                             value={emp.statusCode}
                             onChange={async (e) => {
                               if (!payrollId) return;
+                              const newStatus = e.target.value;
+                              if (newStatus === 'ON_HOLD') {
+                                setPendingHoldEmployee(emp);
+                                setHoldReasonText('');
+                                setHoldModalOpen(true);
+                                return;
+                              }
                               await updatePayrollLineStatus(payrollId, emp.id, {
-                                status: e.target.value,
+                                status: newStatus,
                               });
                               const empData = await fetchPayrollEmployees(payrollId, {
                                 search: search || undefined,
@@ -947,6 +1016,77 @@ export default function PayrollDashboard() {
                 </button>
               </div>
             </section>
+          </>
+        )}
+
+        {/* Disburse Payroll Confirmation Modal */}
+        {disburseConfirmOpen && (
+          <>
+            <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={() => setDisburseConfirmOpen(false)} />
+            <div className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-full max-w-md rounded-xl border bg-white p-6 shadow-2xl">
+              <h3 className="font-semibold text-gray-950 text-lg mb-2">Execute Bank Disbursement</h3>
+              <p className="text-sm text-gray-500 mb-6">
+                Are you sure you want to finalize payout disbursement for batch <span className="font-bold text-gray-900">{dashboard?.payroll?.batchNumber}</span>? This action will mark all verified payslips as PAID and write transaction logs to the financial ledger.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDisburseConfirmOpen(false)}
+                  disabled={bulkLoading}
+                  className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDisbursePayroll}
+                  disabled={bulkLoading}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md transition-colors inline-flex items-center gap-1.5"
+                >
+                  {bulkLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                  Confirm Disbursement
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Hold Reason Input Modal */}
+        {holdModalOpen && pendingHoldEmployee && (
+          <>
+            <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={() => { setHoldModalOpen(false); setPendingHoldEmployee(null); }} />
+            <div className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-full max-w-md rounded-xl border bg-white p-6 shadow-2xl">
+              <h3 className="font-semibold text-gray-950 text-lg mb-2">Place Payroll Line On Hold</h3>
+              <p className="text-sm text-gray-500 mb-4">
+                Holding payroll line for <span className="font-bold text-gray-900">{pendingHoldEmployee.name}</span> ({pendingHoldEmployee.employeeCode}).
+              </p>
+              <div className="mb-6">
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5">Hold Reason / Audit Note</label>
+                <input
+                  type="text"
+                  value={holdReasonText}
+                  onChange={(e) => setHoldReasonText(e.target.value)}
+                  placeholder="e.g. Bank details verification pending..."
+                  className="w-full bg-white border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-indigo-500/30 outline-none"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setHoldModalOpen(false); setPendingHoldEmployee(null); }}
+                  className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveHoldReason}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors"
+                >
+                  Save & Set On Hold
+                </button>
+              </div>
+            </div>
           </>
         )}
       </main>
