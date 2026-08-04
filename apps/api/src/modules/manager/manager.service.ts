@@ -62,7 +62,7 @@ async function loadTeamSnapshot(teamId: string, today: Date) {
     }),
   ]);
 
-  const attendanceTable = buildAttendanceTable(teamEmployees, attendancesToday, approvedTeamLeaves, today);
+  const attendanceTable = buildAttendanceTable(teamEmployees, attendancesToday);
   const teamSchedule = computeTeamScheduleStats(
     attendanceTable,
     approvedTeamLeaves,
@@ -193,8 +193,6 @@ export async function getDashboardData(userId: string, userRole: string) {
       performanceScore: emp.performanceScore,
     })),
     attendancesToday,
-    approvedTeamLeaves,
-    today,
   );
 
   const teamSchedule = computeTeamScheduleStats(
