@@ -352,9 +352,8 @@ export async function updateLeaveStatus(leaveId: string, status: 'APPROVED' | 'R
     throw new Error('Leave request is not pending');
   }
 
-  // Prevent managers from approving/rejecting their own leave
   if (leave.employeeId === employee.id) {
-    throw new Error('Cannot approve or reject your own leave request');
+    throw new Error('You cannot approve your own leave request');
   }
 
   // Sub-manager check: can only edit leaves for direct team

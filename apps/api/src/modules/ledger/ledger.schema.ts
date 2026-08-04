@@ -4,7 +4,7 @@ import { z } from 'zod';
 // Shared
 // ---------------------------------------------------------------------------
 
-export const ledgerPeriodSchema = z.string().default('may-2026');
+export const ledgerPeriodSchema = z.string().default('May 2026');
 
 export const ledgerEntryParamsSchema = z.object({
   entryId: z.string().cuid(),

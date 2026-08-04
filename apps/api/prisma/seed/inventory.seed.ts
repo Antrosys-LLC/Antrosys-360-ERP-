@@ -6,18 +6,16 @@ const prisma = new PrismaClient();
 export async function seedInventoryData() {
   console.log('📦 Seeding inventory data...');
 
-  const existingCategories = await prisma.inventoryCategory.count();
-  if (existingCategories > 0) {
-    console.log('  ⏭️ Inventory data already exists, skipping');
-    return;
+  const categoryNames = ['IT hardware', 'Office equipment', 'Furniture', 'Consumables'];
+  const categories = [];
+  for (const name of categoryNames) {
+    const category = await prisma.inventoryCategory.upsert({
+      where: { name },
+      update: {},
+      create: { name },
+    });
+    categories.push(category);
   }
-
-  const categories = await Promise.all([
-    prisma.inventoryCategory.create({ data: { name: 'IT hardware' } }),
-    prisma.inventoryCategory.create({ data: { name: 'Office equipment' } }),
-    prisma.inventoryCategory.create({ data: { name: 'Furniture' } }),
-    prisma.inventoryCategory.create({ data: { name: 'Consumables' } }),
-  ]);
 
   const categoryMap: Record<string, string> = {};
   for (const cat of categories) {
@@ -156,15 +154,7 @@ export async function seedInventoryData() {
 
     await prisma.inventoryItem.upsert({
       where: { sku: item.sku },
-      update: {
-        qty: item.qty,
-        location: item.location,
-        supplier: item.supplier,
-        unitCost: item.unitCost,
-        leadTime: item.leadTime,
-        minStockLevel: item.minStockLevel,
-        maxStockLevel: item.maxStockLevel,
-      },
+      update: {},
       create: {
         name: item.name,
         sku: item.sku,

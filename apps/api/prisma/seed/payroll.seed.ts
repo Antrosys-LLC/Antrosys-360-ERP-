@@ -141,12 +141,7 @@ export async function seedPayrollData(prisma: PrismaClient) {
     }
     await prisma.employeeCompensation.upsert({
       where: { employeeId: emp.id },
-      update: {
-        baseSalary: toPayrollDecimal(defaults.base),
-        allowances: toPayrollDecimal(defaults.allowances),
-        currencyCode: APP_DEFAULT_CURRENCY,
-        effectiveFrom: start,
-      },
+      update: {},
       create: {
         employeeId: emp.id,
         baseSalary: toPayrollDecimal(defaults.base),

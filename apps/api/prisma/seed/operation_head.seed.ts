@@ -60,57 +60,5 @@ export async function seedOperationHeadData(prisma: PrismaClient) {
     }
   }
 
-  // Seed an OTHER-type leave escalated to ops head queue
-  const omar = await prisma.employee.findFirst({ where: { user: { email: 'omar.mirza@antrosys.com' } } });
-  const manager = await prisma.employee.findFirst({ where: { user: { email: 'manager@antrosys.com' } } });
-
-  if (omar && manager) {
-    const existing = await prisma.leaveRequest.findFirst({
-      where: { employeeId: omar.id, type: 'OTHER', status: 'PENDING_OPS_HEAD' },
-    });
-
-    if (!existing) {
-      await prisma.leaveRequest.create({
-        data: {
-          employeeId: omar.id,
-          type: 'OTHER',
-          startDate: today,
-          endDate: new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000),
-          durationDays: 3,
-          status: 'PENDING_OPS_HEAD',
-          reason: 'Bereavement leave — family emergency abroad',
-          requiresOpsHeadApproval: true,
-          managerApprovedById: manager.id,
-          managerApprovedAt: new Date(),
-        },
-      });
-    }
-  }
-
-  // Seed over-threshold sick leave escalated to ops head
-  const sara = await prisma.employee.findFirst({ where: { user: { email: 'sara.javed@antrosys.com' } } });
-  if (sara && manager) {
-    const existing = await prisma.leaveRequest.findFirst({
-      where: { employeeId: sara.id, status: 'PENDING_OPS_HEAD', type: 'SICK' },
-    });
-
-    if (!existing) {
-      await prisma.leaveRequest.create({
-        data: {
-          employeeId: sara.id,
-          type: 'SICK',
-          startDate: today,
-          endDate: new Date(today.getTime() + 4 * 24 * 60 * 60 * 1000),
-          durationDays: 5,
-          status: 'PENDING_OPS_HEAD',
-          reason: 'Extended medical recovery — exceeds sick leave quota',
-          requiresOpsHeadApproval: true,
-          managerApprovedById: manager.id,
-          managerApprovedAt: new Date(),
-        },
-      });
-    }
-  }
-
   console.log('✅ Operation Head data seeded!');
 }

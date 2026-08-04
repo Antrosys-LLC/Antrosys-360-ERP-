@@ -46,6 +46,10 @@ export const listLeaveRequestsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+export const listLeaveBalancesQuerySchema = z.object({
+  employeeId: z.string().optional(),
+});
+
 // ─── Inferred Types ────────────────────────────────────────────────────────
 
 export type LeaveType = z.infer<typeof leaveTypeSchema>;
@@ -54,3 +58,4 @@ export type CreateLeaveRequestBody = z.infer<typeof createLeaveRequestBodySchema
 export type UpdateLeaveStatusBody = z.infer<typeof updateLeaveStatusBodySchema>;
 export type LeaveRequestParams = z.infer<typeof leaveRequestParamsSchema>;
 export type ListLeaveRequestsQuery = z.infer<typeof listLeaveRequestsQuerySchema>;
+export type ListLeaveBalancesQuery = z.infer<typeof listLeaveBalancesQuerySchema>;
