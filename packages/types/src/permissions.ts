@@ -29,7 +29,9 @@ export type Permission =
   | 'bank_feeds:read'
   | 'bank_feeds:write'
   | 'inventory:read'
-  | 'inventory:write';
+  | 'inventory:write'
+  | 'kpi:read'
+  | 'kpi:write';
 
 const ALL_PERMISSIONS: Permission[] = [
   'finance:read',
@@ -61,6 +63,8 @@ const ALL_PERMISSIONS: Permission[] = [
   'bank_feeds:write',
   'inventory:read',
   'inventory:write',
+  'kpi:read',
+  'kpi:write',
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
@@ -80,6 +84,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'bank_feeds:write',
     'inventory:read',
     'inventory:write',
+    'kpi:read',
   ],
 
   [Role.OPERATIONS_HEAD]: [
@@ -95,6 +100,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'documents:write',
     'inventory:read',
     'inventory:write',
+    'kpi:read',
+    'kpi:write',
   ],
 
   [Role.HR_HEAD]: [
@@ -107,6 +114,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'documents:read',
     'documents:write',
     'inventory:read',
+    'kpi:read',
+    'kpi:write',
   ],
 
   [Role.FINANCE_MANAGER]: [
@@ -119,6 +128,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'bank_feeds:read',
     'bank_feeds:write',
     'inventory:read',
+    'kpi:read',
   ],
 
   [Role.PROJECT_MANAGER]: [
@@ -126,6 +136,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'reports:read',
     'documents:read',
     'inventory:read',
+    'kpi:read',
   ],
 
   [Role.MANAGER]: [
@@ -141,6 +152,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'documents:write',
     'inventory:read',
     'inventory:write',
+    'kpi:read',
+    'kpi:write',
   ],
 
   [Role.SUB_MANAGER]: [
@@ -155,6 +168,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'documents:read',
     'documents:write',
     'inventory:read',
+    'kpi:read',
   ],
 
   [Role.TEAM_LEAD]: [
@@ -162,6 +176,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'hr:read',
     'documents:read',
     'inventory:read',
+    'kpi:read',
   ],
 
   [Role.EMPLOYEE]: [
