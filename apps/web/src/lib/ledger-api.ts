@@ -69,6 +69,7 @@ export interface AccountingEquation {
   liabilities: number;
   equity: number;
   isBalanced: boolean;
+  status?: 'balanced' | 'skewed' | 'no_data';
 }
 
 export async function fetchLedgerSummary(period: string) {
@@ -132,34 +133,7 @@ export async function fetchAccountingEquation(period: string) {
   return data.data;
 }
 
-export async function createLedgerEntry(payload: {
-  date: string;
-  ref: string;
-  description: string;
-  entryType: 'DEBIT' | 'CREDIT';
-  amount: number;
-  accountId: string;
-  hasFlag?: boolean;
-}) {
-  const { data } = await apiClient.post('/ledger', payload);
-  return data;
-}
-
 export async function voidLedgerEntry(entryId: string, reason: string) {
   const { data } = await apiClient.post(`/ledger/${entryId}/void`, { reason });
-  return data;
-}
-
-export async function updateLedgerEntry(entryId: string, payload: Partial<{
-  date: string;
-  ref: string;
-  description: string;
-  entryType: 'DEBIT' | 'CREDIT';
-  amount: number;
-  accountId: string;
-  hasFlag: boolean;
-  isVoided: boolean;
-}>) {
-  const { data } = await apiClient.patch(`/ledger/${entryId}`, payload);
   return data;
 }

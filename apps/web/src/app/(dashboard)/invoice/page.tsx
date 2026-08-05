@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import apiClient from '@/lib/api-client';
 
 // ==========================================
 // MOCK DATA (Ready for API replacement)
@@ -454,6 +455,8 @@ export default function InvoiceBuilder() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [confirmSendOpen, setConfirmSendOpen] = useState(false);
   const [confirmSaveDraftOpen, setConfirmSaveDraftOpen] = useState(false);
+  const [confirmPaymentOpen, setConfirmPaymentOpen] = useState(false);
+  const [paymentLoading, setPaymentLoading] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
   const [draftSent, setDraftSent] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -614,6 +617,88 @@ export default function InvoiceBuilder() {
       title: 'Draft saved',
       description: 'Your invoice draft has been saved successfully. You can edit it on next login.',
     });
+  };
+
+  const handleRecordPayment = async () => {
+    setPaymentLoading(true);
+    try {
+      const invNumber = `INV-${Date.now()}`;
+
+      let clientId: string;
+      try {
+        const listRes = await apiClient.get('/clients?limit=1');
+        clientId = listRes.data.data?.items?.[0]?.id;
+      } catch { clientId = undefined as any; }
+      if (!clientId) {
+        const createRes = await apiClient.post('/clients', { name: billTo.name });
+        clientId = createRes.data.data.id;
+      }
+
+      let projectId: string | undefined;
+      try {
+        const projList = await apiClient.get(`/clients/${clientId}/projects?limit=1`);
+        projectId = projList.data.data?.[0]?.id;
+      } catch { /* no projects yet */ }
+      if (!projectId) {
+        try {
+          const projRes = await apiClient.post(`/clients/${clientId}/projects`, { name: 'Software Development' });
+          projectId = projRes.data.data.id;
+        } catch { /* project is optional */ }
+      }
+
+      const invPayload: Record<string, unknown> = {
+        invoiceNumber: invNumber,
+        clientId,
+        invoiceDate: toInputDate(details.invoiceDate),
+        dueDate: toInputDate(details.dueDate),
+        paymentTermsDays: 15,
+        currencyCode: selectedCurrency,
+        taxRegion: details.taxRegion || null,
+        lineItems: lineItems.map(item => {
+          const line: Record<string, unknown> = {
+            description: item.desc,
+            quantity: item.qty,
+            unitPrice: item.price,
+            discountPct: item.discount,
+            taxType: item.tax.includes('GST') ? 'GST' : item.tax.includes('WHT') ? 'WITHHOLDING' : 'EXEMPT',
+            taxRatePct: Number(item.tax.replace(/[^\d.]/g, '')) || 0,
+          };
+          if (item.unit && item.unit !== 'N/A') line.unit = item.unit;
+          return line;
+        }),
+      };
+      if (projectId) invPayload.projectId = projectId;
+
+      const invRes = await apiClient.post('/invoices', invPayload);
+      const invoiceId: string = invRes.data.data.id;
+
+      await apiClient.patch(`/invoices/${invoiceId}`, { status: 'PAID' });
+
+      setStatus('Paid');
+      setConfirmPaymentOpen(false);
+      logActivity('Payment recorded');
+      toast({
+        title: 'Payment recorded!',
+        description: `Invoice ${invNumber} created and marked as PAID. Ledger entries created.`,
+      });
+    } catch (err: any) {
+      const apiErr = err?.response?.data;
+      let msg = apiErr?.error || 'Failed to record payment';
+      if (apiErr?.details?.fieldErrors) {
+        const fields = Object.entries(apiErr.details.fieldErrors)
+          .map(([f, errs]) => `${f}: ${(errs as string[]).join(', ')}`)
+          .join('; ');
+        msg = fields ? `${msg}: ${fields}` : msg;
+      }
+      toast({
+        title: 'Payment failed',
+        description: msg,
+        variant: 'destructive',
+      });
+    } finally {
+      setPaymentLoading(false);
+      setConfirmPaymentOpen(false);
+    }
   };
 
   const handleSendInvoiceConfirmed = () => {
@@ -858,6 +943,15 @@ export default function InvoiceBuilder() {
                 <Send className="w-4 h-4" />
                 <span>Send invoice</span>
               </button>
+              {(status === 'Sent' || status === 'PARTIALLY_PAID') && (
+                <button
+                  onClick={() => setConfirmPaymentOpen(true)}
+                  className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-md text-sm font-medium hover:bg-emerald-700 transition shadow-sm"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Record Payment</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -1519,6 +1613,44 @@ export default function InvoiceBuilder() {
             >
               <Send className="w-4 h-4" />
               Send invoice
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Record Payment confirmation dialog */}
+      <Dialog open={confirmPaymentOpen} onOpenChange={setConfirmPaymentOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              Record Payment
+            </DialogTitle>
+            <DialogDescription>
+              Mark invoice <strong>{mockData.header.id}</strong> as <strong>PAID</strong>?
+              This will create ledger entries (CREDIT to Revenue, DEBIT to Cash) via the backend.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmPaymentOpen(false)}
+              disabled={paymentLoading}
+              className="px-4 py-2 border border-border rounded-md text-sm font-medium hover:bg-muted transition disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleRecordPayment}
+              disabled={paymentLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-md text-sm font-medium hover:bg-emerald-700 transition disabled:opacity-50"
+            >
+              {paymentLoading ? (
+                <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Recording...</>
+              ) : (
+                <><CheckCircle2 className="w-4 h-4" /> Confirm Payment</>
+              )}
             </button>
           </DialogFooter>
         </DialogContent>

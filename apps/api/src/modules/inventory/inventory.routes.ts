@@ -11,6 +11,8 @@ import {
   createCategoryHandler,
   listLocationsHandler,
   createPurchaseOrderHandler,
+  listPurchaseOrdersHandler,
+  receivePurchaseOrderHandler,
 } from './inventory.controller';
 
 export async function inventoryRoutes(fastify: FastifyInstance) {
@@ -34,10 +36,20 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
     handler: listLocationsHandler,
   });
 
-  // Purchase Order (before /:id to avoid wildcard match)
-  fastify.post('/purchase-order', {
+  // Purchase Orders
+  fastify.get('/purchase-orders', {
     preHandler: [fastify.requirePermission('inventory:read')],
+    handler: listPurchaseOrdersHandler,
+  });
+
+  fastify.post('/purchase-order', {
+    preHandler: [fastify.requirePermission('inventory:write')],
     handler: createPurchaseOrderHandler,
+  });
+
+  fastify.post('/purchase-order/:poId/receive', {
+    preHandler: [fastify.requirePermission('inventory:write')],
+    handler: receivePurchaseOrderHandler,
   });
 
   // Categories (before /:id to avoid wildcard match)

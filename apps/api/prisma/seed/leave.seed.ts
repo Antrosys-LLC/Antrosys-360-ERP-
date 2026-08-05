@@ -163,9 +163,11 @@ export async function seedLeaveData() {
     { employeeId: saraEmp.id, leaveType: LeaveType.OTHER, usedDays: 0, pendingDays: 0 },
     // Fawad Khan — current month
     { employeeId: fawadEmp.id, leaveType: LeaveType.SICK, usedDays: 2, pendingDays: 0 },
-    // Omar Mirza — pending OTHER leave awaiting ops head approval (not deducted)
-    { employeeId: omarEmp.id, leaveType: LeaveType.OTHER, usedDays: 0, pendingDays: 3 },
   ];
+  // Omar Mirza — pending OTHER leave awaiting ops head approval (not deducted)
+  if (omarEmp) {
+    balances.push({ employeeId: omarEmp.id, leaveType: LeaveType.OTHER, usedDays: 0, pendingDays: 3 });
+  }
 
   for (const b of balances) {
     await prisma.leaveBalance.upsert({

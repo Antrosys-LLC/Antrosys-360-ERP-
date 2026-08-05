@@ -1567,3 +1567,22 @@ model InventoryItem {
   @@map("inventory_items")
 }
 
+model PurchaseOrder {
+  id              String             @id @default(cuid())
+  poNumber        String             @unique
+  supplier        String
+  items           Json
+  grandTotal      Decimal            @db.Decimal(14, 2)
+  notes           String?
+  currencyCode    String             @default("PKR") @db.VarChar(3)
+  status          String             @default("PENDING") // PENDING, APPROVED, RECEIVED, CANCELLED
+  receivedAt      DateTime?
+  createdByUserId String
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([status])
+  @@index([poNumber])
+  @@map("purchase_orders")
+}
+
