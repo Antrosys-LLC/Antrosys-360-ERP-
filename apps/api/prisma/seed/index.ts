@@ -337,6 +337,9 @@ async function main() {
   const { seedEmployeeDashboardData } = await import('./employee_dashboard.seed');
   await seedEmployeeDashboardData();
 
+  const { seedKpiData } = await import('./kpi.seed');
+  await seedKpiData(prisma);
+
   console.log('\n🎉 Seed completed successfully!');
 }
 

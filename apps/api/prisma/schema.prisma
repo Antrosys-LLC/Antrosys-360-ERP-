@@ -145,6 +145,13 @@ enum Department {
   OTHER
 }
 
+enum KpiStatus {
+  ON_TRACK
+  AT_RISK
+  OFF_TRACK
+  EXCEEDED
+}
+
 enum Gender {
   MALE
   FEMALE
@@ -355,6 +362,7 @@ model Employee {
   receivedMessages      Message[]            @relation("ReceivedMessages")
   onboardingMeetings    OnboardingMeeting[]  @relation("EmployeeMeetings")
   dailyMoods            EmployeeDailyMood[]
+  ownedKpis             Kpi[]                @relation("KpiOwner")
 
   @@index([department])
   @@index([employmentStatus])
@@ -1232,6 +1240,32 @@ model DepartmentKpi {
   updatedAt       DateTime @updatedAt
 
   @@map("department_kpis")
+}
+
+model Kpi {
+  id              String      @id @default(cuid())
+  name            String
+  description     String?
+  department      Department?
+  ownerEmployeeId String?
+  owner           Employee?   @relation("KpiOwner", fields: [ownerEmployeeId], references: [id])
+  unit            String?
+  targetValue     Decimal?    @db.Decimal(12, 2)
+  currentValue    Decimal?    @db.Decimal(12, 2)
+  progress        Int         @default(0)
+  status          KpiStatus   @default(ON_TRACK)
+  trend           Json?
+  quarter         String?
+  year            Int?
+  isActive        Boolean     @default(true)
+  createdById     String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([status])
+  @@index([department])
+  @@index([quarter, year])
+  @@map("kpis")
 }
 
 model Notification {

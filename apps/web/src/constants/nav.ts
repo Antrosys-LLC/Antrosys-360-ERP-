@@ -17,6 +17,7 @@ import {
   Shield,
   ScrollText,
   Package,
+  TrendingUp,
 } from 'lucide-react';
 import type { Permission } from '@antrosys/types';
 
@@ -41,6 +42,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { label: 'Inventory', href: '/inventory', icon: Package, permission: 'inventory:read' },
   { label: 'Clients', href: '/clients', icon: Building2, permission: 'clients:read' },
   { label: 'Reports', href: '/reports', icon: BarChart3, permission: 'reports:read' },
+  { label: 'KPI Tracker', href: '/kpi', icon: TrendingUp, permission: 'kpi:read' },
   { label: 'Announcements', href: '/announcements', icon: Megaphone, permission: 'announcements:read' },
   { label: 'Admin', href: '/admin/users', icon: Shield, permission: 'admin:read' },
   { label: 'Audit Logs', href: '/admin/audit-logs', icon: ScrollText, permission: 'audit:read' },
