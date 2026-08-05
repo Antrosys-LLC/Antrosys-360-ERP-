@@ -468,8 +468,8 @@ export default function CFODashboard() {
                 <div className="flex justify-between items-start pt-1">
                   <div>
                     <p className="text-xs font-semibold text-gray-800">{task.action}</p>
-                    <span className={`inline-block text-[10px] font-bold mt-1 ${task.priority === 'High' ? 'text-rose-500' : 'text-gray-400'}`}>
-                      {task.priority}
+                    <span className={`inline-block text-[10px] font-bold mt-1 ${task.action.toLowerCase().includes('payroll') ? 'text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded' : task.priority === 'High' ? 'text-rose-500' : 'text-gray-400'}`}>
+                      {task.action.toLowerCase().includes('payroll') ? 'Payroll Batch Approval' : task.priority}
                     </span>
                   </div>
                   <div className="text-right text-[10px] text-gray-400">
@@ -486,9 +486,9 @@ export default function CFODashboard() {
                       setTaskActionId(task.id);
                       cancelMutation.mutate(task.id);
                     }}
-                    className="inline-flex items-center justify-center px-3 py-1.5 border border-[#EBEAEF] bg-white hover:bg-gray-100 text-xs font-medium rounded-lg text-gray-600 transition-colors disabled:opacity-50"
+                    className="inline-flex items-center justify-center px-3 py-1.5 border border-red-200 bg-red-50 hover:bg-red-100 text-xs font-medium rounded-lg text-red-600 transition-colors disabled:opacity-50"
                   >
-                    Cancel
+                    Reject
                   </button>
                   <button
                     type="button"
@@ -497,9 +497,9 @@ export default function CFODashboard() {
                       setTaskActionId(task.id);
                       acceptMutation.mutate(task.id);
                     }}
-                    className="inline-flex items-center justify-center px-3 py-1.5 bg-[#735BF2] hover:bg-[#624be0] text-white text-xs font-medium rounded-lg transition-colors shadow-sm disabled:opacity-50"
+                    className="inline-flex items-center justify-center px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm disabled:opacity-50"
                   >
-                    Accept
+                    {task.action.toLowerCase().includes('payroll') ? 'Approve Payroll' : 'Accept'}
                   </button>
                 </div>
               </div>

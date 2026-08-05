@@ -286,9 +286,9 @@ function buildMetrics(totals: Awaited<ReturnType<typeof recalculateBatchTotals>>
       ],
     },
     totalDeductions: {
-      amount: formatCurrencyAmount(totalDeductions + totals.taxWithheld, currencyCode),
+      amount: formatCurrencyAmount(totalDeductions, currencyCode),
       items: [
-        { label: 'Income Tax', value: formatAmountPlain(totals.totalIncomeTax) },
+        { label: 'Income Tax', value: formatAmountPlain(totals.totalIncomeTax || totals.taxWithheld) },
         { label: 'Provident Fund', value: formatAmountPlain(totals.totalProvidentFund) },
         { label: 'Health Ins.', value: formatAmountPlain(totals.totalHealth) },
       ],
@@ -324,10 +324,17 @@ async function findPayrollForQuery(query: DashboardQuery) {
     return prisma.payroll.findUnique({ where: { id: query.payrollId }, include: { lineItems: true } });
   }
 
-  const { periodStart } = parsePeriod(query.period);
+  if (query.period) {
+    const { periodStart } = parsePeriod(query.period);
+    return prisma.payroll.findFirst({
+      where: { periodStart },
+      orderBy: { createdAt: 'desc' },
+      include: { lineItems: true },
+    });
+  }
+
   return prisma.payroll.findFirst({
-    where: { periodStart },
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ periodStart: 'desc' }, { createdAt: 'desc' }],
     include: { lineItems: true },
   });
 }
@@ -817,7 +824,7 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
   });
 
   if (!payroll) return null;
-  if (payroll.status === 'PAID' || payroll.status === 'APPROVED' || payroll.status === 'REJECTED' || payroll.status === 'PENDING_APPROVAL') {
+  if (payroll.status === 'REJECTED') {
     return null;
   }
 
