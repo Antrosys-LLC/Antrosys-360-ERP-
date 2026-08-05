@@ -1281,9 +1281,6 @@ function EmployeeDashboardContent() {
             >
               Generate HR letter
             </button>
-            <button className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-[#7B6AE6] hover:bg-[#6959cf] rounded-[var(--radius)] transition-colors shadow-sm">
-              Actions <ChevronDown className="w-3.5 h-3.5" />
-            </button>
           </div>
         </div>
         

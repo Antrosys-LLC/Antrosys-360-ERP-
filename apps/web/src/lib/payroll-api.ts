@@ -224,6 +224,7 @@ export async function exportPayrollLedger(payrollId: string) {
   window.URL.revokeObjectURL(url);
 }
 
+
 /** UX micro-delay for bulk actions (2–3s). Individual CRUD stays instant. */
 export function bulkActionDelay(ms = 2500): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
