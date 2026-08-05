@@ -1,4 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
+import { pushLedgerEntry } from '../../src/shared/finance/ledger-push';
 
 const prisma = new PrismaClient();
 
@@ -167,6 +168,49 @@ export async function seedInventoryData() {
         leadTime: item.leadTime,
       },
     });
+  }
+
+  const financeManager = await prisma.user.findUnique({ where: { email: 'finance_manager@antrosys.com' } });
+  if (financeManager) {
+    const samplePo = await prisma.purchaseOrder.create({
+      data: {
+        poNumber: 'PO-SEED-001',
+        supplier: 'TechStore Pk',
+        items: [
+          { itemId: 'sample', itemName: 'MacBook Pro 14"', sku: 'IT-MBP-14', quantity: 5, unitCost: 550000, totalCost: 2750000 },
+        ],
+        grandTotal: new Prisma.Decimal(2750000),
+        notes: 'Seed purchase order - received',
+        currencyCode: 'PKR',
+        status: 'RECEIVED',
+        receivedAt: new Date(),
+        createdByUserId: financeManager.id,
+      },
+    });
+
+    await pushLedgerEntry(prisma as any, {
+      date: new Date(),
+      ref: samplePo.poNumber,
+      description: `Stock received - ${samplePo.poNumber} (TechStore Pk)`,
+      entryType: 'DEBIT',
+      amount: Number(samplePo.grandTotal),
+      accountCode: '1000',
+      currencyCode: 'PKR',
+      createdByUserId: financeManager.id,
+    });
+
+    await pushLedgerEntry(prisma as any, {
+      date: new Date(),
+      ref: samplePo.poNumber,
+      description: `Purchase accrual - ${samplePo.poNumber} (TechStore Pk)`,
+      entryType: 'CREDIT',
+      amount: Number(samplePo.grandTotal),
+      accountCode: '2000',
+      currencyCode: 'PKR',
+      createdByUserId: financeManager.id,
+    });
+
+    console.log('  ✅ Created sample received PurchaseOrder with ledger entries');
   }
 
   console.log('✅ Inventory seed data created');

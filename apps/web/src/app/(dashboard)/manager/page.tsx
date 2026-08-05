@@ -21,6 +21,12 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import axios from 'axios';
@@ -595,66 +601,35 @@ function StatusDropdown({
   employeeId: string;
   onSelect: (employeeId: string, status: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [dropdownStyle, setDropdownStyle] = useState<{ top?: string; bottom?: string; right?: string }>({});
-  const buttonRef = useRef<HTMLButtonElement>(null);
   const badge = getStatusBadge(currentStatus);
   const options = ['PRESENT', 'ABSENT', 'LATE', 'ON LEAVE'];
 
-  const handleToggle = () => {
-    if (!open && buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const openUpwards = spaceBelow < 180;
-      
-      setDropdownStyle({
-        top: openUpwards ? 'auto' : `${rect.bottom + 4}px`,
-        bottom: openUpwards ? `${window.innerHeight - rect.top + 4}px` : 'auto',
-        right: `${window.innerWidth - rect.right}px`,
-      });
-    }
-    setOpen(!open);
-  };
-
   return (
-    <div className="relative inline-block">
-      <button
-        ref={buttonRef}
-        onClick={handleToggle}
-        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all ${badge.className}`}
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all outline-none ${badge.className}`}
       >
         {badge.label}
         <ChevronDown className="h-3 w-3" />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div 
-            style={dropdownStyle} 
-            className="fixed z-50 w-36 rounded-lg border bg-card shadow-lg py-1"
-          >
-            {options.map((opt) => {
-              const optBadge = getStatusBadge(opt);
-              return (
-                <button
-                  key={opt}
-                  onClick={() => {
-                    onSelect(employeeId, opt);
-                    setOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-1.5 text-xs font-medium hover:bg-accent transition-colors flex items-center gap-2 ${
-                    isSameAttendanceStatus(opt, currentStatus) ? 'bg-accent/50' : ''
-                  }`}
-                >
-                  <span className={`inline-block h-2 w-2 rounded-full ${optBadge.dotColor}`} />
-                  {optBadge.label}
-                </button>
-              );
-            })}
-          </div>
-        </>
-      )}
-    </div>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-36">
+        {options.map((opt) => {
+          const optBadge = getStatusBadge(opt);
+          return (
+            <DropdownMenuItem
+              key={opt}
+              onClick={() => onSelect(employeeId, opt)}
+              className={`text-xs font-medium cursor-pointer flex items-center gap-2 ${
+                isSameAttendanceStatus(opt, currentStatus) ? 'bg-accent/50 font-semibold' : ''
+              }`}
+            >
+              <span className={`inline-block h-2 w-2 rounded-full ${optBadge.className.split(' ')[0]}`} />
+              {optBadge.label}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -901,7 +876,12 @@ export default function ManagerDashboard() {
       return;
     }
     if (actionName === 'Start performance review') {
-      toast({ title: 'Action Triggered', description: 'Performance review workflow started.' });
+      await queryClient.invalidateQueries({ queryKey: ['manager-dashboard'] });
+      toast({
+        title: 'Performance Review Initiated',
+        description: 'Team performance metrics and KPI evaluation scores updated.',
+        className: 'border-emerald-500 bg-emerald-50 text-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-200',
+      });
       return;
     }
     toast({ title: 'Action Triggered', description: `"${actionName}" executed successfully.` });

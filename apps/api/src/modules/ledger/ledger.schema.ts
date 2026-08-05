@@ -31,32 +31,6 @@ export const ledgerPeriodQuerySchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Create entry
-// ---------------------------------------------------------------------------
-
-export const createLedgerEntryBodySchema = z.object({
-  date: z.coerce.date(),
-  ref: z.string().min(1).max(64),
-  description: z.string().min(1).max(500),
-  entryType: z.enum(['DEBIT', 'CREDIT']),
-  amount: z.number().positive(),
-  accountId: z.string().cuid(),
-  currencyCode: z.string().length(3).default('PKR'),
-  hasFlag: z.boolean().default(false),
-  isVoided: z.boolean().optional(),
-});
-
-// ---------------------------------------------------------------------------
-// Update entry (partial patch)
-// ---------------------------------------------------------------------------
-
-export const updateLedgerEntryBodySchema = createLedgerEntryBodySchema
-  .partial()
-  .refine((body) => Object.keys(body).length > 0, {
-    message: 'At least one field is required for update',
-  });
-
-// ---------------------------------------------------------------------------
 // Void entry
 // ---------------------------------------------------------------------------
 
@@ -70,7 +44,5 @@ export const voidLedgerEntryBodySchema = z.object({
 
 export type ListLedgerEntriesQuery = z.infer<typeof listLedgerEntriesQuerySchema>;
 export type LedgerEntryParams = z.infer<typeof ledgerEntryParamsSchema>;
-export type CreateLedgerEntryBody = z.infer<typeof createLedgerEntryBodySchema>;
-export type UpdateLedgerEntryBody = z.infer<typeof updateLedgerEntryBodySchema>;
 export type VoidLedgerEntryBody = z.infer<typeof voidLedgerEntryBodySchema>;
 export type LedgerPeriodQuery = z.infer<typeof ledgerPeriodQuerySchema>;

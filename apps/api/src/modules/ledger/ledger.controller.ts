@@ -1,10 +1,8 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
 import {
-  createLedgerEntryBodySchema,
   ledgerEntryParamsSchema,
   listLedgerEntriesQuerySchema,
   ledgerPeriodQuerySchema,
-  updateLedgerEntryBodySchema,
   voidLedgerEntryBodySchema,
 } from './ledger.schema';
 import * as ledgerService from './ledger.service';
@@ -93,54 +91,6 @@ export async function getLedgerEntryByIdHandler(request: FastifyRequest, reply: 
   return reply.code(200).send({
     status: 'success',
     data: entry,
-  });
-}
-
-export async function createLedgerEntryHandler(request: FastifyRequest, reply: FastifyReply) {
-  const parsed = createLedgerEntryBodySchema.safeParse(request.body);
-  if (!parsed.success) {
-    return sendValidationError(reply, parsed.error.flatten());
-  }
-
-  if (!request.user?.id) {
-    return reply.code(401).send({ error: 'Unauthorized' });
-  }
-
-  const created = await ledgerService.createLedgerEntry(parsed.data, request.user.id);
-  return reply.code(201).send({
-    status: 'success',
-    data: created,
-  });
-}
-
-export async function updateLedgerEntryHandler(request: FastifyRequest, reply: FastifyReply) {
-  const paramsParsed = ledgerEntryParamsSchema.safeParse(request.params);
-  if (!paramsParsed.success) {
-    return sendValidationError(reply, paramsParsed.error.flatten());
-  }
-
-  const bodyParsed = updateLedgerEntryBodySchema.safeParse(request.body);
-  if (!bodyParsed.success) {
-    return sendValidationError(reply, bodyParsed.error.flatten());
-  }
-
-  if (!request.user?.id) {
-    return reply.code(401).send({ error: 'Unauthorized' });
-  }
-
-  const updated = await ledgerService.updateLedgerEntry(
-    paramsParsed.data.entryId,
-    bodyParsed.data,
-    request.user.id,
-  );
-
-  if (!updated) {
-    return reply.code(404).send({ error: 'Entry not found' });
-  }
-
-  return reply.code(200).send({
-    status: 'success',
-    data: updated,
   });
 }
 

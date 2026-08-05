@@ -1,4 +1,6 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/database';
+import { pushLedgerEntry } from '../../shared/finance/ledger-push';
 import type { ListItemsQuery, CreateItemBody, UpdateItemBody, ListCategoriesQuery, CreateCategoryBody, CreatePurchaseOrderBody } from './inventory.schema';
 
 type ItemWithCategory = {
@@ -55,6 +57,7 @@ export async function getReorderRecommendations() {
     id: item.id,
     name: item.name,
     sku: item.sku,
+    supplier: item.supplier,
     current: item.qty,
     recommendedOrder: Math.max(item.maxStockLevel - item.qty, item.minStockLevel),
     unitCost: Number(item.unitCost),
@@ -263,25 +266,136 @@ export async function createPurchaseOrder(data: CreatePurchaseOrderBody, userId:
   const poNumber = `PO-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
   const grandTotal = data.items.reduce((sum, i) => sum + i.totalCost, 0);
 
-  await prisma.auditLog.create({
-    data: {
-      userId,
-      action: 'PURCHASE_ORDER_CREATE',
-      metadata: {
+  return prisma.$transaction(async (tx) => {
+    const po = await tx.purchaseOrder.create({
+      data: {
         poNumber,
-        itemCount: data.items.length,
-        grandTotal,
-        notes: data.notes || '',
-        items: data.items,
+        supplier: data.supplier,
+        items: data.items as any,
+        grandTotal: new Prisma.Decimal(grandTotal.toFixed(2)),
+        notes: data.notes || null,
+        currencyCode: data.currencyCode ?? 'PKR',
+        status: 'PENDING',
+        createdByUserId: userId,
       },
-    },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        userId,
+        action: 'PURCHASE_ORDER_CREATE',
+        metadata: {
+          poNumber,
+          itemCount: data.items.length,
+          grandTotal,
+          notes: data.notes || '',
+          items: data.items,
+        },
+      },
+    });
+
+    const totalAmount = Number(grandTotal);
+
+    await pushLedgerEntry(tx, {
+      date: new Date(),
+      ref: poNumber,
+      description: `Purchase order commitment - ${poNumber} (${data.supplier})`,
+      entryType: 'DEBIT',
+      amount: totalAmount,
+      accountCode: '1000',
+      currencyCode: data.currencyCode ?? 'PKR',
+      createdByUserId: userId,
+    });
+
+    await pushLedgerEntry(tx, {
+      date: new Date(),
+      ref: poNumber,
+      description: `Purchase order commitment - ${poNumber} (${data.supplier})`,
+      entryType: 'CREDIT',
+      amount: totalAmount,
+      accountCode: '2000',
+      currencyCode: data.currencyCode ?? 'PKR',
+      createdByUserId: userId,
+    });
+
+    return {
+      id: po.id,
+      poNumber: po.poNumber,
+      items: data.items,
+      grandTotal,
+      notes: data.notes || '',
+      status: po.status,
+      createdAt: po.createdAt.toISOString(),
+    };
+  });
+}
+
+export async function receivePurchaseOrder(poId: string, userId: string) {
+  return prisma.$transaction(async (tx) => {
+    const po = await tx.purchaseOrder.findUnique({ where: { id: poId } });
+    if (!po) return null;
+    if (po.status !== 'PENDING' && po.status !== 'APPROVED') {
+      throw new Error('Purchase order must be PENDING or APPROVED to receive');
+    }
+
+    const updated = await tx.purchaseOrder.update({
+      where: { id: poId },
+      data: { status: 'RECEIVED', receivedAt: new Date() },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        userId,
+        action: 'PURCHASE_ORDER_RECEIVED',
+        metadata: { poId, poNumber: po.poNumber },
+      },
+    });
+
+    const totalAmount = Number(po.grandTotal);
+
+    await pushLedgerEntry(tx, {
+      date: new Date(),
+      ref: po.poNumber,
+      description: `Stock received - ${po.poNumber} (${po.supplier})`,
+      entryType: 'DEBIT',
+      amount: totalAmount,
+      accountCode: '1000',
+      currencyCode: po.currencyCode,
+      createdByUserId: userId,
+    });
+
+    await pushLedgerEntry(tx, {
+      date: new Date(),
+      ref: po.poNumber,
+      description: `Purchase accrual - ${po.poNumber} (${po.supplier})`,
+      entryType: 'CREDIT',
+      amount: totalAmount,
+      accountCode: '2000',
+      currencyCode: po.currencyCode,
+      createdByUserId: userId,
+    });
+
+    return {
+      id: updated.id,
+      poNumber: updated.poNumber,
+      status: updated.status,
+      receivedAt: updated.receivedAt,
+    };
+  });
+}
+
+export async function listPurchaseOrders() {
+  const pos = await prisma.purchaseOrder.findMany({
+    orderBy: { createdAt: 'desc' },
   });
 
-  return {
-    poNumber,
-    items: data.items,
-    grandTotal,
-    notes: data.notes || '',
-    createdAt: new Date().toISOString(),
-  };
+  return pos.map((po) => ({
+    id: po.id,
+    poNumber: po.poNumber,
+    supplier: po.supplier,
+    grandTotal: Number(po.grandTotal),
+    status: po.status,
+    receivedAt: po.receivedAt,
+    createdAt: po.createdAt,
+  }));
 }

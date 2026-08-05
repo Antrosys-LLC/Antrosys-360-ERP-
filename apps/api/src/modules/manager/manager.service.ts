@@ -10,7 +10,7 @@ import {
   computeTeamScheduleStats,
   getTodayUtc,
   TeamKpiReport,
-} from './manager-team-stats';
+} from '../../shared/utils/team-stats';
 
 function mapOverrideStatus(status: string): AttendanceStatus {
   if (status === 'ON LEAVE' || status === 'LEAVE') return AttendanceStatus.LEAVE;
@@ -62,7 +62,7 @@ async function loadTeamSnapshot(teamId: string, today: Date) {
     }),
   ]);
 
-  const attendanceTable = buildAttendanceTable(teamEmployees, attendancesToday, approvedTeamLeaves, today);
+  const attendanceTable = buildAttendanceTable(teamEmployees, attendancesToday);
   const teamSchedule = computeTeamScheduleStats(
     attendanceTable,
     approvedTeamLeaves,
@@ -193,8 +193,6 @@ export async function getDashboardData(userId: string, userRole: string) {
       performanceScore: emp.performanceScore,
     })),
     attendancesToday,
-    approvedTeamLeaves,
-    today,
   );
 
   const teamSchedule = computeTeamScheduleStats(
@@ -213,7 +211,7 @@ export async function getDashboardData(userId: string, userRole: string) {
     leavesPendingCount,
   );
 
-  let teams: Awaited<ReturnType<typeof loadTeamSnapshot>>[] = [];
+  let teams: NonNullable<Awaited<ReturnType<typeof loadTeamSnapshot>>>[] = [];
   if (userRole === 'MANAGER') {
     const allTeams = await prisma.team.findMany({ select: { id: true }, orderBy: { name: 'asc' } });
     const snapshots = await Promise.all(allTeams.map((team) => loadTeamSnapshot(team.id, today)));
@@ -243,6 +241,8 @@ export async function getDashboardData(userId: string, userRole: string) {
     const reqEnd = new Date(req.endDate).getTime();
     
     const overlapDetected = approvedTeamLeaves.some(otherReq => {
+       if (otherReq.id === req.id) return false;
+       if (otherReq.employeeId === req.employeeId) return false;
        const otherStart = new Date(otherReq.startDate).getTime();
        const otherEnd = new Date(otherReq.endDate).getTime();
        return reqStart <= otherEnd && reqEnd >= otherStart;
@@ -319,7 +319,16 @@ export async function getDashboardData(userId: string, userRole: string) {
       totalEmployees,
       absentCount,
       leavesPendingCount,
-      deptKpiAvg: Math.round((kpis.sprintVelocity + kpis.bugResolution + kpis.codeReview) / 3),
+      deptKpiAvg:
+        teams.length > 0
+          ? Math.round(
+              teams.reduce(
+                (sum, t) =>
+                  sum + (t.kpis.sprintVelocity + t.kpis.bugResolution + t.kpis.codeReview) / 3,
+                0,
+              ) / teams.length,
+            )
+          : Math.round((kpis.sprintVelocity + kpis.bugResolution + kpis.codeReview) / 3),
     },
     attendance: attendanceTable,
     leaves: formattedLeaves,
@@ -609,8 +618,7 @@ export async function overrideAttendance(targetEmployeeId: string, status: strin
     }
   }
 
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
+  const today = getTodayUtc();
 
   const existingAttendance = await prisma.attendance.findUnique({
     where: {
@@ -704,8 +712,7 @@ export async function toggleFlag(targetEmployeeId: string, isFlagged: boolean, u
     }
   }
 
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
+  const today = getTodayUtc();
 
   const existingAttendance = await prisma.attendance.findUnique({
     where: {

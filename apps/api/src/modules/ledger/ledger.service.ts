@@ -1,12 +1,10 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/database';
 import type {
-  CreateLedgerEntryBody,
   ListLedgerEntriesQuery,
-  UpdateLedgerEntryBody,
 } from './ledger.schema';
 
-type MutationAction = 'LEDGER_ENTRY_CREATE' | 'LEDGER_ENTRY_UPDATE' | 'LEDGER_ENTRY_VOID';
+type MutationAction = 'LEDGER_ENTRY_VOID';
 
 function toDecimal(value: number): Prisma.Decimal {
   return new Prisma.Decimal(value.toFixed(2));
@@ -244,64 +242,6 @@ export async function getLedgerEntryById(entryId: string) {
   });
 }
 
-export async function createLedgerEntry(payload: CreateLedgerEntryBody, userId: string) {
-  return prisma.$transaction(async (tx) => {
-    const created = await tx.ledgerEntry.create({
-      data: {
-        date: payload.date,
-        ref: payload.ref,
-        description: payload.description,
-        entryType: payload.entryType,
-        amount: toDecimal(payload.amount),
-        accountId: payload.accountId,
-        currencyCode: payload.currencyCode.toUpperCase(),
-        hasFlag: payload.hasFlag,
-        createdByUserId: userId,
-      },
-      include: { account: true },
-    });
-
-    await writeAuditLog(tx, userId, 'LEDGER_ENTRY_CREATE', {
-      entryId: created.id,
-      ref: created.ref,
-      amount: payload.amount,
-      type: created.entryType,
-    });
-
-    return created;
-  });
-}
-
-export async function updateLedgerEntry(entryId: string, payload: UpdateLedgerEntryBody, userId: string) {
-  const current = await prisma.ledgerEntry.findUnique({ where: { id: entryId } });
-  if (!current) return null;
-
-  return prisma.$transaction(async (tx) => {
-    const updated = await tx.ledgerEntry.update({
-      where: { id: entryId },
-      data: {
-        ...(payload.date ? { date: payload.date } : {}),
-        ...(payload.ref ? { ref: payload.ref } : {}),
-        ...(payload.description ? { description: payload.description } : {}),
-        ...(payload.entryType ? { entryType: payload.entryType } : {}),
-        ...(payload.amount !== undefined ? { amount: toDecimal(payload.amount) } : {}),
-        ...(payload.accountId ? { accountId: payload.accountId } : {}),
-        ...(payload.currencyCode ? { currencyCode: payload.currencyCode.toUpperCase() } : {}),
-        ...(payload.hasFlag !== undefined ? { hasFlag: payload.hasFlag } : {}),
-        ...(payload.isVoided !== undefined ? { isVoided: payload.isVoided } : {}),
-      },
-      include: { account: true },
-    });
-
-    await writeAuditLog(tx, userId, 'LEDGER_ENTRY_UPDATE', {
-      entryId,
-      hasFlag: updated.hasFlag,
-    });
-
-    return updated;
-  });
-}
-
 export async function voidLedgerEntry(entryId: string, userId: string, reason: string) {
   const current = await prisma.ledgerEntry.findUnique({ where: { id: entryId } });
   if (!current) return null;
@@ -423,12 +363,12 @@ export async function getBudgetTrackers() {
 }
 
 export async function getMonthlyTrend(periodStr: string) {
-  // Determine target month from period string (e.g. "May 2026", "2026-05")
   let targetDate = new Date();
-  if (periodStr.match(/^\d{4}-\d{2}$/)) {
+  const range = parsePeriodToDates(periodStr);
+  if (range) {
+    targetDate = new Date(range.end);
+  } else if (periodStr.match(/^\d{4}-\d{2}$/)) {
     targetDate = new Date(periodStr + '-01');
-  } else if (periodStr === 'May 2026') {
-    targetDate = new Date('2026-05-01');
   }
 
   const months = [];
@@ -490,11 +430,27 @@ export async function getChartOfAccounts() {
 }
 
 export async function getAccountingEquation(periodLabel: string) {
-  // Use cumulative balance (all entries up to period end for balance sheet items)
-  const range = parsePeriodToDates(periodLabel);
-  const cumulativeDate = range ? { lte: range.end } : undefined;
+  // Use same period range as top stats (getLedgerSummary) for sync
+  const summary = await prisma.ledgerPeriodSummary.findUnique({
+    where: { periodLabel },
+  });
 
-  // Helper: aggregate entry amounts for accounts matching a code prefix
+  const range = summary
+    ? { start: summary.periodStart, end: summary.periodEnd }
+    : parsePeriodToDates(periodLabel);
+
+  if (!range) return { assets: 0, liabilities: 0, equity: 0, isBalanced: false, status: 'no_data' as const };
+
+  const periodFilter = { gte: range.start, lte: range.end };
+
+  const totalEntries = await prisma.ledgerEntry.count({
+    where: { isVoided: false, date: periodFilter },
+  });
+
+  if (totalEntries === 0) {
+    return { assets: 0, liabilities: 0, equity: 0, isBalanced: false, status: 'no_data' as const };
+  }
+
   const sumByPrefix = async (prefix: string, entryType: 'DEBIT' | 'CREDIT') => {
     const accounts = await prisma.ledgerAccount.findMany({
       where: { code: { startsWith: prefix } },
@@ -503,22 +459,11 @@ export async function getAccountingEquation(periodLabel: string) {
     if (!ids.length) return 0;
     const result = await prisma.ledgerEntry.aggregate({
       _sum: { amount: true },
-      where: {
-        accountId: { in: ids },
-        entryType,
-        isVoided: false,
-        ...(cumulativeDate ? { date: cumulativeDate } : {}),
-      },
+      where: { accountId: { in: ids }, entryType, isVoided: false, date: periodFilter },
     });
     return Number(result._sum.amount || 0);
   };
 
-  // Double-entry accounting rules:
-  // Assets (1xxx)      → increased by DEBIT, decreased by CREDIT
-  // Liabilities (2xxx) → increased by CREDIT, decreased by DEBIT
-  // Equity (3xxx)      → increased by CREDIT, decreased by DEBIT
-  // Revenue (4xxx)     → increases equity (CREDIT)
-  // Expenses (6xxx)    → decreases equity (DEBIT)
   const assetDr    = await sumByPrefix('1', 'DEBIT');
   const assetCr    = await sumByPrefix('1', 'CREDIT');
   const liabCr     = await sumByPrefix('2', 'CREDIT');
@@ -534,7 +479,6 @@ export async function getAccountingEquation(periodLabel: string) {
   const liabilities = liabCr  - liabDr;
   const equity      = (equityCr - equityDr) + (revenueCr - revenueDr) - (expenseDr - expenseCr);
 
-  // Assets = Liabilities + Equity (allow ±1 rounding tolerance)
   const isBalanced = Math.abs(assets - (liabilities + equity)) < 1;
 
   return {
@@ -542,6 +486,7 @@ export async function getAccountingEquation(periodLabel: string) {
     liabilities: Math.round(liabilities),
     equity:      Math.round(equity),
     isBalanced,
+    status: isBalanced ? ('balanced' as const) : ('skewed' as const),
   };
 }
 

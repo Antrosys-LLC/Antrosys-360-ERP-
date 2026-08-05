@@ -73,7 +73,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'payroll:write',
     'reports:read',
     'clients:read',
-    'clients:onboard',
+    'clients:write',
     'documents:read',
     'documents:write',
     'bank_feeds:read',

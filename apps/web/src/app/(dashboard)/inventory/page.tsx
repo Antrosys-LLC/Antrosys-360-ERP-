@@ -81,6 +81,7 @@ interface ReorderItem {
   id: string;
   name: string;
   sku: string;
+  supplier: string;
   current: number;
   recommendedOrder: number;
   unitCost: number;
@@ -692,6 +693,7 @@ const ReorderSidebar = ({ items, onClose, poResult, onPoGenerated }: { items: Re
     setGenerating(true);
     try {
       const res = await apiClient.post('/inventory/purchase-order', {
+        supplier: selectedItems[0].supplier,
         items: selectedItems.map(i => ({
           itemId: i.id,
           itemName: i.name,

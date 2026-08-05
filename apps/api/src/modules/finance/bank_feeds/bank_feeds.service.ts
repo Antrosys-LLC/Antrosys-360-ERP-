@@ -1,12 +1,15 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../../config/database';
+import { pushLedgerEntry } from '../../../shared/finance/ledger-push';
 import type { ListTransactionsQuery } from './bank_feeds.schema';
 
 const transactionInclude = {
   account: {
     select: { id: true, bankName: true, accountType: true, currencyCode: true },
   },
-  matchedEntry: true,
+  matchedEntry: {
+    select: { id: true, ref: true, description: true, amount: true, date: true, accountId: true },
+  },
 } as const;
 
 export async function listAccounts() {
@@ -232,6 +235,11 @@ export async function confirmMatch(
       },
     });
 
+    await tx.ledgerEntry.update({
+      where: { id: entryId },
+      data: { hasFlag: false },
+    });
+
     await tx.auditLog.create({
       data: {
         userId,
@@ -396,29 +404,60 @@ export async function createJournalEntry(transactionId: string, userId: string) 
   });
   if (!transaction) return null;
 
+  const ref = `BF-${transaction.id.slice(0, 8)}`;
+  const amount = Number(transaction.amount);
+
   const result = await prisma.$transaction(async (tx) => {
-    const defaultAccount = await tx.ledgerAccount.findFirst({
-      where: transaction.transactionType === 'CREDIT'
-        ? { code: '1200' }
-        : { code: '5100' },
-    });
-
-    const entry = await tx.ledgerEntry.create({
-      data: {
+    if (transaction.transactionType === 'CREDIT') {
+      // Money in: DEBIT Cash (1000), CREDIT Revenue (4000)
+      await pushLedgerEntry(tx, {
         date: transaction.transactionDate,
-        ref: `BF-${transaction.id.slice(0, 8)}`,
-        description: transaction.description,
-        entryType: transaction.transactionType === 'CREDIT' ? 'CREDIT' : 'DEBIT',
-        amount: transaction.amount,
-        accountId: defaultAccount?.id ?? (await tx.ledgerAccount.findFirst({ where: { isActive: true } }))!.id,
+        ref,
+        description: `Bank deposit - ${transaction.description}`,
+        entryType: 'DEBIT',
+        amount,
+        accountCode: '1000',
+        currencyCode: transaction.account?.currencyCode ?? 'PKR',
         createdByUserId: userId,
-      },
-    });
+      });
+      await pushLedgerEntry(tx, {
+        date: transaction.transactionDate,
+        ref,
+        description: `Bank deposit - ${transaction.description}`,
+        entryType: 'CREDIT',
+        amount,
+        accountCode: '4000',
+        currencyCode: transaction.account?.currencyCode ?? 'PKR',
+        createdByUserId: userId,
+      });
+    } else {
+      // Money out: DEBIT Expenses (6000), CREDIT Cash (1000)
+      await pushLedgerEntry(tx, {
+        date: transaction.transactionDate,
+        ref,
+        description: `Bank withdrawal - ${transaction.description}`,
+        entryType: 'DEBIT',
+        amount,
+        accountCode: '6000',
+        currencyCode: transaction.account?.currencyCode ?? 'PKR',
+        createdByUserId: userId,
+      });
+      await pushLedgerEntry(tx, {
+        date: transaction.transactionDate,
+        ref,
+        description: `Bank withdrawal - ${transaction.description}`,
+        entryType: 'CREDIT',
+        amount,
+        accountCode: '1000',
+        currencyCode: transaction.account?.currencyCode ?? 'PKR',
+        createdByUserId: userId,
+      });
+    }
 
+    // Mark the bank transaction as matched
     await tx.bankTransaction.update({
       where: { id: transactionId },
       data: {
-        matchedEntryId: entry.id,
         matchStatus: 'MATCHED',
         confidenceScore: 100,
         matchedById: userId,
@@ -430,11 +469,11 @@ export async function createJournalEntry(transactionId: string, userId: string) 
       data: {
         userId,
         action: 'BANK_FEED_JOURNAL_CREATED',
-        metadata: { transactionId, entryId: entry.id },
+        metadata: { transactionId, ref },
       },
     });
 
-    return entry;
+    return { ref, matched: true };
   });
 
   return result;
