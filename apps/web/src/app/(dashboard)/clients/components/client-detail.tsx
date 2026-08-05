@@ -8,8 +8,9 @@ import { ClientProjects } from './client-projects';
 import { ClientInvoices } from './client-invoices';
 import { ClientContacts } from './client-contacts';
 import { ClientActivity } from './client-activity';
+import { ClientOnboardingPanel } from './client-onboarding';
 
-const tabs = ['Overview', 'Projects', 'Invoices', 'Contacts', 'Activity'] as const;
+const tabs = ['Overview', 'Projects', 'Invoices', 'Contacts', 'Activity', 'Onboarding'] as const;
 type Tab = (typeof tabs)[number];
 
 interface ClientDetailProps {
@@ -18,9 +19,10 @@ interface ClientDetailProps {
   onUpdate: () => void;
   onCreateInvoice?: () => void;
   invoiceTabRequest?: number;
+  canOnboard?: boolean;
 }
 
-export function ClientDetail({ client, loading, onUpdate, onCreateInvoice, invoiceTabRequest }: ClientDetailProps) {
+export function ClientDetail({ client, loading, onUpdate, onCreateInvoice, invoiceTabRequest, canOnboard = false }: ClientDetailProps) {
   const [activeTab, setActiveTab] = useState<Tab>('Overview');
 
   useEffect(() => {
@@ -127,6 +129,14 @@ export function ClientDetail({ client, loading, onUpdate, onCreateInvoice, invoi
         )}
         {activeTab === 'Activity' && (
           <ClientActivity clientId={client.id} activities={client.activities ?? []} onUpdate={onUpdate} />
+        )}
+        {activeTab === 'Onboarding' && (
+          <ClientOnboardingPanel
+            clientId={client.id}
+            onboarding={client.onboarding ?? null}
+            canManage={canOnboard}
+            onUpdate={onUpdate}
+          />
         )}
       </div>
     </div>

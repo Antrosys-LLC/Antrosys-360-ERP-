@@ -222,6 +222,60 @@ export async function seedClientsData() {
   const brightxId = createdClients['BrightX Corp'];
   const cloudSyncId = createdClients['CloudSync'];
 
+  // Onboarding records — demo the client onboarding module
+  const onboardingItems = (completedTitles: string[]) => {
+    const all = [
+      { title: 'Schedule kickoff call', description: 'Book the initial kickoff meeting with key client stakeholders.', category: 'KICKOFF', sortOrder: 10 },
+      { title: 'Confirm key stakeholders & contacts', description: 'Capture the primary and secondary contacts in the client account.', category: 'KICKOFF', sortOrder: 20 },
+      { title: 'Align on goals & success metrics', description: 'Document the client objectives and measurable success criteria.', category: 'KICKOFF', sortOrder: 30 },
+      { title: 'Create account & user access', description: 'Provision accounts, roles, and credentials for the client team.', category: 'SETUP', sortOrder: 40 },
+      { title: 'Set up project workspace', description: 'Create the project(s) and configure engagement settings.', category: 'SETUP', sortOrder: 50 },
+      { title: 'Configure billing & payment terms', description: 'Set currency, payment terms, and the first renewal date.', category: 'SETUP', sortOrder: 60 },
+      { title: 'Collect onboarding documents', description: 'Gather signed agreements, PO, and compliance documents.', category: 'SETUP', sortOrder: 70 },
+      { title: 'Deliver initial onboarding report', description: 'Share the kickoff summary and roadmap with the client.', category: 'HANDBACK', sortOrder: 80 },
+      { title: 'Schedule QBR / handover session', description: 'Book the first business review and hand the account to the account owner.', category: 'HANDBACK', sortOrder: 90 },
+      { title: 'Mark client as active', description: 'Finalize onboarding and move the client to ACTIVE.', category: 'HANDBACK', sortOrder: 100 },
+    ];
+    return all.map((item) => ({
+      ...item,
+      completedAt: completedTitles.includes(item.title) ? daysAgo(1) : null,
+    }));
+  };
+
+  const onboardingSpecs = [
+    { code: 'CLT-007', phase: 'KICKOFF', startedDaysAgo: 2, completedTitles: [] },
+    {
+      code: 'CLT-008',
+      phase: 'SETUP',
+      startedDaysAgo: 7,
+      completedTitles: ['Schedule kickoff call', 'Confirm key stakeholders & contacts', 'Align on goals & success metrics'],
+    },
+  ];
+  for (const spec of onboardingSpecs) {
+    const client = await prisma.client.findUnique({ where: { clientCode: spec.code } });
+    if (!client) continue;
+    const existing = await prisma.clientOnboarding.findUnique({ where: { clientId: client.id } });
+    if (existing) continue;
+    await prisma.client.update({ where: { id: client.id }, data: { pipelineStage: 'ONBOARDING' as const } });
+    const existingStatus = await prisma.clientStatus.findFirst({
+      where: { clientId: client.id, status: 'ONBOARDING' },
+    });
+    if (!existingStatus) {
+      await prisma.clientStatus.create({
+        data: { clientId: client.id, status: 'ONBOARDING', note: 'Deal won, onboarding in progress' },
+      });
+    }
+    await prisma.clientOnboarding.create({
+      data: {
+        clientId: client.id,
+        status: 'IN_PROGRESS',
+        currentPhase: spec.phase as 'KICKOFF' | 'SETUP',
+        startDate: daysAgo(spec.startedDaysAgo),
+        items: { create: onboardingItems(spec.completedTitles) },
+      },
+    });
+  }
+
   const contacts = [
     { clientId: nexusId, name: 'Sarah Chen', email: 'sarah@nexus.com', phone: '+92 300 1112233', role: 'VP Engineering', isPrimary: true },
     { clientId: nexusId, name: 'James Park', email: 'james@nexus.com', role: 'Finance Director', isPrimary: false },

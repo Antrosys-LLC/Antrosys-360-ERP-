@@ -87,6 +87,7 @@ enum ClientPipelineStage {
   PROSPECT
   PROPOSAL
   NEGOTIATION
+  ONBOARDING
   ACTIVE
   AT_RISK
 }
@@ -97,6 +98,20 @@ enum ClientSalesStage {
   NEGOTIATION
   CONTRACT_REVIEW
   CLOSED_WON
+}
+
+enum ClientOnboardingPhase {
+  KICKOFF
+  SETUP
+  HANDBACK
+  COMPLETED
+}
+
+enum ClientOnboardingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  ON_HOLD
 }
 
 enum OperatingCostCategory {
@@ -273,6 +288,8 @@ model User {
   roleModuleAccessUpdates  RoleModuleAccess[]   @relation("RoleModuleAccessUpdatedBy")
   ledgerEntriesCreated     LedgerEntry[]      @relation("LedgerEntriesCreated")
   manpowerRequests         ManpowerRequest[]  @relation("ManpowerRequestsCreated")
+  clientOnboardingsAssigned ClientOnboarding[] @relation("ClientOnboardingsAssigned")
+  clientOnboardingsCreated  ClientOnboarding[] @relation("ClientOnboardingsCreated")
 
   @@map("users")
 }
@@ -404,6 +421,7 @@ model Client {
   tasks          ClientTask[]
   contacts       ClientContact[]
   timelineEvents ClientTimelineEvent[]
+  onboarding     ClientOnboarding?
 
   @@index([pipelineStage])
   @@index([salesStage])
@@ -527,6 +545,45 @@ model ClientTimelineEvent {
   @@index([clientId])
   @@index([eventDate])
   @@map("client_timeline_events")
+}
+
+model ClientOnboarding {
+  id              String                @id @default(cuid())
+  clientId        String                @unique
+  client          Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  status          ClientOnboardingStatus @default(NOT_STARTED)
+  currentPhase    ClientOnboardingPhase  @default(KICKOFF)
+  startDate       DateTime?
+  completedAt     DateTime?
+  assignedToUserId String?
+  assignedTo      User?                 @relation("ClientOnboardingsAssigned", fields: [assignedToUserId], references: [id])
+  createdByUserId String?
+  createdBy       User?                 @relation("ClientOnboardingsCreated", fields: [createdByUserId], references: [id])
+  items           ClientOnboardingItem[]
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([status])
+  @@index([currentPhase])
+  @@map("client_onboardings")
+}
+
+model ClientOnboardingItem {
+  id            String           @id @default(cuid())
+  onboardingId  String
+  onboarding    ClientOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  category      String           @default("KICKOFF") // KICKOFF, SETUP, HANDBACK
+  isRequired    Boolean          @default(true)
+  sortOrder     Int              @default(0)
+  completedAt   DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([onboardingId])
+  @@index([category])
+  @@map("client_onboarding_items")
 }
 
 model Invoice {

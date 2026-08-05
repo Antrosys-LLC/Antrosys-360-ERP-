@@ -12,6 +12,52 @@ export const clientParamsSchema = z.object({
 });
 export type ClientParams = z.infer<typeof clientParamsSchema>;
 
+// ─── Onboarding ────────────────────────────────────────────────────────────
+
+export const CLIENT_ONBOARDING_PHASES = ['KICKOFF', 'SETUP', 'HANDBACK', 'COMPLETED'] as const;
+export const CLIENT_ONBOARDING_STATUSES = ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'ON_HOLD'] as const;
+export const clientOnboardingPhaseSchema = z.enum(CLIENT_ONBOARDING_PHASES);
+export const clientOnboardingStatusSchema = z.enum(CLIENT_ONBOARDING_STATUSES);
+
+export const startOnboardingBodySchema = z.object({
+  startDate: z.string().datetime().optional(),
+  assignedToUserId: z.string().min(1).nullable().optional(),
+});
+export type StartOnboardingBody = z.infer<typeof startOnboardingBodySchema>;
+
+export const updateOnboardingBodySchema = z.object({
+  currentPhase: clientOnboardingPhaseSchema.optional(),
+  status: clientOnboardingStatusSchema.optional(),
+  assignedToUserId: z.string().min(1).nullable().optional(),
+  startDate: z.string().datetime().nullable().optional(),
+});
+export type UpdateOnboardingBody = z.infer<typeof updateOnboardingBodySchema>;
+
+export const createOnboardingItemBodySchema = z.object({
+  title: z.string().min(1).max(300),
+  description: z.string().max(2000).nullable().optional(),
+  category: z.string().max(50).default('KICKOFF'),
+  isRequired: z.boolean().default(true),
+  sortOrder: z.coerce.number().int().optional(),
+});
+export type CreateOnboardingItemBody = z.infer<typeof createOnboardingItemBodySchema>;
+
+export const updateOnboardingItemBodySchema = z.object({
+  title: z.string().min(1).max(300).optional(),
+  description: z.string().max(2000).nullable().optional(),
+  category: z.string().max(50).optional(),
+  isRequired: z.boolean().optional(),
+  sortOrder: z.coerce.number().int().optional(),
+  completed: z.boolean().optional(),
+});
+export type UpdateOnboardingItemBody = z.infer<typeof updateOnboardingItemBodySchema>;
+
+export const onboardingItemParamsSchema = z.object({
+  clientId: z.string().min(1),
+  itemId: z.string().min(1),
+});
+export type OnboardingItemParams = z.infer<typeof onboardingItemParamsSchema>;
+
 // ─── Client CRUD ───────────────────────────────────────────────────────────
 
 export const listClientsQuerySchema = z.object({
@@ -31,7 +77,7 @@ export const createClientBodySchema = z.object({
   phone: z.preprocess(emptyToNull, z.string().max(50).nullable().optional()),
   industry: z.preprocess(emptyToNull, z.string().max(200).nullable().optional()),
   tier: z.preprocess(emptyToNull, z.string().max(50).nullable().optional()),
-  pipelineStage: z.enum(['PROSPECT', 'PROPOSAL', 'NEGOTIATION', 'ACTIVE', 'AT_RISK']).default('PROSPECT'),
+  pipelineStage: z.enum(['PROSPECT', 'PROPOSAL', 'NEGOTIATION', 'ONBOARDING', 'ACTIVE', 'AT_RISK']).default('PROSPECT'),
   salesStage: z.enum(['INITIAL_CONTACT', 'PROPOSAL', 'NEGOTIATION', 'CONTRACT_REVIEW', 'CLOSED_WON']).optional().nullable(),
   currencyCode: z.string().length(3).default('PKR'),
   renewalDueAt: z.string().datetime().optional().nullable(),
@@ -49,7 +95,7 @@ export const updateClientBodySchema = z.object({
   phone: z.string().max(50).optional().nullable(),
   industry: z.string().max(200).optional().nullable(),
   tier: z.string().max(50).optional().nullable(),
-  pipelineStage: z.enum(['PROSPECT', 'PROPOSAL', 'NEGOTIATION', 'ACTIVE', 'AT_RISK']).optional(),
+  pipelineStage: z.enum(['PROSPECT', 'PROPOSAL', 'NEGOTIATION', 'ONBOARDING', 'ACTIVE', 'AT_RISK']).optional(),
   salesStage: z.enum(['INITIAL_CONTACT', 'PROPOSAL', 'NEGOTIATION', 'CONTRACT_REVIEW', 'CLOSED_WON']).optional().nullable(),
   currencyCode: z.string().length(3).optional(),
   renewalDueAt: z.string().datetime().optional().nullable(),

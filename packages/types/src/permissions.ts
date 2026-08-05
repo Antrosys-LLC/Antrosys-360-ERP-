@@ -17,6 +17,7 @@ export type Permission =
   | 'manpower:write'
   | 'clients:read'
   | 'clients:write'
+  | 'clients:onboard'
   | 'reports:read'
   | 'announcements:read'
   | 'announcements:write'
@@ -47,6 +48,7 @@ const ALL_PERMISSIONS: Permission[] = [
   'manpower:write',
   'clients:read',
   'clients:write',
+  'clients:onboard',
   'reports:read',
   'announcements:read',
   'announcements:write',
