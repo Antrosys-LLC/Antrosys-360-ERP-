@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../../config/database';
 import { pushLedgerEntry } from '../../../shared/finance/ledger-push';
+import { aggregateBudgetVsActual, aggregateMonthlyFinancials } from '../../../shared/aggregation/aggregate-finance';
 import type { ListTransactionsQuery } from './bank_feeds.schema';
 
 const transactionInclude = {
@@ -475,6 +476,11 @@ export async function createJournalEntry(transactionId: string, userId: string) 
 
     return { ref, matched: true };
   });
+
+  // Refresh budget-vs-actual and monthly summaries immediately so the
+  // dashboard graphs reflect the new entries instead of waiting for the
+  // hourly aggregation job.
+  await Promise.allSettled([aggregateBudgetVsActual(), aggregateMonthlyFinancials()]);
 
   return result;
 }

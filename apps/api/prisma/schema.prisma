@@ -1541,6 +1541,46 @@ model LedgerPeriodSummary {
   @@map("ledger_period_summaries")
 }
 
+model MonthlyFinancialSummary {
+  id                    String   @id @default(cuid())
+  year                  Int
+  month                 Int
+  entryCount            Int      @default(0)
+  totalCredits          Decimal  @default(0) @db.Decimal(14, 2)
+  totalDebits           Decimal  @default(0) @db.Decimal(14, 2)
+  netMovement           Decimal  @default(0) @db.Decimal(14, 2)
+  closingBalance        Decimal  @default(0) @db.Decimal(14, 2)
+  pendingReconciliation Decimal  @default(0) @db.Decimal(14, 2)
+  assetsTotal           Decimal  @default(0) @db.Decimal(14, 2)
+  liabilitiesTotal      Decimal  @default(0) @db.Decimal(14, 2)
+  equityTotal           Decimal  @default(0) @db.Decimal(14, 2)
+  revenueTotal          Decimal  @default(0) @db.Decimal(14, 2)
+  opexTotal             Decimal  @default(0) @db.Decimal(14, 2)
+  capexTotal            Decimal  @default(0) @db.Decimal(14, 2)
+  currencyCode          String   @default("PKR") @db.VarChar(3)
+  computedAt            DateTime @default(now())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([year, month])
+  @@index([year, month])
+  @@map("monthly_financial_summaries")
+}
+
+model BudgetVsActualSnapshot {
+  id          String   @id @default(cuid())
+  categoryKey String   @unique
+  kind        String
+  name        String
+  actual      Decimal  @default(0) @db.Decimal(14, 2)
+  budget      Decimal  @default(0) @db.Decimal(14, 2)
+  percentage  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("budget_vs_actual")
+}
+
 // =========================================================================
 // Bank Feeds Module
 // =========================================================================

@@ -16,26 +16,28 @@ export async function seedLedgerData(prisma: PrismaClient) {
   await prisma.ledgerEntry.deleteMany();
   await prisma.ledgerAccount.deleteMany();
   await prisma.ledgerPeriodSummary.deleteMany();
+  await prisma.monthlyFinancialSummary.deleteMany();
+  await prisma.budgetVsActualSnapshot.deleteMany();
 
   await prisma.companyMetricTarget.deleteMany({
     where: { metricKey: { startsWith: 'ledger.' } },
   });
 
   const accountsData = [
-    { code: '1000', name: 'Assets' },
+    { code: '1000', name: 'Assets', budgetAmount: 5000000 },
     { code: '2000', name: 'Liabilities' },
     { code: '3000', name: 'Equity' },
-    { code: '4000', name: 'Revenue' },
+    { code: '4000', name: 'Revenue', budgetAmount: 20000000 },
     { code: '5000', name: 'COGS' },
-    { code: '6000', name: 'Expenses' },
-    { code: '6100', name: 'Payroll' },
-    { code: '6200', name: 'Marketing' },
-    { code: '6300', name: 'Operations' },
+    { code: '6000', name: 'Expenses', budgetAmount: 5000000 },
+    { code: '6100', name: 'Payroll', budgetAmount: 2500000 },
+    { code: '6200', name: 'Marketing', budgetAmount: 1000000 },
+    { code: '6300', name: 'Operations', budgetAmount: 3000000 },
   ];
 
   for (const act of accountsData) {
     await prisma.ledgerAccount.create({
-      data: { code: act.code, name: act.name },
+      data: { code: act.code, name: act.name, budgetAmount: act.budgetAmount ?? null },
     });
   }
 
@@ -75,6 +77,40 @@ export async function seedLedgerData(prisma: PrismaClient) {
       { metricKey: 'ledger.tracker.capex', label: 'Capex', periodStart, periodEnd, targetValue: dec(45) },
     ],
   });
+
+  await prisma.budgetVsActualSnapshot.deleteMany();
+
+  // ─────────────────────────────────────────────────────────────────────
+  // DEMO BUDGET vs ACTUAL VALUES
+  // To change these numbers later: edit the `actual` values below.
+  // `budget` is defined in `accountsData` at the top of this file.
+  // While a category has NO real ledger entries, the server's hourly
+  // aggregation will NOT overwrite its `actual` (it only writes when
+  // real entries exist). Once real entries appear (bank feeds, invoices,
+  // payroll), the aggregation replaces the dummy values automatically.
+  // ─────────────────────────────────────────────────────────────────────
+  const budgetSnapshots = [
+    { categoryKey: 'bva.payroll', kind: 'BVA', name: 'Payroll', budget: 2500000, actual: 1800000 },
+    { categoryKey: 'bva.marketing', kind: 'BVA', name: 'Marketing', budget: 1000000, actual: 650000 },
+    { categoryKey: 'bva.operations', kind: 'BVA', name: 'Operations', budget: 3000000, actual: 2200000 },
+    { categoryKey: 'tracker.revenue_goal', kind: 'TRACKER', name: 'Revenue Goal', budget: 20000000, actual: 14500000 },
+    { categoryKey: 'tracker.opex_limit', kind: 'TRACKER', name: 'Opex Limit', budget: 5000000, actual: 3800000 },
+    { categoryKey: 'tracker.capex', kind: 'TRACKER', name: 'Capex', budget: 5000000, actual: 2100000 },
+  ];
+
+  for (const spec of budgetSnapshots) {
+    const percentage = Math.round((spec.actual / spec.budget) * 100);
+    await prisma.budgetVsActualSnapshot.create({
+      data: {
+        categoryKey: spec.categoryKey,
+        kind: spec.kind,
+        name: spec.name,
+        actual: dec(spec.actual),
+        budget: dec(spec.budget),
+        percentage,
+      },
+    });
+  }
 
   console.log('✅ Ledger & Budget seed data created');
 }

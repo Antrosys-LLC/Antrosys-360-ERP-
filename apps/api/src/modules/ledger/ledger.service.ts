@@ -89,8 +89,7 @@ async function computePeriodMetrics(periodStart: Date, periodEnd: Date) {
  * Resolves any period string into { start, end } Date objects.
  * Handles: "May 2026", "June 2026", "YYYY-MM", "Today", "This week",
  *          "Q1/Q2/Q3/Q4 YYYY", "FY YYYY"
- */
-function parsePeriodToDates(periodLabel: string): { start: Date; end: Date } | null {
+ */function parsePeriodToDates(periodLabel: string): { start: Date; end: Date } | null {
   const now = new Date();
 
   if (periodLabel === 'Today') {
@@ -152,6 +151,24 @@ function parsePeriodToDates(periodLabel: string): { start: Date; end: Date } | n
   return null;
 }
 
+const SNAPSHOT_BVA_ORDER = ['bva.payroll', 'bva.marketing', 'bva.operations'] as const;
+const SNAPSHOT_TRACKER_ORDER = ['tracker.revenue_goal', 'tracker.opex_limit', 'tracker.capex'] as const;
+
+async function getMonthlySummaryForRange(range: { start: Date; end: Date }) {
+  const start = new Date(range.start);
+  const isSingleCalendarMonth =
+    start.getDate() === 1 &&
+    new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate() === new Date(range.end).getDate();
+
+  if (!isSingleCalendarMonth) return null;
+
+  return prisma.monthlyFinancialSummary.findUnique({
+    where: {
+      year_month: { year: start.getFullYear(), month: start.getMonth() + 1 },
+    },
+  });
+}
+
 export async function getLedgerSummary(periodLabel: string) {
   // First try to get a seeded summary record
   const summary = await prisma.ledgerPeriodSummary.findUnique({
@@ -165,7 +182,16 @@ export async function getLedgerSummary(periodLabel: string) {
 
   if (!range) return null;
 
-  const metrics = await computePeriodMetrics(range.start, range.end);
+  // Prefer the aggregated monthly table for unseeded calendar-month periods
+  const monthly = summary ? null : await getMonthlySummaryForRange(range);
+
+  const metrics = monthly
+    ? {
+        creditTotal: Number(monthly.totalCredits),
+        debitTotal: Number(monthly.totalDebits),
+        pendingTotal: Number(monthly.pendingReconciliation),
+      }
+    : await computePeriodMetrics(range.start, range.end);
 
   const openingBalance = summary ? Number(summary.openingBalance) : 0;
   const netMovement = metrics.creditTotal - metrics.debitTotal;
@@ -268,6 +294,28 @@ export async function voidLedgerEntry(entryId: string, userId: string, reason: s
 }
 
 export async function getBudgetVsActual() {
+  // Prefer the aggregated snapshot table
+  const snapshots = await prisma.budgetVsActualSnapshot.findMany({
+    where: { kind: 'BVA' },
+  });
+
+  const byKey = new Map(snapshots.map((s) => [s.categoryKey, s]));
+
+  if (SNAPSHOT_BVA_ORDER.every((key) => byKey.has(key))) {
+    return SNAPSHOT_BVA_ORDER.map((key, index) => {
+      const snapshot = byKey.get(key)!;
+      const percentage = snapshot.percentage;
+      return {
+        id: String(index + 1),
+        name: snapshot.name,
+        percentage,
+        color: percentage > 100 ? 'bg-destructive' : 'bg-primary',
+        labelColor: percentage > 100 ? 'text-destructive' : 'text-primary',
+      };
+    });
+  }
+
+  // Fallback: compute from raw entries (kept for DBs without snapshots)
   // Query all active entries to calculate actuals
   const actuals = await prisma.ledgerEntry.groupBy({
     by: ['accountId'],
@@ -313,6 +361,30 @@ export async function getBudgetVsActual() {
 }
 
 export async function getBudgetTrackers() {
+  // Prefer the aggregated snapshot table
+  const snapshots = await prisma.budgetVsActualSnapshot.findMany({
+    where: { kind: 'TRACKER' },
+  });
+
+  const byKey = new Map(snapshots.map((s) => [s.categoryKey, s]));
+
+  if (SNAPSHOT_TRACKER_ORDER.every((key) => byKey.has(key))) {
+    return SNAPSHOT_TRACKER_ORDER.map((key, index) => {
+      const snapshot = byKey.get(key)!;
+      const percentage = snapshot.percentage;
+      let strokeColor = 'stroke-primary';
+      if (percentage > 90) strokeColor = 'stroke-destructive';
+      if (percentage < 50) strokeColor = 'stroke-primary opacity-60';
+      return {
+        id: String(index + 1),
+        label: snapshot.name,
+        percentage,
+        strokeColor,
+      };
+    });
+  }
+
+  // Fallback: compute from raw entries (kept for DBs without snapshots)
   // Compute sums directly from entries
   const actualsDebit = await prisma.ledgerEntry.groupBy({
     by: ['accountId'],
@@ -371,17 +443,52 @@ export async function getMonthlyTrend(periodStr: string) {
     targetDate = new Date(periodStr + '-01');
   }
 
-  const months = [];
   // Get last 6 months
+  const months: { year: number; month: number }[] = [];
   for (let i = 5; i >= 0; i--) {
     const d = new Date(targetDate.getFullYear(), targetDate.getMonth() - i, 1);
-    months.push(d);
+    months.push({ year: d.getFullYear(), month: d.getMonth() + 1 });
   }
 
+  // Prefer the aggregated monthly table
+  const summaries = await prisma.monthlyFinancialSummary.findMany({
+    where: { OR: months.map((m) => ({ year: m.year, month: m.month })) },
+  });
+
+  const summaryByKey = new Map(summaries.map((s) => [`${s.year}-${s.month}`, s]));
+
+  if (summaries.length > 0) {
+    const results = months.map(({ year, month }) => {
+      const summary = summaryByKey.get(`${year}-${month}`);
+      return {
+        month: new Date(year, month - 1, 1).toLocaleString('default', { month: 'short' }),
+        creditTotal: summary ? Number(summary.totalCredits) : 0,
+        debitTotal: summary ? Number(summary.totalDebits) : 0,
+      };
+    });
+
+    const maxVal = results.reduce(
+      (acc, r) => Math.max(acc, r.creditTotal, r.debitTotal),
+      0,
+    );
+
+    return results.map((r) => {
+      const creditPct = maxVal > 0 ? Math.max(5, Math.round((r.creditTotal / maxVal) * 100)) : 5;
+      const debitPct = maxVal > 0 ? Math.max(5, Math.round((r.debitTotal / maxVal) * 100)) : 5;
+      return {
+        month: r.month,
+        creditHeight: `${creditPct}%`,
+        debitHeight: `${debitPct}%`,
+      };
+    });
+  }
+
+  // Fallback: compute live per-month aggregates
+  const dateMonths = months.map(({ year, month }) => new Date(year, month - 1, 1));
   const results = [];
   let maxVal = 0;
 
-  for (const date of months) {
+  for (const date of dateMonths) {
     const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
     const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
 
@@ -440,6 +547,26 @@ export async function getAccountingEquation(periodLabel: string) {
     : parsePeriodToDates(periodLabel);
 
   if (!range) return { assets: 0, liabilities: 0, equity: 0, isBalanced: false, status: 'no_data' as const };
+
+  // Prefer the aggregated monthly table for unseeded calendar-month periods
+  const monthly = summary ? null : await getMonthlySummaryForRange(range);
+
+  if (monthly) {
+    if (monthly.entryCount === 0) {
+      return { assets: 0, liabilities: 0, equity: 0, isBalanced: false, status: 'no_data' as const };
+    }
+    const assets = Number(monthly.assetsTotal);
+    const liabilities = Number(monthly.liabilitiesTotal);
+    const equity = Number(monthly.equityTotal);
+    const isBalanced = Math.abs(assets - (liabilities + equity)) < 1;
+    return {
+      assets: Math.round(assets),
+      liabilities: Math.round(liabilities),
+      equity: Math.round(equity),
+      isBalanced,
+      status: isBalanced ? ('balanced' as const) : ('skewed' as const),
+    };
+  }
 
   const periodFilter = { gte: range.start, lte: range.end };
 

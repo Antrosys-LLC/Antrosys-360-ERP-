@@ -173,7 +173,7 @@ export async function seedInventoryData() {
   const financeManager = await prisma.user.findFirst({ where: { role: 'FINANCE_MANAGER' } });
   if (financeManager) {
     const existingPo = await prisma.purchaseOrder.findUnique({ where: { poNumber: 'PO-SEED-001' } });
-    const samplePo = existingPo ?? await prisma.purchaseOrder.create({
+    const samplePo = existingPo ?? (await prisma.purchaseOrder.create({
       data: {
         poNumber: 'PO-SEED-001',
         supplier: 'TechStore Pk',
@@ -187,29 +187,31 @@ export async function seedInventoryData() {
         receivedAt: new Date(),
         createdByUserId: financeManager.id,
       },
-    });
+    }));
 
-    await pushLedgerEntry(prisma as any, {
-      date: new Date(),
-      ref: samplePo.poNumber,
-      description: `Stock received - ${samplePo.poNumber} (TechStore Pk)`,
-      entryType: 'DEBIT',
-      amount: Number(samplePo.grandTotal),
-      accountCode: '1000',
-      currencyCode: 'PKR',
-      createdByUserId: financeManager.id,
-    });
+    if (!existingPo) {
+      await pushLedgerEntry(prisma as any, {
+        date: new Date(),
+        ref: samplePo.poNumber,
+        description: `Stock received - ${samplePo.poNumber} (TechStore Pk)`,
+        entryType: 'DEBIT',
+        amount: Number(samplePo.grandTotal),
+        accountCode: '1000',
+        currencyCode: 'PKR',
+        createdByUserId: financeManager.id,
+      });
 
-    await pushLedgerEntry(prisma as any, {
-      date: new Date(),
-      ref: samplePo.poNumber,
-      description: `Purchase accrual - ${samplePo.poNumber} (TechStore Pk)`,
-      entryType: 'CREDIT',
-      amount: Number(samplePo.grandTotal),
-      accountCode: '2000',
-      currencyCode: 'PKR',
-      createdByUserId: financeManager.id,
-    });
+      await pushLedgerEntry(prisma as any, {
+        date: new Date(),
+        ref: samplePo.poNumber,
+        description: `Purchase accrual - ${samplePo.poNumber} (TechStore Pk)`,
+        entryType: 'CREDIT',
+        amount: Number(samplePo.grandTotal),
+        accountCode: '2000',
+        currencyCode: 'PKR',
+        createdByUserId: financeManager.id,
+      });
+    }
 
     console.log('  ✅ Created sample received PurchaseOrder with ledger entries');
     }

@@ -2,6 +2,7 @@ import { buildApp } from './app';
 import { env } from './config/env';
 import { prisma } from './config/database';
 import { markMissingAttendanceAsAbsent } from './shared/attendance/mark-absences';
+import { aggregateMonthlyFinancials, aggregateBudgetVsActual } from './shared/aggregation/aggregate-finance';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
@@ -10,6 +11,20 @@ const DEMO_ANNOUNCEMENT_CONTENTS = [
   'Please review the new firewall deployment protocol',
   'Office maintenance scheduled for the 3rd floor next week',
 ];
+
+const runFinanceAggregation = async (app: Awaited<ReturnType<typeof buildApp>>) => {
+  try {
+    const [monthly, budget] = await Promise.all([
+      aggregateMonthlyFinancials(),
+      aggregateBudgetVsActual(),
+    ]);
+    app.log.info(
+      `Finance aggregation completed (${monthly.months} monthly summaries, ${budget.categories} budget snapshots)`,
+    );
+  } catch (err) {
+    app.log.error({ err }, 'Failed to run finance aggregation');
+  }
+};
 
 async function start() {
   const app = await buildApp();
@@ -43,6 +58,12 @@ async function start() {
     void runAbsentJob();
     setInterval(() => {
       void runAbsentJob();
+    }, ONE_HOUR_MS);
+
+    // Finance aggregation (hourly/nightly): run once at boot, then hourly.
+    void runFinanceAggregation(app);
+    setInterval(() => {
+      void runFinanceAggregation(app);
     }, ONE_HOUR_MS);
   } catch (err) {
     app.log.error(err);
