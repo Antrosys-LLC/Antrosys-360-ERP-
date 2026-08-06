@@ -12,9 +12,12 @@ const handler = NextAuth({
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
+        const apiUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+        console.log('[NextAuth] Using API URL:', apiUrl);
+
         try {
           // Call our Fastify backend for authentication
-          const res = await fetch(`${process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1'}/auth/login`, {
+          const res = await fetch(`${apiUrl}/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -24,6 +27,7 @@ const handler = NextAuth({
           });
 
           const data = await res.json();
+          console.log('[NextAuth] API response status:', res.status, 'ok:', res.ok, 'has user:', !!data.user);
 
           if (res.ok && data.user) {
             // Include token inside the user object so NextAuth can store it in the session
@@ -35,9 +39,10 @@ const handler = NextAuth({
               refreshToken: data.refreshToken,
             };
           }
+          console.log('[NextAuth] Auth failed:', data);
           return null;
         } catch (error) {
-          console.error('Auth error:', error);
+          console.error('[NextAuth] Auth error:', error);
           return null;
         }
       },
