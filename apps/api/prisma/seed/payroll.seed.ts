@@ -152,7 +152,11 @@ export async function seedPayrollData(prisma: PrismaClient) {
     });
   }
 
-  console.log(`  ✅ Seeded compensation for ${employees.length} employees`);
+  // Clean up any test payroll batches from previous manual UI runs so periods start fresh
+  await prisma.approvalTask.deleteMany({ where: { entityType: 'PAYROLL' } });
+  await prisma.payrollLineItem.deleteMany({});
+  await prisma.payroll.deleteMany({});
 
+  console.log(`  ✅ Seeded compensation for ${employees.length} employees`);
   console.log('  ℹ️ Skipping current-month payroll batch — user must click Run payroll to start');
 }

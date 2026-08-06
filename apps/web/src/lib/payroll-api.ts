@@ -245,7 +245,8 @@ export async function animateRunPayrollSteps(
   onUpdate: (lifecycle: PayrollDashboardData['lifecycle']) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  for (let i = 0; i < RUN_STEP_LABELS.length; i++) {
+  // Animate through initial 3 steps (Data collection -> Review & verify -> Payroll run)
+  for (let i = 0; i < 3; i++) {
     if (signal?.aborted) return;
     onUpdate({
       steps: RUN_STEP_LABELS.map((label, idx) => ({
@@ -253,7 +254,7 @@ export async function animateRunPayrollSteps(
         label,
         status: idx < i ? 'complete' : idx === i ? 'current' : 'upcoming',
       })),
-      progressPct: Math.round(((i + 0.45) / RUN_STEP_LABELS.length) * 100),
+      progressPct: Math.round(((i + 0.5) / RUN_STEP_LABELS.length) * 100),
       activeProcessingCount: i === 2 ? 1 : 0,
     });
     await new Promise((resolve) => setTimeout(resolve, RUN_PAYROLL_STEP_MS));

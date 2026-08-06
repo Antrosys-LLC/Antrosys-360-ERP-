@@ -172,7 +172,9 @@ export async function seedInventoryData() {
 
   const financeManager = await prisma.user.findUnique({ where: { email: 'finance_manager@antrosys.com' } });
   if (financeManager) {
-    const samplePo = await prisma.purchaseOrder.create({
+    const existingPo = await prisma.purchaseOrder.findUnique({ where: { poNumber: 'PO-SEED-001' } });
+    if (!existingPo) {
+      const samplePo = await prisma.purchaseOrder.create({
       data: {
         poNumber: 'PO-SEED-001',
         supplier: 'TechStore Pk',
@@ -211,6 +213,7 @@ export async function seedInventoryData() {
     });
 
     console.log('  ✅ Created sample received PurchaseOrder with ledger entries');
+    }
   }
 
   console.log('✅ Inventory seed data created');

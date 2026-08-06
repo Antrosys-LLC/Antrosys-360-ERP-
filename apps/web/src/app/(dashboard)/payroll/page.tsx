@@ -107,8 +107,7 @@ export default function PayrollDashboard() {
       setInitialLoading(true);
       setError(null);
       try {
-        const savedPeriod = typeof window !== 'undefined' ? localStorage.getItem('payroll-period-key') : null;
-        const dashPromise = savedPeriod ? fetchPayrollDashboard({ period: savedPeriod }) : fetchPayrollDashboard();
+        const dashPromise = fetchPayrollDashboard();
         const [dash, periodList] = await Promise.all([
           dashPromise,
           fetchPayrollPeriods(),
@@ -241,8 +240,7 @@ export default function PayrollDashboard() {
         setRunLifecycleOverride(lifecycle);
       });
 
-      const dash = await runPromise;
-      await animPromise;
+      const [dash] = await Promise.all([runPromise, animPromise]);
       setRunLifecycleOverride(null);
       setDashboard(dash);
       setSelectedPeriodKey(dash.period.key);
@@ -476,7 +474,7 @@ export default function PayrollDashboard() {
     );
   }
 
-  const lifecycle = dashboard?.lifecycle;
+  const lifecycle = runLifecycleOverride || dashboard?.lifecycle;
   const metrics = dashboard?.metrics;
   const payslipGen = dashboard?.payslipGeneration;
   const periodLabel =
@@ -828,13 +826,9 @@ export default function PayrollDashboard() {
                   }
                   if (ps === 'APPROVED') {
                     return (
-                      <button
-                        onClick={() => setDisburseConfirmOpen(true)}
-                        disabled={bulkLoading}
-                        className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white px-3.5 py-1.5 rounded-[6px] text-xs font-semibold tracking-wide transition-colors"
-                      >
-                        Disburse payroll
-                      </button>
+                      <span className="bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-[6px] text-xs font-bold">
+                        Approved
+                      </span>
                     );
                   }
                   return null;

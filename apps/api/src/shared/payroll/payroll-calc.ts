@@ -29,9 +29,9 @@ export function calculatePayrollLine(
   const incomeTax = Math.round(grossPay * 0.074);
   const providentFund = Math.round(baseSalary * 0.05);
   const healthInsurance = 2000;
-  const deductionsTotal = providentFund + healthInsurance;
+  const deductionsTotal = incomeTax + providentFund + healthInsurance;
   const taxAmount = incomeTax;
-  const netPay = grossPay - deductionsTotal - taxAmount;
+  const netPay = grossPay - deductionsTotal;
 
   return {
     baseSalary,
