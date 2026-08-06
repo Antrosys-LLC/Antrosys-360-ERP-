@@ -170,7 +170,7 @@ export async function seedInventoryData() {
     });
   }
 
-  const financeManager = await prisma.user.findUnique({ where: { email: 'finance_manager@antrosys.com' } });
+  const financeManager = await prisma.user.findFirst({ where: { role: 'FINANCE_MANAGER' } });
   if (financeManager) {
     const existingPo = await prisma.purchaseOrder.findUnique({ where: { poNumber: 'PO-SEED-001' } });
     const samplePo = existingPo ?? (await prisma.purchaseOrder.create({
