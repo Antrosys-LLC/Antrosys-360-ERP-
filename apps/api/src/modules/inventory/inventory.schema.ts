@@ -67,6 +67,7 @@ export const dashboardQuerySchema = z.object({
 export type DashboardQuery = z.infer<typeof dashboardQuerySchema>;
 
 export const createPurchaseOrderBodySchema = z.object({
+  supplier: z.string().min(1).max(200),
   items: z.array(z.object({
     itemId: z.string().min(1),
     itemName: z.string().min(1),
@@ -76,6 +77,13 @@ export const createPurchaseOrderBodySchema = z.object({
     totalCost: z.number().positive(),
   })).min(1),
   notes: z.string().optional(),
+  currencyCode: z.string().length(3).default('PKR'),
 });
 
 export type CreatePurchaseOrderBody = z.infer<typeof createPurchaseOrderBodySchema>;
+
+export const poParamsSchema = z.object({
+  poId: z.string().min(1),
+});
+
+export type PoParams = z.infer<typeof poParamsSchema>;

@@ -8,6 +8,7 @@ import {
   createCategoryBodySchema,
   dashboardQuerySchema,
   createPurchaseOrderBodySchema,
+  poParamsSchema,
 } from './inventory.schema';
 import * as inventoryService from './inventory.service';
 
@@ -130,5 +131,32 @@ export async function createPurchaseOrderHandler(request: FastifyRequest, reply:
     request.log.error({ err }, 'Failed to create purchase order');
     const message = err instanceof Error ? err.message : 'Unknown error';
     return reply.code(500).send({ error: message });
+  }
+}
+
+export async function listPurchaseOrdersHandler(_request: FastifyRequest, reply: FastifyReply) {
+  const pos = await inventoryService.listPurchaseOrders();
+  return reply.code(200).send({ status: 'success', data: pos });
+}
+
+export async function receivePurchaseOrderHandler(request: FastifyRequest, reply: FastifyReply) {
+  if (!request.user?.id) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+
+  const parsed = poParamsSchema.safeParse(request.params);
+  if (!parsed.success) {
+    return reply.code(400).send({ error: 'Validation failed', details: parsed.error.flatten() });
+  }
+
+  try {
+    const result = await inventoryService.receivePurchaseOrder(parsed.data.poId, request.user.id);
+    if (!result) {
+      return reply.code(404).send({ error: 'Purchase order not found' });
+    }
+    return reply.code(200).send({ status: 'success', data: result });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return reply.code(400).send({ error: message });
   }
 }

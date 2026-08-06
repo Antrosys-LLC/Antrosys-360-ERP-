@@ -1,7 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import type { Permission } from '@antrosys/types';
 import {
-  createLedgerEntryHandler,
   getAccountingEquationHandler,
   getBudgetTrackersHandler,
   getBudgetVsActualHandler,
@@ -10,7 +9,6 @@ import {
   getLedgerSummaryHandler,
   getMonthlyTrendHandler,
   listLedgerEntriesHandler,
-  updateLedgerEntryHandler,
   voidLedgerEntryHandler,
 } from './ledger.controller';
 
@@ -58,16 +56,6 @@ export async function ledgerRoutes(fastify: FastifyInstance) {
   fastify.get('/:entryId', {
     preHandler: [fastify.requirePermission(LEDGER_READ_PERMISSION)],
     handler: getLedgerEntryByIdHandler,
-  });
-
-  fastify.post('/', {
-    preHandler: [fastify.requirePermission(LEDGER_WRITE_PERMISSION)],
-    handler: createLedgerEntryHandler,
-  });
-
-  fastify.patch('/:entryId', {
-    preHandler: [fastify.requirePermission(LEDGER_WRITE_PERMISSION)],
-    handler: updateLedgerEntryHandler,
   });
 
   fastify.post('/:entryId/void', {

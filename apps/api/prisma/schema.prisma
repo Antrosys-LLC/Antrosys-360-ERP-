@@ -87,6 +87,7 @@ enum ClientPipelineStage {
   PROSPECT
   PROPOSAL
   NEGOTIATION
+  ONBOARDING
   ACTIVE
   AT_RISK
 }
@@ -97,6 +98,20 @@ enum ClientSalesStage {
   NEGOTIATION
   CONTRACT_REVIEW
   CLOSED_WON
+}
+
+enum ClientOnboardingPhase {
+  KICKOFF
+  SETUP
+  HANDBACK
+  COMPLETED
+}
+
+enum ClientOnboardingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  ON_HOLD
 }
 
 enum OperatingCostCategory {
@@ -128,6 +143,13 @@ enum Department {
   FINANCE
   HR
   OTHER
+}
+
+enum KpiStatus {
+  ON_TRACK
+  AT_RISK
+  OFF_TRACK
+  EXCEEDED
 }
 
 enum Gender {
@@ -273,6 +295,8 @@ model User {
   roleModuleAccessUpdates  RoleModuleAccess[]   @relation("RoleModuleAccessUpdatedBy")
   ledgerEntriesCreated     LedgerEntry[]      @relation("LedgerEntriesCreated")
   manpowerRequests         ManpowerRequest[]  @relation("ManpowerRequestsCreated")
+  clientOnboardingsAssigned ClientOnboarding[] @relation("ClientOnboardingsAssigned")
+  clientOnboardingsCreated  ClientOnboarding[] @relation("ClientOnboardingsCreated")
 
   @@map("users")
 }
@@ -338,6 +362,7 @@ model Employee {
   receivedMessages      Message[]            @relation("ReceivedMessages")
   onboardingMeetings    OnboardingMeeting[]  @relation("EmployeeMeetings")
   dailyMoods            EmployeeDailyMood[]
+  ownedKpis             Kpi[]                @relation("KpiOwner")
 
   @@index([department])
   @@index([employmentStatus])
@@ -404,6 +429,7 @@ model Client {
   tasks          ClientTask[]
   contacts       ClientContact[]
   timelineEvents ClientTimelineEvent[]
+  onboarding     ClientOnboarding?
 
   @@index([pipelineStage])
   @@index([salesStage])
@@ -527,6 +553,45 @@ model ClientTimelineEvent {
   @@index([clientId])
   @@index([eventDate])
   @@map("client_timeline_events")
+}
+
+model ClientOnboarding {
+  id              String                @id @default(cuid())
+  clientId        String                @unique
+  client          Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  status          ClientOnboardingStatus @default(NOT_STARTED)
+  currentPhase    ClientOnboardingPhase  @default(KICKOFF)
+  startDate       DateTime?
+  completedAt     DateTime?
+  assignedToUserId String?
+  assignedTo      User?                 @relation("ClientOnboardingsAssigned", fields: [assignedToUserId], references: [id])
+  createdByUserId String?
+  createdBy       User?                 @relation("ClientOnboardingsCreated", fields: [createdByUserId], references: [id])
+  items           ClientOnboardingItem[]
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([status])
+  @@index([currentPhase])
+  @@map("client_onboardings")
+}
+
+model ClientOnboardingItem {
+  id            String           @id @default(cuid())
+  onboardingId  String
+  onboarding    ClientOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  category      String           @default("KICKOFF") // KICKOFF, SETUP, HANDBACK
+  isRequired    Boolean          @default(true)
+  sortOrder     Int              @default(0)
+  completedAt   DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([onboardingId])
+  @@index([category])
+  @@map("client_onboarding_items")
 }
 
 model Invoice {
@@ -1177,6 +1242,32 @@ model DepartmentKpi {
   @@map("department_kpis")
 }
 
+model Kpi {
+  id              String      @id @default(cuid())
+  name            String
+  description     String?
+  department      Department?
+  ownerEmployeeId String?
+  owner           Employee?   @relation("KpiOwner", fields: [ownerEmployeeId], references: [id])
+  unit            String?
+  targetValue     Decimal?    @db.Decimal(12, 2)
+  currentValue    Decimal?    @db.Decimal(12, 2)
+  progress        Int         @default(0)
+  status          KpiStatus   @default(ON_TRACK)
+  trend           Json?
+  quarter         String?
+  year            Int?
+  isActive        Boolean     @default(true)
+  createdById     String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([status])
+  @@index([department])
+  @@index([quarter, year])
+  @@map("kpis")
+}
+
 model Notification {
   id        String   @id @default(cuid())
   userId    String
@@ -1565,5 +1656,24 @@ model InventoryItem {
   @@index([categoryId])
   @@index([sku])
   @@map("inventory_items")
+}
+
+model PurchaseOrder {
+  id              String             @id @default(cuid())
+  poNumber        String             @unique
+  supplier        String
+  items           Json
+  grandTotal      Decimal            @db.Decimal(14, 2)
+  notes           String?
+  currencyCode    String             @default("PKR") @db.VarChar(3)
+  status          String             @default("PENDING") // PENDING, APPROVED, RECEIVED, CANCELLED
+  receivedAt      DateTime?
+  createdByUserId String
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([status])
+  @@index([poNumber])
+  @@map("purchase_orders")
 }
 

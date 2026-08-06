@@ -19,6 +19,7 @@ import {
   upsertPayslipFromLineItem,
 } from '../../shared/payroll/payroll-calc';
 import { logFinancialActivity } from '../../shared/finance/financial-activity';
+import { pushLedgerEntry } from '../../shared/finance/ledger-push';
 import type {
   ApproveLinesBody,
   DashboardQuery,
@@ -974,6 +975,45 @@ export async function disbursePayroll(payrollId: string) {
       title: `Disbursed payroll ${payroll.batchNumber}`,
       metadata: { payrollId, batchNumber: payroll.batchNumber },
     });
+
+    const grossAmount = Number(payroll.totalGross);
+    const netAmount = Number(payroll.totalNet);
+    const deductionsAmount = Number(payroll.totalDeductions);
+
+    await pushLedgerEntry(tx, {
+      date: new Date(),
+      ref: payroll.batchNumber,
+      description: `Payroll disbursement - ${payroll.batchNumber}`,
+      entryType: 'DEBIT',
+      amount: grossAmount,
+      accountCode: '6100',
+      currencyCode: payroll.currencyCode,
+      createdByUserId: payroll.submittedByUserId ?? 'system',
+    });
+
+    await pushLedgerEntry(tx, {
+      date: new Date(),
+      ref: payroll.batchNumber,
+      description: `Payroll net payout - ${payroll.batchNumber}`,
+      entryType: 'CREDIT',
+      amount: netAmount,
+      accountCode: '1000',
+      currencyCode: payroll.currencyCode,
+      createdByUserId: payroll.submittedByUserId ?? 'system',
+    });
+
+    if (deductionsAmount > 0) {
+      await pushLedgerEntry(tx, {
+        date: new Date(),
+        ref: payroll.batchNumber,
+        description: `Payroll deductions & taxes - ${payroll.batchNumber}`,
+        entryType: 'CREDIT',
+        amount: deductionsAmount,
+        accountCode: '2000',
+        currencyCode: payroll.currencyCode,
+        createdByUserId: payroll.submittedByUserId ?? 'system',
+      });
+    }
 
     return { success: true as const };
   });

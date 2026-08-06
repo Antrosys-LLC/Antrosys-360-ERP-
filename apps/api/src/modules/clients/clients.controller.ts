@@ -15,6 +15,11 @@ import {
   createContactBodySchema,
   updateContactBodySchema,
   updateSalesStageBodySchema,
+  startOnboardingBodySchema,
+  updateOnboardingBodySchema,
+  createOnboardingItemBodySchema,
+  updateOnboardingItemBodySchema,
+  onboardingItemParamsSchema,
 } from './clients.schema';
 import * as clientsService from './clients.service';
 
@@ -304,5 +309,81 @@ export async function deleteContactHandler(request: FastifyRequest, reply: Fasti
   if (!request.user?.id) return reply.code(401).send({ error: 'Unauthorized' });
   const { contactId, clientId } = request.params as { contactId: string; clientId: string };
   await clientsService.deleteContact(contactId, clientId, request.user.id);
+  return reply.code(200).send({ status: 'success', data: { deleted: true } });
+}
+
+// ─── Onboarding ─────────────────────────────────────────────────────────────
+
+export async function getClientOnboardingHandler(request: FastifyRequest, reply: FastifyReply) {
+  const parsed = clientParamsSchema.safeParse(request.params);
+  if (!parsed.success) return validationError(reply, parsed.error.flatten());
+  const onboarding = await clientsService.getClientOnboarding(parsed.data.clientId);
+  return reply.code(200).send({ status: 'success', data: onboarding });
+}
+
+export async function startClientOnboardingHandler(request: FastifyRequest, reply: FastifyReply) {
+  const paramsParsed = clientParamsSchema.safeParse(request.params);
+  if (!paramsParsed.success) return validationError(reply, paramsParsed.error.flatten());
+  const bodyParsed = startOnboardingBodySchema.safeParse(request.body);
+  if (!bodyParsed.success) return validationError(reply, bodyParsed.error.flatten());
+  if (!request.user?.id) return reply.code(401).send({ error: 'Unauthorized' });
+  const onboarding = await clientsService.startClientOnboarding(
+    paramsParsed.data.clientId,
+    bodyParsed.data,
+    request.user.id,
+  );
+  if (!onboarding) return reply.code(404).send({ error: 'Client not found' });
+  return reply.code(201).send({ status: 'success', data: onboarding });
+}
+
+export async function updateClientOnboardingHandler(request: FastifyRequest, reply: FastifyReply) {
+  const paramsParsed = clientParamsSchema.safeParse(request.params);
+  if (!paramsParsed.success) return validationError(reply, paramsParsed.error.flatten());
+  const bodyParsed = updateOnboardingBodySchema.safeParse(request.body);
+  if (!bodyParsed.success) return validationError(reply, bodyParsed.error.flatten());
+  if (!request.user?.id) return reply.code(401).send({ error: 'Unauthorized' });
+  const updated = await clientsService.updateClientOnboarding(
+    paramsParsed.data.clientId,
+    bodyParsed.data,
+    request.user.id,
+  );
+  if (!updated) return reply.code(404).send({ error: 'Onboarding not found' });
+  return reply.code(200).send({ status: 'success', data: updated });
+}
+
+export async function addOnboardingItemHandler(request: FastifyRequest, reply: FastifyReply) {
+  const paramsParsed = clientParamsSchema.safeParse(request.params);
+  if (!paramsParsed.success) return validationError(reply, paramsParsed.error.flatten());
+  const bodyParsed = createOnboardingItemBodySchema.safeParse(request.body);
+  if (!bodyParsed.success) return validationError(reply, bodyParsed.error.flatten());
+  if (!request.user?.id) return reply.code(401).send({ error: 'Unauthorized' });
+  const item = await clientsService.addOnboardingItem(
+    paramsParsed.data.clientId,
+    bodyParsed.data,
+    request.user.id,
+  );
+  if (!item) return reply.code(404).send({ error: 'Onboarding not found. Start onboarding first.' });
+  return reply.code(201).send({ status: 'success', data: item });
+}
+
+export async function updateOnboardingItemHandler(request: FastifyRequest, reply: FastifyReply) {
+  const paramsParsed = onboardingItemParamsSchema.safeParse(request.params);
+  if (!paramsParsed.success) return validationError(reply, paramsParsed.error.flatten());
+  const bodyParsed = updateOnboardingItemBodySchema.safeParse(request.body);
+  if (!bodyParsed.success) return validationError(reply, bodyParsed.error.flatten());
+  if (!request.user?.id) return reply.code(401).send({ error: 'Unauthorized' });
+  const { itemId, clientId } = paramsParsed.data;
+  const updated = await clientsService.updateOnboardingItem(itemId, clientId, bodyParsed.data, request.user.id);
+  if (!updated) return reply.code(404).send({ error: 'Onboarding item not found' });
+  return reply.code(200).send({ status: 'success', data: updated });
+}
+
+export async function deleteOnboardingItemHandler(request: FastifyRequest, reply: FastifyReply) {
+  const paramsParsed = onboardingItemParamsSchema.safeParse(request.params);
+  if (!paramsParsed.success) return validationError(reply, paramsParsed.error.flatten());
+  if (!request.user?.id) return reply.code(401).send({ error: 'Unauthorized' });
+  const { itemId, clientId } = paramsParsed.data;
+  const deleted = await clientsService.deleteOnboardingItem(itemId, clientId, request.user.id);
+  if (!deleted) return reply.code(404).send({ error: 'Onboarding item not found' });
   return reply.code(200).send({ status: 'success', data: { deleted: true } });
 }

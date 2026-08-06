@@ -31,10 +31,17 @@ import {
   createContactHandler,
   updateContactHandler,
   deleteContactHandler,
+  getClientOnboardingHandler,
+  startClientOnboardingHandler,
+  updateClientOnboardingHandler,
+  addOnboardingItemHandler,
+  updateOnboardingItemHandler,
+  deleteOnboardingItemHandler,
 } from './clients.controller';
 
 const CLIENTS_READ: Permission = 'clients:read';
 const CLIENTS_WRITE: Permission = 'clients:write';
+const CLIENTS_ONBOARD: Permission = 'clients:onboard';
 
 export async function clientsRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.verifyJwt);
@@ -196,5 +203,36 @@ export async function clientsRoutes(fastify: FastifyInstance) {
   fastify.delete('/:clientId/contacts/:contactId', {
     preHandler: [fastify.requirePermission(CLIENTS_WRITE)],
     handler: deleteContactHandler,
+  });
+
+  // ── Onboarding ─────────────────────────────────────────────────────────
+  fastify.get('/:clientId/onboarding', {
+    preHandler: [fastify.requirePermission(CLIENTS_READ)],
+    handler: getClientOnboardingHandler,
+  });
+
+  fastify.post('/:clientId/onboarding', {
+    preHandler: [fastify.requirePermission(CLIENTS_ONBOARD)],
+    handler: startClientOnboardingHandler,
+  });
+
+  fastify.patch('/:clientId/onboarding', {
+    preHandler: [fastify.requirePermission(CLIENTS_ONBOARD)],
+    handler: updateClientOnboardingHandler,
+  });
+
+  fastify.post('/:clientId/onboarding/items', {
+    preHandler: [fastify.requirePermission(CLIENTS_ONBOARD)],
+    handler: addOnboardingItemHandler,
+  });
+
+  fastify.patch('/:clientId/onboarding/items/:itemId', {
+    preHandler: [fastify.requirePermission(CLIENTS_ONBOARD)],
+    handler: updateOnboardingItemHandler,
+  });
+
+  fastify.delete('/:clientId/onboarding/items/:itemId', {
+    preHandler: [fastify.requirePermission(CLIENTS_ONBOARD)],
+    handler: deleteOnboardingItemHandler,
   });
 }

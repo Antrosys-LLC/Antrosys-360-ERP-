@@ -86,6 +86,37 @@ export interface ClientTimelineEvent {
   metadata: unknown;
 }
 
+export type ClientOnboardingPhase = 'KICKOFF' | 'SETUP' | 'HANDBACK' | 'COMPLETED';
+export type ClientOnboardingStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'ON_HOLD';
+
+export interface ClientOnboardingItem {
+  id: string;
+  onboardingId: string;
+  title: string;
+  description: string | null;
+  category: string;
+  isRequired: boolean;
+  sortOrder: number;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClientOnboarding {
+  id: string;
+  clientId: string;
+  status: ClientOnboardingStatus;
+  currentPhase: ClientOnboardingPhase;
+  startDate: string | null;
+  completedAt: string | null;
+  assignedToUserId: string | null;
+  createdByUserId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  items: ClientOnboardingItem[];
+  assignedTo: { id: string; email: string; role: string } | null;
+}
+
 export interface GlobalTimelineEvent {
   id: string;
   clientId: string;
@@ -151,6 +182,7 @@ export interface Client {
   tasks?: ClientTask[];
   timelineEvents?: ClientTimelineEvent[];
   invoices?: unknown[];
+  onboarding?: ClientOnboarding | null;
 }
 
 export interface PaginatedResult<T> {
@@ -419,4 +451,60 @@ export async function updateTask(clientId: string, taskId: string, payload: Part
 export async function fetchTimeline(clientId: string, limit?: number): Promise<ClientTimelineEvent[]> {
   const { data } = await apiClient.get(`/clients/${clientId}/timeline`, { params: { limit } });
   return data.data;
+}
+
+// ── Onboarding ─────────────────────────────────────────────────────────────
+
+export async function fetchClientOnboarding(clientId: string): Promise<ClientOnboarding | null> {
+  const { data } = await apiClient.get(`/clients/${clientId}/onboarding`);
+  return data.data;
+}
+
+export async function startClientOnboarding(
+  clientId: string,
+  payload: { startDate?: string; assignedToUserId?: string | null } = {},
+): Promise<ClientOnboarding> {
+  const { data } = await apiClient.post(`/clients/${clientId}/onboarding`, payload);
+  return data.data;
+}
+
+export async function updateClientOnboarding(
+  clientId: string,
+  payload: Partial<{
+    currentPhase: ClientOnboardingPhase;
+    status: ClientOnboardingStatus;
+    assignedToUserId: string | null;
+    startDate: string | null;
+  }>,
+): Promise<ClientOnboarding> {
+  const { data } = await apiClient.patch(`/clients/${clientId}/onboarding`, payload);
+  return data.data;
+}
+
+export async function addOnboardingItem(
+  clientId: string,
+  payload: { title: string; description?: string | null; category?: string; isRequired?: boolean; sortOrder?: number },
+): Promise<ClientOnboardingItem> {
+  const { data } = await apiClient.post(`/clients/${clientId}/onboarding/items`, payload);
+  return data.data;
+}
+
+export async function updateOnboardingItem(
+  clientId: string,
+  itemId: string,
+  payload: Partial<{
+    title: string;
+    description: string | null;
+    category: string;
+    isRequired: boolean;
+    sortOrder: number;
+    completed: boolean;
+  }>,
+): Promise<ClientOnboardingItem> {
+  const { data } = await apiClient.patch(`/clients/${clientId}/onboarding/items/${itemId}`, payload);
+  return data.data;
+}
+
+export async function deleteOnboardingItem(clientId: string, itemId: string): Promise<void> {
+  await apiClient.delete(`/clients/${clientId}/onboarding/items/${itemId}`);
 }
