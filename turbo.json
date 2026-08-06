@@ -9,16 +9,6 @@
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
-    "web#build": {
-      "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**"],
-      "env": [
-        "NEXTAUTH_URL",
-        "NEXTAUTH_SECRET",
-        "NODE_ENV",
-        "NEXT_PUBLIC_API_URL"
-      ]
-    },
     "lint": {
       "dependsOn": ["^build"]
     }
