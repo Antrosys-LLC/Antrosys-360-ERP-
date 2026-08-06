@@ -30,6 +30,8 @@ export interface PayslipPdfInput {
   ytdGross: number;
   ytdDeductions: number;
   ytdNet: number;
+
+  template?: 'standard' | 'detailed';
 }
 
 function numberToWords(n: number): string {
@@ -109,6 +111,176 @@ function drawSection(doc: PDFKit.PDFDocument, title: string, items: LineItem[], 
   return cy;
 }
 
+function buildStandardPayslipPdf(doc: PDFKit.PDFDocument, input: PayslipPdfInput, pageWidth: number) {
+  doc.fontSize(14).fillColor('#1A1A1A').text('ANTROSYS TECHNOLOGIES', 50, 50, { align: 'center' });
+  doc.fontSize(8).fillColor('#555555').text('Software Technology Park, I-9/3, Islamabad, Pakistan', 50, 70, { align: 'center' });
+
+  doc.moveTo(50, 90).lineTo(50 + pageWidth, 90).strokeColor('#CCCCCC').stroke();
+
+  doc.fontSize(14).fillColor('#1A1A1A').text('SUMMARY PAYSLIP', 50, 105, { align: 'center' });
+
+  doc.fontSize(8).fillColor('#333333');
+  doc.text(`Pay Period: ${fmtPeriod(input.periodStart ?? new Date(), input.periodEnd ?? new Date())}`, 50, 130);
+  doc.text(`Payslip No: ${input.payslipNumber}`, 50, 143);
+  doc.text(`Payment Date: ${fmtDate(input.paymentDate)}`, 50, 156);
+
+  const statusColors: Record<string, string> = { PAID: '#16a34a', PROCESSING: '#d97706', CANCELLED: '#dc2626' };
+  const statusColor = statusColors[input.status.toUpperCase()] ?? '#333333';
+  doc.fontSize(10).fillColor(statusColor).text(input.status, 50 + pageWidth - 100, 130, { width: 100, align: 'right' });
+
+  doc.moveTo(50, 175).lineTo(50 + pageWidth, 175).strokeColor('#E5E5E5').stroke();
+
+  let cy = 190;
+  cy = drawSection(doc, 'Employee Details', [
+    { label: 'Employee Name', value: input.employeeName },
+    { label: 'Employee ID', value: input.employeeCode ?? '-' },
+    { label: 'Department', value: input.department ?? '-' },
+    { label: 'Currency', value: input.currencyCode },
+  ], 50, cy);
+
+  cy += 10;
+  doc.moveTo(50, cy).lineTo(50 + pageWidth, cy).strokeColor('#E5E5E5').stroke();
+  cy += 15;
+
+  const summaryItems: LineItem[] = [
+    { label: 'Base Salary', value: fmt(input.basicSalary, input.currencyCode) },
+    { label: 'Allowances & Extras', value: fmt(input.allowances + input.overtime + input.bonuses, input.currencyCode) },
+    { label: 'Gross Salary', value: fmt(input.grossPay, input.currencyCode) },
+    { label: 'Total Deductions', value: fmt(input.deductionsTotal, input.currencyCode) },
+  ];
+  cy = drawSection(doc, 'Pay Summary', summaryItems, 50, cy);
+
+  cy += 10;
+  doc.moveTo(50, cy).lineTo(50 + pageWidth, cy).strokeColor('#CCCCCC').stroke();
+  cy += 12;
+
+  doc.fontSize(12).fillColor('#1A1A1A');
+  doc.text('NET PAY', 50, cy, { width: 90 });
+  doc.text(fmt(input.netPay, input.currencyCode), 50 + pageWidth - 130, cy, { width: 130, align: 'right' });
+
+  cy += 20;
+  doc.fontSize(9).fillColor('#555555');
+  const amountWords = numberToWords(input.netPay);
+  doc.text(amountWords, 50, cy);
+
+  cy += 30;
+  doc.moveTo(50, cy).lineTo(50 + pageWidth, cy).strokeColor('#E5E5E5').stroke();
+  cy += 12;
+
+  doc.fontSize(8).fillColor('#888888').text(
+    'Standard summary payslip issued by Antrosys 360 ERP. For queries, contact hr@antrosys.com.',
+    50, cy, { align: 'center' },
+  );
+}
+
+function buildDetailedPayslipPdf(doc: PDFKit.PDFDocument, input: PayslipPdfInput, pageWidth: number) {
+  doc.fontSize(14).fillColor('#1A1A1A').text('ANTROSYS TECHNOLOGIES', 50, 50, { align: 'center' });
+  doc.fontSize(8).fillColor('#555555').text('Antrosys Technologies PVT LTD.', 50, 70, { align: 'center' });
+  doc.fontSize(8).fillColor('#555555').text('Software Technology Park, I-9/3, Islamabad, 44000, Pakistan', 50, 84, { align: 'center' });
+  doc.fontSize(8).fillColor('#555555').text('hr@antrosys.com  |  www.antrosys.com', 50, 98, { align: 'center' });
+
+  doc.moveTo(50, 115).lineTo(50 + pageWidth, 115).strokeColor('#CCCCCC').stroke();
+
+  doc.fontSize(16).fillColor('#1A1A1A').text('PAYSLIP', 50, 130, { align: 'center' });
+
+  doc.fontSize(8).fillColor('#333333');
+  doc.text(`Pay Period: ${fmtPeriod(input.periodStart ?? new Date(), input.periodEnd ?? new Date())}`, 50, 155);
+  doc.text(`Payslip No: ${input.payslipNumber}`, 50, 168);
+  doc.text(`Payment Date: ${fmtDate(input.paymentDate)}`, 50, 181);
+
+  const statusColors: Record<string, string> = { PAID: '#16a34a', PROCESSING: '#d97706', CANCELLED: '#dc2626' };
+  const statusColor = statusColors[input.status.toUpperCase()] ?? '#333333';
+  doc.fontSize(10).fillColor(statusColor).text(input.status, 50 + pageWidth - 100, 155, { width: 100, align: 'right' });
+
+  doc.moveTo(50, 200).lineTo(50 + pageWidth, 200).strokeColor('#E5E5E5').stroke();
+
+  let cy = 215;
+  cy = drawSection(doc, 'Employee Information', [
+    { label: 'Employee Name', value: input.employeeName },
+    { label: 'Employee ID', value: input.employeeCode ?? '-' },
+    { label: 'Designation', value: input.designation ?? '-' },
+    { label: 'Department', value: input.department ?? '-' },
+    { label: 'Employment Type', value: input.employeeType ?? '-' },
+    { label: 'Work Location', value: input.workLocation ?? '-' },
+    { label: 'Currency', value: input.currencyCode },
+    { label: 'Date of Joining', value: input.joiningDate ? fmtDate(input.joiningDate) : '-' },
+  ], 50, cy);
+
+  cy += 10;
+  doc.moveTo(50, cy).lineTo(50 + pageWidth, cy).strokeColor('#E5E5E5').stroke();
+  cy += 10;
+
+  const earningsItems: LineItem[] = [
+    { label: 'Basic Salary', value: fmt(input.basicSalary, input.currencyCode) },
+    { label: 'Allowances', value: fmt(input.allowances, input.currencyCode) },
+    { label: 'Overtime', value: fmt(input.overtime, input.currencyCode) },
+    { label: 'Bonuses', value: fmt(input.bonuses, input.currencyCode) },
+  ];
+  cy = drawSection(doc, 'Earnings', earningsItems, 50, cy);
+
+  doc.fontSize(9).fillColor('#1A1A1A');
+  doc.text('Gross Pay', 50 + pageWidth - 220, cy, { width: 90 });
+  doc.text(fmt(input.grossPay, input.currencyCode), 50 + pageWidth - 130, cy, { width: 130, align: 'right' });
+  cy += 16;
+
+  cy += 10;
+  doc.moveTo(50, cy).lineTo(50 + pageWidth, cy).strokeColor('#E5E5E5').stroke();
+  cy += 10;
+
+  const deductionsItems: LineItem[] = [
+    { label: 'Income Tax', value: fmt(input.incomeTax, input.currencyCode) },
+    { label: 'Provident Fund', value: fmt(input.providentFund, input.currencyCode) },
+    { label: 'Health Insurance', value: fmt(input.healthInsurance, input.currencyCode) },
+  ];
+  cy = drawSection(doc, 'Deductions', deductionsItems, 50, cy);
+
+  doc.fontSize(9).fillColor('#1A1A1A');
+  doc.text('Total Deductions', 50 + pageWidth - 220, cy, { width: 90 });
+  doc.text(fmt(input.deductionsTotal, input.currencyCode), 50 + pageWidth - 130, cy, { width: 130, align: 'right' });
+  cy += 16;
+
+  cy += 10;
+  doc.moveTo(50, cy).lineTo(50 + pageWidth, cy).strokeColor('#CCCCCC').stroke();
+  cy += 10;
+
+  doc.fontSize(12).fillColor('#1A1A1A');
+  doc.text('NET PAY', 50, cy, { width: 90 });
+  doc.text(fmt(input.netPay, input.currencyCode), 50 + pageWidth - 130, cy, { width: 130, align: 'right' });
+
+  cy += 20;
+  doc.fontSize(9).fillColor('#555555');
+  const amountWords = numberToWords(input.netPay);
+  doc.text(amountWords, 50, cy);
+
+  cy += 25;
+  doc.moveTo(50, cy).lineTo(50 + pageWidth, cy).strokeColor('#E5E5E5').stroke();
+  cy += 10;
+
+  doc.fontSize(10).fillColor('#1A1A1A').text('Year-to-Date Summary', 50, cy);
+  cy += 18;
+
+  const ytdItems: LineItem[] = [
+    { label: 'YTD Gross', value: fmt(input.ytdGross, input.currencyCode) },
+    { label: 'YTD Deductions', value: fmt(input.ytdDeductions, input.currencyCode) },
+    { label: 'YTD Net', value: fmt(input.ytdNet, input.currencyCode) },
+  ];
+  doc.fontSize(9).fillColor('#333333');
+  for (const item of ytdItems) {
+    doc.text(item.label, 50, cy, { width: 180 });
+    doc.text(item.value, 50 + 180, cy, { align: 'right' });
+    cy += 16;
+  }
+
+  cy += 20;
+  doc.moveTo(50, cy).lineTo(50 + pageWidth, cy).strokeColor('#CCCCCC').stroke();
+  cy += 12;
+
+  doc.fontSize(8).fillColor('#888888').text(
+    'This is a system-generated payslip issued by Antrosys 360 ERP and does not require a signature. For queries, contact hr@antrosys.com.',
+    50, cy, { align: 'center' },
+  );
+}
+
 export function buildPayslipPdf(input: PayslipPdfInput): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 50, size: 'A4' });
@@ -120,111 +292,11 @@ export function buildPayslipPdf(input: PayslipPdfInput): Promise<Buffer> {
 
     const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
 
-    doc.fontSize(14).fillColor('#1A1A1A').text('ANTROSYS TECHNOLOGIES', 50, 50, { align: 'center' });
-    doc.fontSize(8).fillColor('#555555').text('Antrosys Technologies PVT LTD.', 50, 70, { align: 'center' });
-    doc.fontSize(8).fillColor('#555555').text('Software Technology Park, I-9/3, Islamabad, 44000, Pakistan', 50, 84, { align: 'center' });
-    doc.fontSize(8).fillColor('#555555').text('hr@antrosys.com  |  www.antrosys.com', 50, 98, { align: 'center' });
-
-    doc.moveTo(50, 115).lineTo(50 + pageWidth, 115).strokeColor('#CCCCCC').stroke();
-
-    doc.fontSize(16).fillColor('#1A1A1A').text('PAYSLIP', 50, 130, { align: 'center' });
-
-    doc.fontSize(8).fillColor('#333333');
-    doc.text(`Pay Period: ${fmtPeriod(input.periodStart ?? new Date(), input.periodEnd ?? new Date())}`, 50, 155);
-    doc.text(`Payslip No: ${input.payslipNumber}`, 50, 168);
-    doc.text(`Payment Date: ${fmtDate(input.paymentDate)}`, 50, 181);
-
-    const statusColors: Record<string, string> = { PAID: '#16a34a', PROCESSING: '#d97706', CANCELLED: '#dc2626' };
-    const statusColor = statusColors[input.status.toUpperCase()] ?? '#333333';
-    doc.fontSize(10).fillColor(statusColor).text(input.status, 50 + pageWidth - 100, 155, { width: 100, align: 'right' });
-
-    doc.moveTo(50, 200).lineTo(50 + pageWidth, 200).strokeColor('#E5E5E5').stroke();
-
-    let cy = 215;
-    cy = drawSection(doc, 'Employee Information', [
-      { label: 'Employee Name', value: input.employeeName },
-      { label: 'Employee ID', value: input.employeeCode ?? '-' },
-      { label: 'Designation', value: input.designation ?? '-' },
-      { label: 'Department', value: input.department ?? '-' },
-      { label: 'Employment Type', value: input.employeeType ?? '-' },
-      { label: 'Work Location', value: input.workLocation ?? '-' },
-      { label: 'Currency', value: input.currencyCode },
-      { label: 'Date of Joining', value: input.joiningDate ? fmtDate(input.joiningDate) : '-' },
-    ], 50, cy);
-
-    cy += 10;
-    doc.moveTo(50, cy).lineTo(50 + pageWidth, cy).strokeColor('#E5E5E5').stroke();
-    cy += 10;
-
-    const earningsItems: LineItem[] = [
-      { label: 'Basic Salary', value: fmt(input.basicSalary, input.currencyCode) },
-      { label: 'Allowances', value: fmt(input.allowances, input.currencyCode) },
-      { label: 'Overtime', value: fmt(input.overtime, input.currencyCode) },
-      { label: 'Bonuses', value: fmt(input.bonuses, input.currencyCode) },
-    ];
-    cy = drawSection(doc, 'Earnings', earningsItems, 50, cy);
-
-    doc.fontSize(9).fillColor('#1A1A1A');
-    doc.text('Gross Pay', 50 + pageWidth - 220, cy, { width: 90 });
-    doc.text(fmt(input.grossPay, input.currencyCode), 50 + pageWidth - 130, cy, { width: 130, align: 'right' });
-    cy += 16;
-
-    cy += 10;
-    doc.moveTo(50, cy).lineTo(50 + pageWidth, cy).strokeColor('#E5E5E5').stroke();
-    cy += 10;
-
-    const deductionsItems: LineItem[] = [
-      { label: 'Income Tax', value: fmt(input.incomeTax, input.currencyCode) },
-      { label: 'Provident Fund', value: fmt(input.providentFund, input.currencyCode) },
-      { label: 'Health Insurance', value: fmt(input.healthInsurance, input.currencyCode) },
-    ];
-    cy = drawSection(doc, 'Deductions', deductionsItems, 50, cy);
-
-    doc.fontSize(9).fillColor('#1A1A1A');
-    doc.text('Total Deductions', 50 + pageWidth - 220, cy, { width: 90 });
-    doc.text(fmt(input.deductionsTotal, input.currencyCode), 50 + pageWidth - 130, cy, { width: 130, align: 'right' });
-    cy += 16;
-
-    cy += 10;
-    doc.moveTo(50, cy).lineTo(50 + pageWidth, cy).strokeColor('#CCCCCC').stroke();
-    cy += 10;
-
-    doc.fontSize(12).fillColor('#1A1A1A');
-    doc.text('NET PAY', 50, cy, { width: 90 });
-    doc.text(fmt(input.netPay, input.currencyCode), 50 + pageWidth - 130, cy, { width: 130, align: 'right' });
-
-    cy += 20;
-    doc.fontSize(9).fillColor('#555555');
-    const amountWords = numberToWords(input.netPay);
-    doc.text(amountWords, 50, cy);
-
-    cy += 25;
-    doc.moveTo(50, cy).lineTo(50 + pageWidth, cy).strokeColor('#E5E5E5').stroke();
-    cy += 10;
-
-    doc.fontSize(10).fillColor('#1A1A1A').text('Year-to-Date Summary', 50, cy);
-    cy += 18;
-
-    const ytdItems: LineItem[] = [
-      { label: 'YTD Gross', value: fmt(input.ytdGross, input.currencyCode) },
-      { label: 'YTD Deductions', value: fmt(input.ytdDeductions, input.currencyCode) },
-      { label: 'YTD Net', value: fmt(input.ytdNet, input.currencyCode) },
-    ];
-    doc.fontSize(9).fillColor('#333333');
-    for (const item of ytdItems) {
-      doc.text(item.label, 50, cy, { width: 180 });
-      doc.text(item.value, 50 + 180, cy, { align: 'right' });
-      cy += 16;
+    if (input.template === 'standard') {
+      buildStandardPayslipPdf(doc, input, pageWidth);
+    } else {
+      buildDetailedPayslipPdf(doc, input, pageWidth);
     }
-
-    cy += 20;
-    doc.moveTo(50, cy).lineTo(50 + pageWidth, cy).strokeColor('#CCCCCC').stroke();
-    cy += 12;
-
-    doc.fontSize(8).fillColor('#888888').text(
-      'This is a system-generated payslip issued by Antrosys 360 ERP and does not require a signature. For queries, contact hr@antrosys.com.',
-      50, cy, { align: 'center' },
-    );
 
     doc.end();
   });

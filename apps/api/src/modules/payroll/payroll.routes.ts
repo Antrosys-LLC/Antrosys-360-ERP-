@@ -3,6 +3,7 @@ import type { Permission } from '@antrosys/types';
 import {
   approveLinesHandler,
   disbursePayrollHandler,
+  downloadPayslipsZipHandler,
   exportLedgerHandler,
   generatePayslipsHandler,
   getDashboardHandler,
@@ -68,6 +69,11 @@ export async function payrollModuleRoutes(fastify: FastifyInstance) {
   fastify.post('/:payrollId/generate-payslips', {
     preHandler: [fastify.requirePermission(PAYROLL_WRITE)],
     handler: generatePayslipsHandler,
+  });
+
+  fastify.get('/:payrollId/payslips/download-zip', {
+    preHandler: [fastify.requirePermission(PAYROLL_READ)],
+    handler: downloadPayslipsZipHandler,
   });
 
   fastify.post('/:payrollId/disburse', {

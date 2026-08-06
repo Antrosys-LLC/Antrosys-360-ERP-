@@ -21,6 +21,7 @@ import {
   approvePayrollLines,
   bulkActionDelay,
   disbursePayroll,
+  downloadPayrollPayslipsZip,
   exportPayrollLedger,
   fetchPayrollDashboard,
   fetchPayrollEmployees,
@@ -303,6 +304,7 @@ export default function PayrollDashboard() {
     try {
       const result = await generatePayrollPayslips(payrollId, scope);
       setDashboard(result.dashboard);
+      await downloadPayrollPayslipsZip(payrollId, scope);
       if (payrollId) {
         const empData = await fetchPayrollEmployees(payrollId, {
           search: search || undefined,
@@ -316,7 +318,7 @@ export default function PayrollDashboard() {
         setPagination(empData.pagination);
       }
     } catch {
-      setError('Failed to generate payslips.');
+      setErrorModalText('Failed to generate and download payslips ZIP archive.');
     } finally {
       setBulkLoading(false);
     }

@@ -8,6 +8,7 @@ import {
 import { prisma } from '../../config/database';
 import { APP_DEFAULT_CURRENCY } from '../../shared/currency/currency-constants';
 import { formatCurrencyAmount, formatCurrencyCompact } from '../../shared/currency/format-currency';
+import JSZip from 'jszip';
 import { buildPayslipPdf } from '../../shared/pdf/payslip-pdf';
 import { payslipPeriodLabel } from '../../shared/payslip/payslip-period-label';
 import { sendMail } from '../../shared/email/mail.service';
@@ -926,7 +927,7 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
     if (body.scope === 'verified_only') {
       return line.status === 'VERIFIED';
     }
-    return line.status !== 'ON_HOLD' && line.status !== 'PENDING';
+    return true;
   });
 
   let generated = 0;
@@ -958,6 +959,16 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
     entry.net += Number(p.netPay);
     ytdByEmployee.set(p.employeeId, entry);
   }
+
+  const paidPayslips = await prisma.employeePayslip.findMany({
+    where: {
+      employeeId: { in: eligibleEmployeeIds },
+      periodStart: payroll.periodStart,
+      status: 'PAID',
+    },
+    select: { employeeId: true },
+  });
+  const paidEmployeeIds = new Set(paidPayslips.map((p) => p.employeeId));
 
   for (const line of eligible) {
     await upsertPayslipFromLineItem(
@@ -992,7 +1003,7 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
         payslipNumber,
         paymentDate: new Date(),
         currencyCode: payroll.currencyCode,
-        status: 'Processing',
+        status: paidEmployeeIds.has(line.employee.id) || payroll.status === 'PAID' ? 'PAID' : (payroll.status === 'APPROVED' ? 'APPROVED' : 'PROCESSING'),
         basicSalary: Number(line.baseSalary),
         allowances: Number(line.allowances),
         overtime: Number(line.overtime),
@@ -1006,6 +1017,7 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
         ytdGross,
         ytdDeductions,
         ytdNet,
+        template: config.template,
       });
 
       if (config.email && line.employee.user.email) {
@@ -1034,6 +1046,117 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
   });
 
   return { generated, skipped, progressPct };
+}
+
+export async function downloadPayslipsZip(payrollId: string, scope: 'all' | 'verified_only' = 'all') {
+  const payroll = await prisma.payroll.findUnique({
+    where: { id: payrollId },
+    include: {
+      lineItems: {
+        include: {
+          employee: {
+            include: { user: true },
+          },
+        },
+      },
+    },
+  });
+  if (!payroll) return null;
+
+  const config = parsePayslipConfig(payroll.payslipConfig);
+  const eligible = payroll.lineItems.filter((line) => {
+    if (scope === 'verified_only') {
+      return line.status === 'VERIFIED';
+    }
+    return true;
+  });
+
+  const periodLabel = periodLabelFromStart(payroll.periodStart);
+  const periodStart = payroll.periodStart;
+  const periodEnd = payroll.periodEnd;
+  const monthStr = String(periodStart.getMonth() + 1).padStart(2, '0');
+  const yearStr = String(periodStart.getFullYear());
+
+  const year = periodStart.getFullYear();
+  const ytdStart = new Date(Date.UTC(year, 0, 1));
+  const eligibleEmployeeIds = eligible.map((l) => l.employee.id);
+  const allYtdPayslips = await prisma.employeePayslip.findMany({
+    where: {
+      employeeId: { in: eligibleEmployeeIds },
+      periodStart: { gte: ytdStart, lt: periodStart },
+      status: { not: 'CANCELLED' },
+    },
+    select: { employeeId: true, grossPay: true, deductionsTotal: true, netPay: true },
+  });
+  const ytdByEmployee = new Map<string, { gross: number; deductions: number; net: number }>();
+  for (const p of allYtdPayslips) {
+    const entry = ytdByEmployee.get(p.employeeId) ?? { gross: 0, deductions: 0, net: 0 };
+    entry.gross += Number(p.grossPay);
+    entry.deductions += Number(p.deductionsTotal);
+    entry.net += Number(p.netPay);
+    ytdByEmployee.set(p.employeeId, entry);
+  }
+
+  const paidPayslips = await prisma.employeePayslip.findMany({
+    where: {
+      employeeId: { in: eligibleEmployeeIds },
+      periodStart: payroll.periodStart,
+      status: 'PAID',
+    },
+    select: { employeeId: true },
+  });
+  const paidEmployeeIds = new Set(paidPayslips.map((p) => p.employeeId));
+
+  const zip = new JSZip();
+
+  for (const line of eligible) {
+    const employeeName = `${line.employee.firstName} ${line.employee.lastName}`;
+    const ytd = ytdByEmployee.get(line.employee.id) ?? { gross: 0, deductions: 0, net: 0 };
+    const payslipNumber = `PSL-${line.employee.employeeCode ?? 'EMP'}-${monthStr}${yearStr}`;
+
+    const pdfBuffer = await buildPayslipPdf({
+      employeeName,
+      employeeCode: line.employee.employeeCode,
+      department: line.employee.department?.replace(/_/g, ' ') ?? null,
+      designation: line.employee.designation,
+      employeeType: line.employee.employeeType ?? null,
+      workLocation: line.employee.location ?? null,
+      joiningDate: line.employee.joiningDate,
+      periodStart,
+      periodEnd,
+      periodLabel,
+      payslipNumber,
+      paymentDate: new Date(),
+      currencyCode: payroll.currencyCode,
+      status: paidEmployeeIds.has(line.employee.id) || payroll.status === 'PAID' ? 'PAID' : (payroll.status === 'APPROVED' ? 'APPROVED' : 'PROCESSING'),
+      basicSalary: Number(line.baseSalary),
+      allowances: Number(line.allowances),
+      overtime: Number(line.overtime),
+      bonuses: Number(line.bonuses),
+      grossPay: Number(line.grossPay),
+      incomeTax: Number(line.incomeTax),
+      providentFund: Number(line.providentFund),
+      healthInsurance: Number(line.healthInsurance),
+      deductionsTotal: Number(line.deductionsTotal),
+      netPay: Number(line.netPay),
+      ytdGross: ytd.gross,
+      ytdDeductions: ytd.deductions,
+      ytdNet: ytd.net,
+      template: config.template,
+    });
+
+    const safeEmpCode = line.employee.employeeCode ?? line.employee.id.slice(-6);
+    const cleanName = `${line.employee.firstName}_${line.employee.lastName}`.replace(/\s+/g, '_');
+    const filename = `payslip-${safeEmpCode}-${cleanName}-${periodLabel.replace(/\s+/g, '-')}.pdf`;
+    zip.file(filename, pdfBuffer);
+  }
+
+  const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
+
+  return {
+    filename: `payslips-${payroll.batchNumber}-${scope}.zip`,
+    content: zipBuffer,
+  };
 }
 
 export async function disbursePayroll(payrollId: string) {
