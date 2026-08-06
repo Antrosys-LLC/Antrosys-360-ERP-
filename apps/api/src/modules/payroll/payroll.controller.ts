@@ -176,8 +176,11 @@ export async function disbursePayrollHandler(request: FastifyRequest, reply: Fas
   const result = await payrollService.disbursePayroll(paramsParsed.data.payrollId);
   if (!result) return reply.code(404).send({ error: 'Payroll batch not found' });
   if ('error' in result) {
-    if (result.error === 'UNVERIFIED_LINES') {
-      return reply.code(422).send({ error: `${result.blockedCount} employee(s) have on-hold/pending status. Resolve before disbursement.` });
+    if (result.error === 'NO_VERIFIED_LINES_TO_DISBURSE') {
+      return reply.code(422).send({ error: `${(result as any).unverifiedCount} employee(s) are currently on-hold/pending. Verify at least one employee line before disbursing.` });
+    }
+    if (result.error === 'ALREADY_PAID') {
+      return reply.code(422).send({ error: 'All employees in this payroll batch have already been disbursed.' });
     }
     return reply.code(422).send({ error: 'Payroll must be approved before disbursement' });
   }
