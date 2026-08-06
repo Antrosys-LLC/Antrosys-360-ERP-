@@ -669,7 +669,7 @@ export async function updateLineItem(payrollId: string, lineItemId: string, body
 export async function approveLines(payrollId: string, body: ApproveLinesBody) {
   const payroll = await prisma.payroll.findUnique({ where: { id: payrollId } });
   if (!payroll) return null;
-  if (payroll.status !== 'DRAFT' && payroll.status !== 'REJECTED') return null;
+  if (payroll.status !== 'DRAFT' && payroll.status !== 'REJECTED' && payroll.status !== 'APPROVED') return null;
 
   const periodLabel = periodLabelFromStart(payroll.periodStart);
 
@@ -1037,45 +1037,87 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
 }
 
 export async function disbursePayroll(payrollId: string) {
-  const payroll = await prisma.payroll.findUnique({ where: { id: payrollId } });
+  const payroll = await prisma.payroll.findUnique({
+    where: { id: payrollId },
+    include: { lineItems: true },
+  });
   if (!payroll) return null;
   if (payroll.status !== 'APPROVED') {
     return { error: 'NOT_APPROVED' as const };
   }
 
-  const result = await prisma.$transaction(async (tx) => {
-    const blocked = await tx.payrollLineItem.findMany({
-      where: { payrollId, status: { in: ['ON_HOLD', 'PENDING'] } },
-      select: { id: true },
-    });
-    if (blocked.length > 0) {
-      return { error: 'UNVERIFIED_LINES' as const, blockedCount: blocked.length };
+  const paidPayslips = await prisma.employeePayslip.findMany({
+    where: { payrollId, status: 'PAID' },
+    select: { employeeId: true },
+  });
+  const paidEmployeeIds = new Set(paidPayslips.map((p) => p.employeeId));
+
+  const linesToDisburse = payroll.lineItems.filter(
+    (line) => line.status === 'VERIFIED' && !paidEmployeeIds.has(line.employeeId),
+  );
+
+  if (linesToDisburse.length === 0) {
+    const unverified = payroll.lineItems.filter((l) => l.status === 'ON_HOLD' || l.status === 'PENDING').length;
+    if (unverified > 0) {
+      return { error: 'NO_VERIFIED_LINES_TO_DISBURSE' as const, unverifiedCount: unverified };
     }
+    return { error: 'ALREADY_PAID' as const };
+  }
+
+  const isSupplemental = paidEmployeeIds.size > 0;
+
+  const result = await prisma.$transaction(async (tx) => {
+    let grossAmount = 0;
+    let netAmount = 0;
+    let deductionsAmount = 0;
+
+    for (const line of linesToDisburse) {
+      grossAmount += Number(line.grossPay);
+      netAmount += Number(line.netPay);
+      deductionsAmount += Number(line.deductionsTotal);
+
+      await upsertPayslipFromLineItem(
+        tx,
+        line,
+        payroll,
+        periodLabelFromStart(payroll.periodStart),
+        'PAID',
+      );
+    }
+
+    const remainingUnpaid = payroll.lineItems.filter((line) => {
+      if (linesToDisburse.some((d) => d.id === line.id)) return false;
+      return !paidEmployeeIds.has(line.employeeId);
+    });
+
+    const isFullyPaid = remainingUnpaid.length === 0;
+    const nextStatus: PayrollStatus = isFullyPaid ? 'PAID' : 'APPROVED';
 
     await tx.payroll.update({
       where: { id: payrollId },
-      data: { status: 'PAID', paidAt: new Date(), lifecycleStep: 'DISBURSEMENT' },
+      data: {
+        status: nextStatus,
+        paidAt: isFullyPaid ? new Date() : (payroll.paidAt ?? new Date()),
+        lifecycleStep: 'DISBURSEMENT',
+      },
     });
 
-    await tx.employeePayslip.updateMany({
-      where: { payrollId, status: 'PROCESSING' },
-      data: { status: 'PAID', paidAt: new Date() },
-    });
+    const runTitle = isSupplemental
+      ? `Supplemental payroll disbursement (${linesToDisburse.length} lines) - ${payroll.batchNumber}`
+      : `Disbursed payroll (${linesToDisburse.length} lines) - ${payroll.batchNumber}`;
 
     await logFinancialActivity(tx, {
       category: 'PAYROLL',
-      title: `Disbursed payroll ${payroll.batchNumber}`,
-      metadata: { payrollId, batchNumber: payroll.batchNumber },
+      title: runTitle,
+      metadata: { payrollId, batchNumber: payroll.batchNumber, count: linesToDisburse.length },
     });
 
-    const grossAmount = Number(payroll.totalGross);
-    const netAmount = Number(payroll.totalNet);
-    const deductionsAmount = Number(payroll.totalDeductions);
+    const refLabel = isSupplemental ? `${payroll.batchNumber}-SUPP` : payroll.batchNumber;
 
     await pushLedgerEntry(tx, {
       date: new Date(),
-      ref: payroll.batchNumber,
-      description: `Payroll disbursement - ${payroll.batchNumber}`,
+      ref: refLabel,
+      description: `Payroll disbursement (${linesToDisburse.length} staff) - ${payroll.batchNumber}`,
       entryType: 'DEBIT',
       amount: grossAmount,
       accountCode: '6100',
@@ -1085,8 +1127,8 @@ export async function disbursePayroll(payrollId: string) {
 
     await pushLedgerEntry(tx, {
       date: new Date(),
-      ref: payroll.batchNumber,
-      description: `Payroll net payout - ${payroll.batchNumber}`,
+      ref: refLabel,
+      description: `Payroll net payout (${linesToDisburse.length} staff) - ${payroll.batchNumber}`,
       entryType: 'CREDIT',
       amount: netAmount,
       accountCode: '1000',
@@ -1097,8 +1139,8 @@ export async function disbursePayroll(payrollId: string) {
     if (deductionsAmount > 0) {
       await pushLedgerEntry(tx, {
         date: new Date(),
-        ref: payroll.batchNumber,
-        description: `Payroll deductions & taxes - ${payroll.batchNumber}`,
+        ref: refLabel,
+        description: `Payroll deductions & taxes (${linesToDisburse.length} staff) - ${payroll.batchNumber}`,
         entryType: 'CREDIT',
         amount: deductionsAmount,
         accountCode: '2000',
@@ -1107,7 +1149,7 @@ export async function disbursePayroll(payrollId: string) {
       });
     }
 
-    return { success: true as const };
+    return { success: true as const, count: linesToDisburse.length, status: nextStatus };
   });
 
   return result;
