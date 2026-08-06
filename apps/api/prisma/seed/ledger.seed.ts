@@ -16,26 +16,28 @@ export async function seedLedgerData(prisma: PrismaClient) {
   await prisma.ledgerEntry.deleteMany();
   await prisma.ledgerAccount.deleteMany();
   await prisma.ledgerPeriodSummary.deleteMany();
+  await prisma.monthlyFinancialSummary.deleteMany();
+  await prisma.budgetVsActualSnapshot.deleteMany();
 
   await prisma.companyMetricTarget.deleteMany({
     where: { metricKey: { startsWith: 'ledger.' } },
   });
 
   const accountsData = [
-    { code: '1000', name: 'Assets' },
+    { code: '1000', name: 'Assets', budgetAmount: 5000000 },
     { code: '2000', name: 'Liabilities' },
     { code: '3000', name: 'Equity' },
-    { code: '4000', name: 'Revenue' },
+    { code: '4000', name: 'Revenue', budgetAmount: 20000000 },
     { code: '5000', name: 'COGS' },
-    { code: '6000', name: 'Expenses' },
-    { code: '6100', name: 'Payroll' },
-    { code: '6200', name: 'Marketing' },
-    { code: '6300', name: 'Operations' },
+    { code: '6000', name: 'Expenses', budgetAmount: 5000000 },
+    { code: '6100', name: 'Payroll', budgetAmount: 2500000 },
+    { code: '6200', name: 'Marketing', budgetAmount: 1000000 },
+    { code: '6300', name: 'Operations', budgetAmount: 3000000 },
   ];
 
   for (const act of accountsData) {
     await prisma.ledgerAccount.create({
-      data: { code: act.code, name: act.name },
+      data: { code: act.code, name: act.name, budgetAmount: act.budgetAmount ?? null },
     });
   }
 
@@ -75,6 +77,61 @@ export async function seedLedgerData(prisma: PrismaClient) {
       { metricKey: 'ledger.tracker.capex', label: 'Capex', periodStart, periodEnd, targetValue: dec(45) },
     ],
   });
+
+  await prisma.budgetVsActualSnapshot.deleteMany();
+
+  const budgetSnapshots = [
+    { categoryKey: 'bva.payroll', kind: 'BVA', name: 'Payroll', budget: 2500000 },
+    { categoryKey: 'bva.marketing', kind: 'BVA', name: 'Marketing', budget: 1000000 },
+    { categoryKey: 'bva.operations', kind: 'BVA', name: 'Operations', budget: 3000000 },
+    { categoryKey: 'tracker.revenue_goal', kind: 'TRACKER', name: 'Revenue Goal', budget: 20000000 },
+    { categoryKey: 'tracker.opex_limit', kind: 'TRACKER', name: 'Opex Limit', budget: 5000000 },
+    { categoryKey: 'tracker.capex', kind: 'TRACKER', name: 'Capex', budget: 5000000 },
+  ];
+
+  const debitActuals = await prisma.ledgerEntry.groupBy({
+    by: ['accountId'],
+    _sum: { amount: true },
+    where: { isVoided: false, entryType: 'DEBIT' },
+  });
+  const creditActuals = await prisma.ledgerEntry.groupBy({
+    by: ['accountId'],
+    _sum: { amount: true },
+    where: { isVoided: false, entryType: 'CREDIT' },
+  });
+  const accounts = await prisma.ledgerAccount.findMany({ select: { id: true, code: true } });
+  const debitByAccount = new Map(debitActuals.map((r) => [r.accountId, Number(r._sum.amount || 0)]));
+  const creditByAccount = new Map(creditActuals.map((r) => [r.accountId, Number(r._sum.amount || 0)]));
+  const idsByCodePrefix = (prefix: string) =>
+    accounts.filter((a) => a.code.startsWith(prefix)).map((a) => a.id);
+  const sumByPrefix = (prefix: string, map: Map<string, number>) =>
+    idsByCodePrefix(prefix).reduce((acc, id) => acc + (map.get(id) ?? 0), 0);
+
+  const snapshotSources = [
+    { key: 'bva.payroll', prefix: '6100', entryType: 'DEBIT' },
+    { key: 'bva.marketing', prefix: '6200', entryType: 'DEBIT' },
+    { key: 'bva.operations', prefix: '6300', entryType: 'DEBIT' },
+    { key: 'tracker.revenue_goal', prefix: '4', entryType: 'CREDIT' },
+    { key: 'tracker.opex_limit', prefix: '6', entryType: 'DEBIT' },
+    { key: 'tracker.capex', prefix: '1', entryType: 'DEBIT' },
+  ];
+
+  for (const spec of budgetSnapshots) {
+    const source = snapshotSources.find((s) => s.key === spec.categoryKey);
+    const map = source && source.entryType === 'DEBIT' ? debitByAccount : creditByAccount;
+    const actual = source ? sumByPrefix(source.prefix, map) : 0;
+    const percentage = spec.budget > 0 ? Math.round((actual / spec.budget) * 100) : 0;
+    await prisma.budgetVsActualSnapshot.create({
+      data: {
+        categoryKey: spec.categoryKey,
+        kind: spec.kind,
+        name: spec.name,
+        actual: dec(actual),
+        budget: dec(spec.budget),
+        percentage,
+      },
+    });
+  }
 
   console.log('✅ Ledger & Budget seed data created');
 }
