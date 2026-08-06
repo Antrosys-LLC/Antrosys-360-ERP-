@@ -189,6 +189,8 @@ export async function aggregateBudgetVsActual() {
     const actual = getActualFor(category.codePrefix, 'DEBIT');
     const budget = getBudgetFor(category.codePrefix);
     const percentage = budget > 0 ? Math.round((actual / budget) * 100) : 0;
+    // Skip categories with no real entries so seeded demo values are preserved.
+    if (actual <= 0) continue;
     await prisma.budgetVsActualSnapshot.upsert({
       where: { categoryKey: category.key },
       create: {
@@ -208,6 +210,8 @@ export async function aggregateBudgetVsActual() {
     const actual = getActualFor(category.codePrefix, category.entryType);
     const budget = getBudgetFor(category.budgetCode);
     const percentage = budget > 0 ? Math.round((actual / budget) * 100) : 0;
+    // Skip categories with no real entries so seeded demo values are preserved.
+    if (actual <= 0) continue;
     await prisma.budgetVsActualSnapshot.upsert({
       where: { categoryKey: category.key },
       create: {

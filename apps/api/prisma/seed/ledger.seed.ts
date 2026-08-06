@@ -80,53 +80,32 @@ export async function seedLedgerData(prisma: PrismaClient) {
 
   await prisma.budgetVsActualSnapshot.deleteMany();
 
+  // ─────────────────────────────────────────────────────────────────────
+  // DEMO BUDGET vs ACTUAL VALUES
+  // To change these numbers later: edit the `actual` values below.
+  // `budget` is defined in `accountsData` at the top of this file.
+  // While a category has NO real ledger entries, the server's hourly
+  // aggregation will NOT overwrite its `actual` (it only writes when
+  // real entries exist). Once real entries appear (bank feeds, invoices,
+  // payroll), the aggregation replaces the dummy values automatically.
+  // ─────────────────────────────────────────────────────────────────────
   const budgetSnapshots = [
-    { categoryKey: 'bva.payroll', kind: 'BVA', name: 'Payroll', budget: 2500000 },
-    { categoryKey: 'bva.marketing', kind: 'BVA', name: 'Marketing', budget: 1000000 },
-    { categoryKey: 'bva.operations', kind: 'BVA', name: 'Operations', budget: 3000000 },
-    { categoryKey: 'tracker.revenue_goal', kind: 'TRACKER', name: 'Revenue Goal', budget: 20000000 },
-    { categoryKey: 'tracker.opex_limit', kind: 'TRACKER', name: 'Opex Limit', budget: 5000000 },
-    { categoryKey: 'tracker.capex', kind: 'TRACKER', name: 'Capex', budget: 5000000 },
-  ];
-
-  const debitActuals = await prisma.ledgerEntry.groupBy({
-    by: ['accountId'],
-    _sum: { amount: true },
-    where: { isVoided: false, entryType: 'DEBIT' },
-  });
-  const creditActuals = await prisma.ledgerEntry.groupBy({
-    by: ['accountId'],
-    _sum: { amount: true },
-    where: { isVoided: false, entryType: 'CREDIT' },
-  });
-  const accounts = await prisma.ledgerAccount.findMany({ select: { id: true, code: true } });
-  const debitByAccount = new Map(debitActuals.map((r) => [r.accountId, Number(r._sum.amount || 0)]));
-  const creditByAccount = new Map(creditActuals.map((r) => [r.accountId, Number(r._sum.amount || 0)]));
-  const idsByCodePrefix = (prefix: string) =>
-    accounts.filter((a) => a.code.startsWith(prefix)).map((a) => a.id);
-  const sumByPrefix = (prefix: string, map: Map<string, number>) =>
-    idsByCodePrefix(prefix).reduce((acc, id) => acc + (map.get(id) ?? 0), 0);
-
-  const snapshotSources = [
-    { key: 'bva.payroll', prefix: '6100', entryType: 'DEBIT' },
-    { key: 'bva.marketing', prefix: '6200', entryType: 'DEBIT' },
-    { key: 'bva.operations', prefix: '6300', entryType: 'DEBIT' },
-    { key: 'tracker.revenue_goal', prefix: '4', entryType: 'CREDIT' },
-    { key: 'tracker.opex_limit', prefix: '6', entryType: 'DEBIT' },
-    { key: 'tracker.capex', prefix: '1', entryType: 'DEBIT' },
+    { categoryKey: 'bva.payroll', kind: 'BVA', name: 'Payroll', budget: 2500000, actual: 1800000 },
+    { categoryKey: 'bva.marketing', kind: 'BVA', name: 'Marketing', budget: 1000000, actual: 650000 },
+    { categoryKey: 'bva.operations', kind: 'BVA', name: 'Operations', budget: 3000000, actual: 2200000 },
+    { categoryKey: 'tracker.revenue_goal', kind: 'TRACKER', name: 'Revenue Goal', budget: 20000000, actual: 14500000 },
+    { categoryKey: 'tracker.opex_limit', kind: 'TRACKER', name: 'Opex Limit', budget: 5000000, actual: 3800000 },
+    { categoryKey: 'tracker.capex', kind: 'TRACKER', name: 'Capex', budget: 5000000, actual: 2100000 },
   ];
 
   for (const spec of budgetSnapshots) {
-    const source = snapshotSources.find((s) => s.key === spec.categoryKey);
-    const map = source && source.entryType === 'DEBIT' ? debitByAccount : creditByAccount;
-    const actual = source ? sumByPrefix(source.prefix, map) : 0;
-    const percentage = spec.budget > 0 ? Math.round((actual / spec.budget) * 100) : 0;
+    const percentage = Math.round((spec.actual / spec.budget) * 100);
     await prisma.budgetVsActualSnapshot.create({
       data: {
         categoryKey: spec.categoryKey,
         kind: spec.kind,
         name: spec.name,
-        actual: dec(actual),
+        actual: dec(spec.actual),
         budget: dec(spec.budget),
         percentage,
       },
