@@ -206,6 +206,28 @@ export async function generatePayrollPayslips(
   return unwrap(data);
 }
 
+export async function downloadPayrollPayslipsZip(
+  payrollId: string,
+  scope: 'all' | 'verified_only' = 'all',
+) {
+  const response = await apiClient.get(`/payroll/${payrollId}/payslips/download-zip`, {
+    params: { scope },
+    responseType: 'blob',
+  });
+  const blob = response.data as Blob;
+  const disposition = response.headers?.['content-disposition'] as string | undefined;
+  const match = disposition?.match(/filename="?(.+?)"?$/);
+  const filename = match?.[1] ?? `payslips-${scope}.zip`;
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 export async function exportPayrollLedger(payrollId: string) {
   const response = await apiClient.get(`/payroll/${payrollId}/export`, {
     responseType: 'blob',

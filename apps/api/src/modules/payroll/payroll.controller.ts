@@ -188,3 +188,19 @@ export async function disbursePayrollHandler(request: FastifyRequest, reply: Fas
   const dashboard = await payrollService.getDashboard({ payrollId: paramsParsed.data.payrollId });
   return reply.code(200).send({ status: 'success', data: dashboard });
 }
+
+export async function downloadPayslipsZipHandler(request: FastifyRequest, reply: FastifyReply) {
+  const paramsParsed = payrollParamsSchema.safeParse(request.params);
+  if (!paramsParsed.success) return validationError(reply, paramsParsed.error.flatten());
+
+  const query = request.query as { scope?: 'all' | 'verified_only' };
+  const scope = query?.scope === 'verified_only' ? 'verified_only' : 'all';
+
+  const result = await payrollService.downloadPayslipsZip(paramsParsed.data.payrollId, scope);
+  if (!result) return reply.code(404).send({ error: 'Payroll batch not found' });
+
+  return reply
+    .header('Content-Type', 'application/zip')
+    .header('Content-Disposition', `attachment; filename="${result.filename}"`)
+    .send(result.content);
+}
