@@ -107,8 +107,7 @@ export default function PayrollDashboard() {
       setInitialLoading(true);
       setError(null);
       try {
-        const savedPeriod = typeof window !== 'undefined' ? localStorage.getItem('payroll-period-key') : null;
-        const dashPromise = savedPeriod ? fetchPayrollDashboard({ period: savedPeriod }) : fetchPayrollDashboard();
+        const dashPromise = fetchPayrollDashboard();
         const [dash, periodList] = await Promise.all([
           dashPromise,
           fetchPayrollPeriods(),
@@ -209,19 +208,20 @@ export default function PayrollDashboard() {
   };
 
   const selectedEmployees = employees.filter((emp) => selected[emp.id]);
+  const targetEmployees = selectedEmployees.length > 0 ? selectedEmployees : employees;
   const pageTotals = {
     baseSalary: formatNumber(
-      selectedEmployees.reduce((sum, emp) => sum + parseFormattedNumber(emp.baseSalary), 0),
+      targetEmployees.reduce((sum, emp) => sum + parseFormattedNumber(emp.baseSalary), 0),
     ),
     allowances: formatNumber(
-      selectedEmployees.reduce((sum, emp) => sum + parseFormattedNumber(emp.allowances), 0),
+      targetEmployees.reduce((sum, emp) => sum + parseFormattedNumber(emp.allowances), 0),
     ),
     deductions: formatNumber(
-      selectedEmployees.reduce((sum, emp) => sum + parseFormattedNumber(emp.deductions), 0),
+      targetEmployees.reduce((sum, emp) => sum + parseFormattedNumber(emp.deductions), 0),
     ),
-    tax: formatNumber(selectedEmployees.reduce((sum, emp) => sum + parseFormattedNumber(emp.tax), 0)),
+    tax: formatNumber(targetEmployees.reduce((sum, emp) => sum + parseFormattedNumber(emp.tax), 0)),
     netPay: formatNumber(
-      selectedEmployees.reduce((sum, emp) => sum + parseFormattedNumber(emp.netPay), 0),
+      targetEmployees.reduce((sum, emp) => sum + parseFormattedNumber(emp.netPay), 0),
     ),
   };
 
@@ -240,8 +240,7 @@ export default function PayrollDashboard() {
         setRunLifecycleOverride(lifecycle);
       });
 
-      const dash = await runPromise;
-      await animPromise;
+      const [dash] = await Promise.all([runPromise, animPromise]);
       setRunLifecycleOverride(null);
       setDashboard(dash);
       setSelectedPeriodKey(dash.period.key);
@@ -331,19 +330,6 @@ export default function PayrollDashboard() {
     }
   };
 
-  const handleDisburse = async () => {
-    if (!payrollId) return;
-    setBulkLoading(true);
-    try {
-      const dash = await disbursePayroll(payrollId);
-      setDashboard(dash);
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setError(msg ?? 'Failed to disburse payroll.');
-    } finally {
-      setBulkLoading(false);
-    }
-  };
 
   const handleExport = async () => {
     if (!payrollId) return;
@@ -488,7 +474,7 @@ export default function PayrollDashboard() {
     );
   }
 
-  const lifecycle = dashboard?.lifecycle;
+  const lifecycle = runLifecycleOverride || dashboard?.lifecycle;
   const metrics = dashboard?.metrics;
   const payslipGen = dashboard?.payslipGeneration;
   const periodLabel =
@@ -660,20 +646,28 @@ export default function PayrollDashboard() {
 
               <div className="bg-white border border-[#EBECEF] rounded-[10px] p-5 shadow-sm min-h-[160px] flex flex-col justify-between">
                 <div>
-                  <span className="text-[10px] font-bold tracking-wider text-gray-400 uppercase">
-                    Total Deductions
-                  </span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold tracking-wider text-gray-400 uppercase">
+                      Total Deductions
+                    </span>
+                    <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+                      Breakdown
+                    </span>
+                  </div>
                   <h2 className="text-2xl font-bold text-[#D97706] tracking-tight mt-0.5">
                     {metrics.totalDeductions.amount}
                   </h2>
                 </div>
-                <div className="space-y-1.5 mt-2">
+                <div className="space-y-1.5 mt-2 bg-amber-50/40 p-2 rounded-lg border border-amber-100/60">
                   {metrics.totalDeductions.items.map((item, i) => (
                     <div
                       key={i}
-                      className="flex justify-between items-center text-xs border-b border-gray-100/70 pb-1 last:border-0 last:pb-0"
+                      className="flex justify-between items-center text-xs pb-0.5 last:pb-0"
                     >
-                      <span className="text-gray-400 font-normal">{item.label}</span>
+                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                        {item.label}
+                      </span>
                       <span className="font-bold text-gray-800">{item.value}</span>
                     </div>
                   ))}
@@ -832,13 +826,9 @@ export default function PayrollDashboard() {
                   }
                   if (ps === 'APPROVED') {
                     return (
-                      <button
-                        onClick={handleDisburse}
-                        disabled={bulkLoading}
-                        className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white px-3.5 py-1.5 rounded-[6px] text-xs font-semibold tracking-wide transition-colors"
-                      >
-                        Disburse payroll
-                      </button>
+                      <span className="bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-[6px] text-xs font-bold">
+                        Approved
+                      </span>
                     );
                   }
                   return null;
@@ -1043,7 +1033,10 @@ export default function PayrollDashboard() {
                     type="button"
                     className="p-1 hover:bg-gray-50 rounded disabled:opacity-40"
                     disabled={pagination.page <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    onClick={() => {
+                      setSelected({});
+                      setPage((p) => Math.max(1, p - 1));
+                    }}
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
@@ -1054,7 +1047,10 @@ export default function PayrollDashboard() {
                     type="button"
                     className="p-1 hover:bg-gray-50 rounded disabled:opacity-40"
                     disabled={pagination.page >= pagination.totalPages}
-                    onClick={() => setPage((p) => p + 1)}
+                    onClick={() => {
+                      setSelected({});
+                      setPage((p) => p + 1);
+                    }}
                   >
                     <ChevronRight className="w-4 h-4" />
                   </button>
@@ -1283,83 +1279,7 @@ export default function PayrollDashboard() {
         )}
       </main>
 
-      {bulkLoading && runLifecycleOverride && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden animate-[fadeIn_0.3s_ease-out]">
-            <div className="p-6 pb-4">
-              <div className="flex items-center gap-3 mb-1">
-                <Loader2 className="w-5 h-5 animate-spin text-[#6366F1]" />
-                <h3 className="text-base font-bold text-gray-900">Running Payroll</h3>
-              </div>
-              <p className="text-xs text-gray-400 ml-8">
-                Processing payroll for {periodLabel}
-              </p>
-            </div>
 
-            <div className="px-6 pb-2">
-              <div className="space-y-0">
-                {(runLifecycleOverride.steps ?? []).map((step, idx) => {
-                  const isComplete = step.status === 'complete';
-                  const isCurrent = step.status === 'current';
-                  const delay = idx * 0.12;
-                  return (
-                    <div
-                      key={idx}
-                      className="flex items-center gap-3 py-2.5 transition-all duration-500"
-                      style={{
-                        opacity: isComplete || isCurrent ? 1 : 0.35,
-                        animation: isCurrent ? `slideIn 0.4s ease-out ${delay}s both` : undefined,
-                      }}
-                    >
-                      <div
-                        className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-500
-                          ${isComplete ? 'bg-[#10B981] text-white scale-100' : ''}
-                          ${isCurrent ? 'bg-[#EEEEFF] border-2 border-[#6366F1] text-[#6366F1] scale-110' : ''}
-                          ${step.status === 'upcoming' ? 'bg-white border-2 border-gray-200 text-gray-300 scale-100' : ''}
-                        `}
-                      >
-                        {isComplete ? (
-                          <Check className="w-3.5 h-3.5 stroke-[3]" />
-                        ) : isCurrent ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#6366F1]" />
-                        ) : (
-                          <span className="text-xs font-bold">{step.step}</span>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <span
-                          className={`text-sm font-semibold transition-colors duration-300
-                            ${isComplete ? 'text-gray-900' : ''}
-                            ${isCurrent ? 'text-[#6366F1]' : ''}
-                            ${step.status === 'upcoming' ? 'text-gray-400' : ''}
-                          `}
-                        >
-                          {step.label}
-                        </span>
-                      </div>
-                      {isComplete && (
-                        <Check className="w-4 h-4 text-[#10B981] stroke-[2.5] animate-[scaleIn_0.3s_ease-out]" />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="px-6 pb-6 pt-2">
-              <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-[#6366F1] rounded-full transition-all duration-700 ease-out"
-                  style={{ width: `${Math.min(runLifecycleOverride.progressPct ?? 0, 100)}%` }}
-                />
-              </div>
-              <p className="text-[10px] text-gray-400 mt-1.5 text-right font-medium">
-                {runLifecycleOverride.progressPct ?? 0}%
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
 
     <style dangerouslySetInnerHTML={{__html: `

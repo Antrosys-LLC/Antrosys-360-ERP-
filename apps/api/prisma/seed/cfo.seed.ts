@@ -38,9 +38,23 @@ export async function seedCfoData() {
 
   // ── Approval task for the current payroll batch (created by payroll.seed) ──
   const currentBatchNumber = `PAY-${year}-${String(month).padStart(2, '0')}`;
-  const currentPayroll = await prisma.payroll.findUnique({
-    where: { batchNumber: currentBatchNumber },
+  const currentPayroll = await prisma.payroll.findFirst({
+    where: { status: 'PENDING_APPROVAL' },
   });
+
+  // Clean up approval tasks for non-pending payrolls
+  const nonPendingPayrolls = await prisma.payroll.findMany({
+    where: { status: { not: 'PENDING_APPROVAL' } },
+    select: { id: true },
+  });
+  if (nonPendingPayrolls.length > 0) {
+    await prisma.approvalTask.deleteMany({
+      where: {
+        entityType: 'PAYROLL',
+        entityId: { in: nonPendingPayrolls.map((p) => p.id) },
+      },
+    });
+  }
 
   if (currentPayroll) {
     const existingTask = await prisma.approvalTask.findFirst({
@@ -48,7 +62,6 @@ export async function seedCfoData() {
         assigneeUserId: cfoUser.id,
         entityType: 'PAYROLL',
         entityId: currentPayroll.id,
-        actionTitle: `Approve Payroll ${currentPayroll.batchNumber}`,
       },
     });
     if (!existingTask) {

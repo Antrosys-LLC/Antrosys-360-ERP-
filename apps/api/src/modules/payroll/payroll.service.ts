@@ -287,9 +287,9 @@ function buildMetrics(totals: Awaited<ReturnType<typeof recalculateBatchTotals>>
       ],
     },
     totalDeductions: {
-      amount: formatCurrencyAmount(totalDeductions + totals.taxWithheld, currencyCode),
+      amount: formatCurrencyAmount(totalDeductions, currencyCode),
       items: [
-        { label: 'Income Tax', value: formatAmountPlain(totals.totalIncomeTax) },
+        { label: 'Income Tax', value: formatAmountPlain(totals.totalIncomeTax || totals.taxWithheld) },
         { label: 'Provident Fund', value: formatAmountPlain(totals.totalProvidentFund) },
         { label: 'Health Ins.', value: formatAmountPlain(totals.totalHealth) },
       ],
@@ -325,10 +325,17 @@ async function findPayrollForQuery(query: DashboardQuery) {
     return prisma.payroll.findUnique({ where: { id: query.payrollId }, include: { lineItems: true } });
   }
 
-  const { periodStart } = parsePeriod(query.period);
+  if (query.period) {
+    const { periodStart } = parsePeriod(query.period);
+    return prisma.payroll.findFirst({
+      where: { periodStart },
+      orderBy: { createdAt: 'desc' },
+      include: { lineItems: true },
+    });
+  }
+
   return prisma.payroll.findFirst({
-    where: { periodStart },
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ periodStart: 'desc' }, { createdAt: 'desc' }],
     include: { lineItems: true },
   });
 }
@@ -404,7 +411,6 @@ export async function getDashboard(query: DashboardQuery) {
 
   if (!payroll) {
     const activeCount = await prisma.employee.count({ where: { isActive: true, employmentStatus: 'ACTIVE' } });
-    const lifecycle = deriveLifecycleUi('DATA_COLLECTION', 'DRAFT');
     return {
       period: {
         key: `${year}-${String(month).padStart(2, '0')}`,
@@ -415,7 +421,12 @@ export async function getDashboard(query: DashboardQuery) {
       currencyCode,
       employeeCount: activeCount,
       lifecycle: {
-        ...lifecycle,
+        steps: LIFECYCLE_LABELS.map((label, idx) => ({
+          step: idx + 1,
+          label,
+          status: idx === 0 ? 'current' : 'upcoming',
+        })),
+        progressPct: 0,
         activeProcessingCount: 0,
       },
       metrics: null,
@@ -700,7 +711,10 @@ export async function submitForApproval(payrollId: string, userId: string) {
   if (verifiedCount === 0) return { error: 'NO_VERIFIED_LINES' as const };
 
   const cfoUser = await prisma.user.findFirst({ where: { role: 'CFO', isActive: true } });
-  const requester = await prisma.employee.findFirst({ where: { userId } });
+  let requester = await prisma.employee.findFirst({ where: { userId } });
+  if (!requester) {
+    requester = await prisma.employee.findFirst({ where: { isActive: true } });
+  }
 
   if (!cfoUser || !requester) return { error: 'MISSING_ACTORS' as const };
 
@@ -760,26 +774,111 @@ export async function exportLedgerCsv(payrollId: string) {
     return s;
   }
 
-  const header = 'Employee Code,Name,Department,Grade,Base Salary,Allowances,Deductions,Tax,Net Pay,Status';
-  const rows = lines.map((line) => {
+  function fmtNum(n: number): string {
+    return n.toFixed(2);
+  }
+
+  const periodLabel = periodLabelFromStart(payroll.periodStart);
+  const now = new Date();
+  const timestamp = now.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+
+  let totalBase = 0;
+  let totalAllowances = 0;
+  let totalOvertime = 0;
+  let totalBonuses = 0;
+  let totalGross = 0;
+  let totalIncomeTax = 0;
+  let totalPF = 0;
+  let totalHealth = 0;
+  let totalDeductions = 0;
+  let totalNet = 0;
+
+  const dataRows = lines.map((line) => {
     const name = `${line.employee.firstName} ${line.employee.lastName}`;
     const empCode = line.employee.employeeCode ?? line.employeeId.slice(0, 8).toUpperCase();
+    const base = Number(line.baseSalary);
+    const allow = Number(line.allowances);
+    const ot = Number(line.overtime);
+    const bonus = Number(line.bonuses);
+    const gross = Number(line.grossPay);
+    const tax = Number(line.incomeTax);
+    const pf = Number(line.providentFund);
+    const health = Number(line.healthInsurance);
+    const ded = Number(line.deductionsTotal);
+    const net = Number(line.netPay);
+
+    totalBase += base;
+    totalAllowances += allow;
+    totalOvertime += ot;
+    totalBonuses += bonus;
+    totalGross += gross;
+    totalIncomeTax += tax;
+    totalPF += pf;
+    totalHealth += health;
+    totalDeductions += ded;
+    totalNet += net;
+
     return [
       esc(empCode),
       esc(name),
-      esc(line.employee.department ?? ''),
-      esc(line.employee.grade ?? ''),
-      Number(line.baseSalary),
-      Number(line.allowances),
-      Number(line.deductionsTotal),
-      Number(line.taxAmount),
-      Number(line.netPay),
+      esc(line.employee.department ? DEPARTMENT_LABEL[line.employee.department] : '—'),
+      esc(line.employee.grade ?? '—'),
+      fmtNum(base),
+      fmtNum(allow),
+      fmtNum(ot),
+      fmtNum(bonus),
+      fmtNum(gross),
+      fmtNum(tax),
+      fmtNum(pf),
+      fmtNum(health),
+      fmtNum(ded),
+      fmtNum(net),
       esc(LINE_STATUS_LABEL[line.status]),
     ].join(',');
   });
 
-  const filename = `payroll-${payroll.batchNumber}.csv`;
-  return { content: [header, ...rows].join('\n'), filename };
+  const totalsRow = [
+    esc('GRAND TOTALS'),
+    esc(`${lines.length} Personnel`),
+    esc('—'),
+    esc('—'),
+    fmtNum(totalBase),
+    fmtNum(totalAllowances),
+    fmtNum(totalOvertime),
+    fmtNum(totalBonuses),
+    fmtNum(totalGross),
+    fmtNum(totalIncomeTax),
+    fmtNum(totalPF),
+    fmtNum(totalHealth),
+    fmtNum(totalDeductions),
+    fmtNum(totalNet),
+    esc('—'),
+  ].join(',');
+
+  const csvContent = [
+    '="ANTROSYS ERP — MASTER PAYROLL REGISTER"',
+    `="Batch Reference",="${payroll.batchNumber}"`,
+    `="Pay Period",="${periodLabel}"`,
+    `="Currency Code",="${payroll.currencyCode}"`,
+    `="Export Generated",="${timestamp}"`,
+    `="Batch Lifecycle Status",="${payroll.status}"`,
+    '',
+    'Employee Code,Employee Name,Department,Grade,Base Salary,Allowances,Overtime Pay,Bonuses,Gross Pay,Income Tax,Provident Fund,Health Insurance,Total Deductions,Net Payable,Line Status',
+    ...dataRows,
+    totalsRow,
+    '',
+    '="FINANCIAL & COMPLIANCE SUMMARY BLOCK"',
+    `="Total Gross Payroll",="${payroll.currencyCode} ${fmtNum(totalGross)}"`,
+    `="Total Income Tax Withheld",="${payroll.currencyCode} ${fmtNum(totalIncomeTax)}"`,
+    `="Total Employee Provident Fund",="${payroll.currencyCode} ${fmtNum(totalPF)}"`,
+    `="Total Health Insurance Premiums",="${payroll.currencyCode} ${fmtNum(totalHealth)}"`,
+    `="Total Deductions & Taxes",="${payroll.currencyCode} ${fmtNum(totalDeductions)}"`,
+    `="Total Net Salary Payout",="${payroll.currencyCode} ${fmtNum(totalNet)}"`,
+    `="General Ledger Mapping",="DEBIT 6100 (Payroll Expense) / CREDIT 1000 (Bank Payout Account)"`,
+  ].join('\n');
+
+  const filename = `master-payroll-register-${payroll.batchNumber}.csv`;
+  return { content: csvContent, filename };
 }
 
 export async function updatePayslipConfig(payrollId: string, body: PayslipConfigBody) {
@@ -818,7 +917,7 @@ export async function generatePayslips(payrollId: string, body: GeneratePayslips
   });
 
   if (!payroll) return null;
-  if (payroll.status === 'PAID' || payroll.status === 'APPROVED' || payroll.status === 'REJECTED' || payroll.status === 'PENDING_APPROVAL') {
+  if (payroll.status === 'REJECTED') {
     return null;
   }
 
