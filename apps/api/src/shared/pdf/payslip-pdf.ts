@@ -1,4 +1,5 @@
 import PDFDocument from 'pdfkit';
+import { LOGO_PATH } from './logo';
 
 export interface PayslipPdfInput {
   employeeName: string;
@@ -112,6 +113,7 @@ function drawSection(doc: PDFKit.PDFDocument, title: string, items: LineItem[], 
 }
 
 function buildStandardPayslipPdf(doc: PDFKit.PDFDocument, input: PayslipPdfInput, pageWidth: number) {
+  doc.image(LOGO_PATH, 50, 45, { width: 38 });
   doc.fontSize(14).fillColor('#1A1A1A').text('ANTROSYS TECHNOLOGIES', 50, 50, { align: 'center' });
   doc.fontSize(8).fillColor('#555555').text('Software Technology Park, I-9/3, Islamabad, Pakistan', 50, 70, { align: 'center' });
 
@@ -174,6 +176,7 @@ function buildStandardPayslipPdf(doc: PDFKit.PDFDocument, input: PayslipPdfInput
 }
 
 function buildDetailedPayslipPdf(doc: PDFKit.PDFDocument, input: PayslipPdfInput, pageWidth: number) {
+  doc.image(LOGO_PATH, 50, 45, { width: 38 });
   doc.fontSize(14).fillColor('#1A1A1A').text('ANTROSYS TECHNOLOGIES', 50, 50, { align: 'center' });
   doc.fontSize(8).fillColor('#555555').text('Antrosys Technologies PVT LTD.', 50, 70, { align: 'center' });
   doc.fontSize(8).fillColor('#555555').text('Software Technology Park, I-9/3, Islamabad, 44000, Pakistan', 50, 84, { align: 'center' });
