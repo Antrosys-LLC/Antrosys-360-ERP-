@@ -1,4 +1,5 @@
 import PDFDocument from 'pdfkit';
+import { LOGO_PATH } from './logo';
 
 interface ExperienceCertificateInput {
   employeeName: string;
@@ -37,6 +38,7 @@ export function buildExperienceCertificatePdf(input: ExperienceCertificateInput)
     const dark = '#1a1a1a';
     const gray = '#555555';
 
+    doc.image(LOGO_PATH, 60, 55, { width: 30 });
     doc.fontSize(20).font('Helvetica-Bold').fillColor(dark).text('ANTROSYS', { align: 'center' });
     doc.fontSize(10).font('Helvetica').fillColor(dark).text('Antrosys Technologies PVT LTD.', { align: 'center' });
     doc.moveDown(0.3);
