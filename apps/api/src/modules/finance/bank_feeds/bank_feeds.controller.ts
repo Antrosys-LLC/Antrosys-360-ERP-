@@ -5,6 +5,7 @@ import {
   accountParamsSchema,
   confirmMatchBodySchema,
   connectBankBodySchema,
+  importTransactionsBodySchema,
 } from './bank_feeds.schema';
 import * as bankFeedsService from './bank_feeds.service';
 
@@ -175,4 +176,34 @@ export async function createJournalEntryHandler(
   }
 
   return reply.code(201).send({ status: 'success', data: entry });
+}
+
+export async function importTransactionsHandler(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  if (!request.user?.id) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+
+  const parsed = importTransactionsBodySchema.safeParse(request.body);
+  if (!parsed.success) {
+    return reply.code(400).send({ error: 'Validation failed', details: parsed.error.flatten() });
+  }
+
+  try {
+    const result = await bankFeedsService.importTransactions(
+      parsed.data.accountId,
+      parsed.data.csv,
+      request.user.id,
+    );
+    if (!result) {
+      return reply.code(404).send({ error: 'Account not found' });
+    }
+    return reply.code(201).send({ status: 'success', data: result });
+  } catch (error) {
+    return reply.code(400).send({
+      error: error instanceof Error ? error.message : 'Failed to import transactions',
+    });
+  }
 }

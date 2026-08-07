@@ -316,6 +316,11 @@ async function main() {
   const { seedClientsData } = await import('./clients.seed');
   await seedClientsData();
 
+  // Finance flows: PAID payroll debits + invoice payment credits + aggregation.
+  // Runs after ledger + clients so ledger accounts and invoices exist.
+  const { seedFinanceFlowData } = await import('./finance_flow.seed');
+  await seedFinanceFlowData(prisma);
+
   // CFO & CEO dashboards reference clients/payroll created above.
   const { seedCfoData } = await import('./cfo.seed');
   await seedCfoData();

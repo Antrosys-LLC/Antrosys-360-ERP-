@@ -48,8 +48,37 @@ export interface BIDashboardData {
   miniMetrics: BIMiniMetric[];
 }
 
+export interface BIKpis {
+  period: string | null;
+  revenue: number;
+  expenses: number;
+  payrollCost: number;
+  pendingReconciliation: number;
+  netMovement: number;
+  marginPct: number;
+  headcount: number;
+  dealsCount: number;
+  expectedValue: number;
+}
+
+export interface BISalesPipeline {
+  stages: { stage: string; count: number; expectedValue: number }[];
+  totalCount: number;
+  totalExpectedValue: number;
+}
+
 export async function fetchBiDashboard() {
   const { data } = await apiClient.get<{ status: string; data: BIDashboardData }>('/biz-intel');
+  return data.data;
+}
+
+export async function fetchBiKpis() {
+  const { data } = await apiClient.get<{ status: string; data: BIKpis }>('/biz-intel/kpis');
+  return data.data;
+}
+
+export async function fetchSalesPipeline() {
+  const { data } = await apiClient.get<{ status: string; data: BISalesPipeline }>('/biz-intel/sales-pipeline');
   return data.data;
 }
 

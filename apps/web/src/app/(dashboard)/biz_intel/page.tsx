@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   fetchBiDashboard,
   fetchChartPreview,
+  fetchBiKpis,
   createReport,
   runReport,
   toggleFavourite,
@@ -12,6 +13,7 @@ import {
   deleteSchedule,
   BIReport,
   BIDashboardData,
+  BIKpis,
 } from '@/lib/biz-intel-api';
 
 import {
@@ -216,6 +218,13 @@ export default function BusinessIntelligenceDashboard() {
     queryFn: fetchBiDashboard,
   });
 
+  const kpisQuery = useQuery({
+    queryKey: ['biz-intel', 'kpis'],
+    queryFn: fetchBiKpis,
+  });
+
+  const kpis: BIKpis | undefined = kpisQuery.data;
+
   const chartQuery = useQuery({
     queryKey: ['biz-intel', 'chart', xAxis, yAxisList.join(',')],
     queryFn: () => fetchChartPreview(xAxis, yAxisList),
@@ -381,6 +390,14 @@ export default function BusinessIntelligenceDashboard() {
     return `Updated: ${Math.floor(diffDays / 30)}m ago`;
   }
 
+  function formatCurrency(value: number) {
+    if (value === 0) return '$0';
+    const abs = Math.abs(value);
+    if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
+    if (abs >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
+    return `$${value.toFixed(0)}`;
+  }
+
   const isLoading = dashboardQuery.isLoading;
   const isError = dashboardQuery.isError;
 
@@ -491,7 +508,35 @@ export default function BusinessIntelligenceDashboard() {
               ))}
             </div>
 
-            {/* Row 2: Sparkline Mini Metrics */}
+            {/* Row 2: KPI Cards (aggregated from real ledger data) */}
+            {kpis && (
+              <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white rounded-md border border-gray-200 border-l-4 border-l-[#7B6AE6] p-4 shadow-sm">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Revenue</p>
+                  <p className="text-2xl font-extrabold text-gray-900 mt-1">{formatCurrency(kpis.revenue)}</p>
+                  <p className="text-[11px] text-gray-400 mt-1">Last 6 months{` · ${kpis.period ?? '—'}`}</p>
+                </div>
+                <div className="bg-white rounded-md border border-gray-200 border-l-4 border-l-rose-400 p-4 shadow-sm">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Expenses</p>
+                  <p className="text-2xl font-extrabold text-gray-900 mt-1">{formatCurrency(kpis.expenses)}</p>
+                  <p className="text-[11px] text-gray-400 mt-1">Incl. payroll {formatCurrency(kpis.payrollCost)}</p>
+                </div>
+                <div className="bg-white rounded-md border border-gray-200 border-l-4 border-l-emerald-400 p-4 shadow-sm">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Net Movement</p>
+                  <p className={`text-2xl font-extrabold mt-1 ${kpis.netMovement >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {formatCurrency(kpis.netMovement)}
+                  </p>
+                  <p className="text-[11px] text-gray-400 mt-1">Margin {kpis.marginPct.toFixed(1)}%</p>
+                </div>
+                <div className="bg-white rounded-md border border-gray-200 border-l-4 border-l-amber-400 p-4 shadow-sm">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Pending Reconciliation</p>
+                  <p className="text-2xl font-extrabold text-amber-600 mt-1">{formatCurrency(kpis.pendingReconciliation)}</p>
+                  <p className="text-[11px] text-gray-400 mt-1">{kpis.dealsCount} deals · {kpis.headcount} staff</p>
+                </div>
+              </section>
+            )}
+
+            {/* Row 3: Sparkline Mini Metrics */}
             <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {(dashboard?.miniMetrics ?? []).map((card, index) => (
                 <div

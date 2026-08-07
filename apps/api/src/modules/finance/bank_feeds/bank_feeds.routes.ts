@@ -11,6 +11,7 @@ import {
   getConnectionsHandler,
   connectBankHandler,
   createJournalEntryHandler,
+  importTransactionsHandler,
 } from './bank_feeds.controller';
 
 export async function bankFeedsRoutes(fastify: FastifyInstance) {
@@ -56,6 +57,11 @@ export async function bankFeedsRoutes(fastify: FastifyInstance) {
   fastify.post('/transactions/:id/create-journal', {
     preHandler: [fastify.requirePermission('bank_feeds:write')],
     handler: createJournalEntryHandler,
+  });
+
+  fastify.post('/import', {
+    preHandler: [fastify.requirePermission('bank_feeds:write')],
+    handler: importTransactionsHandler,
   });
 
   // Reconciliation & status

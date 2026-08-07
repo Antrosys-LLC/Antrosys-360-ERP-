@@ -2,6 +2,8 @@ import { FastifyInstance } from 'fastify';
 import {
   getDashboardHandler,
   getChartDataHandler,
+  getKpisHandler,
+  getSalesPipelineHandler,
   createReportHandler,
   runReportHandler,
   toggleFavouriteHandler,
@@ -17,6 +19,10 @@ export async function bizIntelRoutes(fastify: FastifyInstance) {
 
   // Dashboard landing: reports, schedules, recent runs, sparklines
   fastify.get('/', getDashboardHandler);
+
+  // KPI cards and sales pipeline — fed from aggregated tables
+  fastify.get('/kpis', getKpisHandler);
+  fastify.get('/sales-pipeline', getSalesPipelineHandler);
 
   // Custom report builder dynamic preview
   fastify.get('/builder/chart-data', getChartDataHandler);

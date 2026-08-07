@@ -294,9 +294,9 @@ export async function voidLedgerEntry(entryId: string, userId: string, reason: s
 }
 
 export async function getBudgetVsActual() {
-  // Prefer the aggregated snapshot table
+  // Prefer the aggregated snapshot table (latest 'current' period)
   const snapshots = await prisma.budgetVsActualSnapshot.findMany({
-    where: { kind: 'BVA' },
+    where: { kind: 'BVA', period: 'current' },
   });
 
   const byKey = new Map(snapshots.map((s) => [s.categoryKey, s]));
@@ -361,9 +361,9 @@ export async function getBudgetVsActual() {
 }
 
 export async function getBudgetTrackers() {
-  // Prefer the aggregated snapshot table
+  // Prefer the aggregated snapshot table (latest 'current' period)
   const snapshots = await prisma.budgetVsActualSnapshot.findMany({
-    where: { kind: 'TRACKER' },
+    where: { kind: 'TRACKER', period: 'current' },
   });
 
   const byKey = new Map(snapshots.map((s) => [s.categoryKey, s]));

@@ -3,6 +3,7 @@ import {
   createInvoiceBodySchema,
   invoiceParamsSchema,
   listInvoicesQuerySchema,
+  recordPaymentBodySchema,
   sendInvoiceBodySchema,
   updateInvoiceBodySchema,
 } from './invoice.schema';
@@ -152,6 +153,42 @@ export async function sendInvoiceHandler(request: FastifyRequest, reply: Fastify
   } catch (error) {
     return reply.code(400).send({
       error: error instanceof Error ? error.message : 'Failed to send invoice',
+    });
+  }
+}
+
+export async function recordPaymentHandler(request: FastifyRequest, reply: FastifyReply) {
+  const paramsParsed = invoiceParamsSchema.safeParse(request.params);
+  if (!paramsParsed.success) {
+    return sendValidationError(reply, paramsParsed.error.flatten());
+  }
+
+  const bodyParsed = recordPaymentBodySchema.safeParse(request.body);
+  if (!bodyParsed.success) {
+    return sendValidationError(reply, bodyParsed.error.flatten());
+  }
+
+  if (!request.user?.id) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+
+  try {
+    const payment = await invoiceService.recordInvoicePayment(
+      paramsParsed.data.invoiceId,
+      request.user.id,
+      bodyParsed.data,
+    );
+    if (!payment) {
+      return reply.code(404).send({ error: 'Invoice not found' });
+    }
+
+    return reply.code(201).send({
+      status: 'success',
+      data: payment,
+    });
+  } catch (error) {
+    return reply.code(400).send({
+      error: error instanceof Error ? error.message : 'Failed to record payment',
     });
   }
 }

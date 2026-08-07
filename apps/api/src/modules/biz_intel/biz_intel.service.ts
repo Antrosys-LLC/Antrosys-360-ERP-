@@ -31,6 +31,134 @@ function formatRelativeTime(date: Date): string {
   return `Last run: ${diffDays}d ago`;
 }
 
+function toNumber(value: Prisma.Decimal | number | null | undefined): number {
+  if (value == null) return 0;
+  return typeof value === 'number' ? value : value.toNumber();
+}
+
+const PIPELINE_STAGES = ['PROSPECT', 'PROPOSAL', 'NEGOTIATION', 'ONBOARDING', 'ACTIVE', 'AT_RISK'] as const;
+
+type MonthKey = { year: number; month: number; label: string };
+
+function monthLabel(year: number, month: number): string {
+  return new Date(year, month - 1, 1).toLocaleString('default', { month: 'short' });
+}
+
+// Builds the 6-month window ending at the latest month with aggregated data
+// (falls back to the current calendar month).
+async function getLastSixMonths(): Promise<MonthKey[]> {
+  const latest = await prisma.monthlyFinancialSummary.findFirst({
+    orderBy: [{ year: 'desc' }, { month: 'desc' }],
+    select: { year: true, month: true },
+  });
+  const endYear = latest?.year ?? new Date().getFullYear();
+  const endMonth = latest?.month ?? new Date().getMonth() + 1;
+
+  const months: MonthKey[] = [];
+  for (let i = 5; i >= 0; i -= 1) {
+    const d = new Date(endYear, endMonth - 1 - i, 1);
+    months.push({ year: d.getFullYear(), month: d.getMonth() + 1, label: monthLabel(d.getFullYear(), d.getMonth() + 1) });
+  }
+  return months;
+}
+
+// Loads the aggregated monthly rows for the window (missing months become 0).
+async function getMonthlySummariesForWindow(months: MonthKey[]) {
+  const summaries = await prisma.monthlyFinancialSummary.findMany({
+    where: { OR: months.map((m) => ({ year: m.year, month: m.month })) },
+  });
+  const byKey = new Map(summaries.map((s) => [`${s.year}-${s.month}`, s]));
+  return months.map((m) => byKey.get(`${m.year}-${m.month}`));
+}
+
+// Loads client pipeline history once for Deals Count / Expected Value series.
+async function getClientPipelineHistory() {
+  const clients = await prisma.client.findMany({
+    select: {
+      createdAt: true,
+      pipelineStage: true,
+      monthlyRevenue: true,
+      annualRevenue: true,
+      lifetimeValue: true,
+    },
+  });
+
+  return clients.map((c) => {
+    const expectedValue =
+      toNumber(c.monthlyRevenue) ||
+      toNumber(c.annualRevenue) / 12 ||
+      toNumber(c.lifetimeValue) / 24 ||
+      0;
+    return {
+      month: `${c.createdAt.getFullYear()}-${c.createdAt.getMonth() + 1}`,
+      stage: c.pipelineStage,
+      expectedValue,
+    };
+  });
+}
+
+// Aggregates a metric into a 6-point series. Reads the aggregated tables
+// (monthly_financial_summaries / budget_vs_actual) and live tables only for
+// metrics that have no aggregate (headcount, sales pipeline, attrition).
+async function aggregateLast6MonthsData(metric: string): Promise<{ label: string; value: number }[]> {
+  const months = await getLastSixMonths();
+  const summaries = await getMonthlySummariesForWindow(months);
+
+  if (metric === 'Headcount') {
+    const headcount = await prisma.employee.count({ where: { isActive: true } });
+    return months.map((m) => ({ label: m.label, value: headcount }));
+  }
+
+  if (metric === 'Deals Count' || metric === 'Expected Value') {
+    const history = await getClientPipelineHistory();
+    return months.map((m) => {
+      const key = `${m.year}-${m.month}`;
+      const inMonth = history.filter((h) => h.month === key);
+      const value = metric === 'Deals Count'
+        ? inMonth.length
+        : inMonth.reduce((acc, h) => acc + h.expectedValue, 0);
+      return { label: m.label, value };
+    });
+  }
+
+  if (metric === 'Attrition Rate') {
+    const terminated = await prisma.employee.findMany({
+      where: { terminatedAt: { not: null } },
+      select: { terminatedAt: true },
+    });
+    const headcount = await prisma.employee.count({ where: { isActive: true } });
+    const base = Math.max(headcount, 1);
+    return months.map((m) => {
+      const count = terminated.filter((e) => {
+        const d = e.terminatedAt as Date;
+        return d.getFullYear() === m.year && d.getMonth() + 1 === m.month;
+      }).length;
+      return { label: m.label, value: Math.round((count / base) * 100) };
+    });
+  }
+
+  return months.map((m, idx) => {
+    const summary = summaries[idx];
+    if (!summary) return { label: m.label, value: 0 };
+    const revenue = toNumber(summary.revenueTotal);
+    const expenses = toNumber(summary.opexTotal);
+    switch (metric) {
+      case 'Revenue':
+        return { label: m.label, value: revenue };
+      case 'Expenses':
+        return { label: m.label, value: expenses };
+      case 'Payroll cost':
+        return { label: m.label, value: toNumber(summary.payrollTotal) };
+      case 'Margin %': {
+        const margin = revenue > 0 ? ((revenue - expenses) / revenue) * 100 : 0;
+        return { label: m.label, value: Math.round(margin) };
+      }
+      default:
+        return { label: m.label, value: 0 };
+    }
+  });
+}
+
 // 1. Fetch dashboard data (reports, schedules, runs, miniMetrics)
 export async function getDashboardData(userId: string) {
   const reports = await prisma.bIReport.findMany({
@@ -83,9 +211,9 @@ export async function getDashboardData(userId: string) {
 // Helper to compute mini metrics sparkline points and last run times
 async function getMiniMetrics() {
   const metricsList = [
-    { title: 'Revenue overview', dbField: 'Revenue', borderClass: 'border-l-[#7B6AE6]', defaultPoints: '0,25 20,20 40,30 60,10 80,22 100,5' },
-    { title: 'Headcount & attrition', dbField: 'Headcount', borderClass: 'border-l-emerald-500', defaultPoints: '0,15 20,18 40,10 60,25 80,20 100,28' },
-    { title: 'Payroll cost analysis', dbField: 'Payroll cost', borderClass: 'border-l-amber-600', defaultPoints: '0,28 20,25 40,22 60,15 80,18 100,10' },
+    { title: 'Revenue overview', metric: 'Revenue', borderClass: 'border-l-[#7B6AE6]' },
+    { title: 'Headcount & attrition', metric: 'Headcount', borderClass: 'border-l-emerald-500' },
+    { title: 'Payroll cost analysis', metric: 'Payroll cost', borderClass: 'border-l-amber-600' },
   ];
 
   const results = [];
@@ -99,24 +227,19 @@ async function getMiniMetrics() {
 
     const lastRun = lastExecution ? formatRelativeTime(lastExecution.runAt) : 'Last run: never';
 
-    // Sparkline data computation
-    // We can pull aggregate data or fall back to defaultPoints
-    let sparklinePoints = item.defaultPoints;
+    // Sparkline from the aggregated data series
+    let sparklinePoints = '';
     try {
-      const historicalData = await aggregateLast6MonthsData(item.dbField);
-      if (historicalData && historicalData.length > 0) {
-        const values = historicalData.map(h => h.value);
-        const maxVal = Math.max(...values, 1);
-        const minVal = Math.min(...values, 0);
-        const range = maxVal - minVal || 1;
+      const historicalData = await aggregateLast6MonthsData(item.metric);
+      const values = historicalData.map(h => h.value);
+      const maxVal = Math.max(...values, 1);
+      const minVal = Math.min(...values, 0);
+      const range = maxVal - minVal || 1;
 
-        // Map 6 points to coordinate strings (X goes 0..100 in steps of 20, Y goes 30..0 where 30 is min, 0 is max)
+      if (historicalData.some(d => d.value !== 0)) {
         sparklinePoints = historicalData.map((d, index) => {
           const x = index * 20;
-          // Calculate Y-coord. In SVG, Y=0 is the top, Y=30 is bottom.
-          // Normalized value between 0 and 1
           const norm = (d.value - minVal) / range;
-          // Map norm=1 to Y=5 (top margin), norm=0 to Y=25 (bottom margin)
           const y = Math.round(25 - (norm * 20));
           return `${x},${y}`;
         }).join(' ');
@@ -138,8 +261,12 @@ async function getMiniMetrics() {
 
 // 2. Fetch aggregated chart data for Custom Builder Canvas Preview
 export async function getChartData(xAxis: string, yAxisList: string[]) {
-  const rawMonths = ['Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May'];
-  const results = [];
+  const months = await getLastSixMonths();
+
+  // Sales pipeline chart: rows are stages, not months
+  if (xAxis === 'Stage') {
+    return getPipelineChartData(yAxisList);
+  }
 
   // Gather historical series for each requested Y-axis metric
   const seriesData: Record<string, number[]> = {};
@@ -156,9 +283,9 @@ export async function getChartData(xAxis: string, yAxisList: string[]) {
     if (seriesMax > overallMax) overallMax = seriesMax;
   }
 
-  for (let i = 0; i < rawMonths.length; i++) {
-    const monthName = rawMonths[i];
-    const dataRow: Record<string, any> = { month: monthName };
+  const results = [];
+  for (let i = 0; i < months.length; i++) {
+    const dataRow: Record<string, any> = { month: months[i].label };
 
     for (const metric of yAxisList) {
       const val = seriesData[metric]?.[i] ?? 0;
@@ -174,122 +301,108 @@ export async function getChartData(xAxis: string, yAxisList: string[]) {
   return results;
 }
 
-// Helper to query actual database tables or return presets if empty
-async function aggregateLast6MonthsData(metric: string): Promise<{ label: string; value: number }[]> {
-  const rawMonths = ['Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May'];
-  
-  // Set up mock trends as backup
-  const presets: Record<string, number[]> = {
-    'Revenue': [420000, 480000, 380000, 620000, 560000, 780000],
-    'Expenses': [200000, 220000, 190000, 240000, 250000, 280000],
-    'Payroll cost': [180000, 220000, 200000, 260000, 280000, 320000],
-    'Headcount': [20, 21, 21, 22, 23, 25],
-    'Deals Count': [12, 15, 14, 18, 17, 20],
-    'Expected Value': [250000, 320000, 290000, 410000, 380000, 490000],
-    'Attrition Rate': [5, 4, 3, 6, 2, 4],
-  };
+// Sales pipeline rows (xAxis = Stage): count and expected value per stage
+async function getPipelineChartData(yAxisList: string[]) {
+  const clients = await prisma.client.findMany({
+    select: { pipelineStage: true, monthlyRevenue: true, annualRevenue: true, lifetimeValue: true },
+  });
 
-  const getPresetSeries = (key: string) => {
-    const vals = presets[key] || [10, 15, 12, 18, 14, 22];
-    return rawMonths.map((m, idx) => ({ label: m, value: vals[idx] }));
-  };
-
-  try {
-    if (metric === 'Revenue') {
-      const invoices = await prisma.invoice.findMany({
-        where: { status: { not: 'CANCELLED' } },
-        select: { totalDue: true, invoiceDate: true },
-      });
-      if (invoices.length === 0) return getPresetSeries('Revenue');
-
-      // Aggregate sum of totalDue per month
-      const monthlySum = new Array(6).fill(0);
-      invoices.forEach(inv => {
-        const month = new Date(inv.invoiceDate).getMonth(); // 0-11
-        // Map months to our 6-month array indexes (Dec = 11, Jan = 0, Feb = 1, Mar = 2, Apr = 3, May = 4)
-        const mapIdx = [11, 0, 1, 2, 3, 4].indexOf(month);
-        if (mapIdx !== -1) {
-          monthlySum[mapIdx] += Number(inv.totalDue);
-        }
-      });
-      // Merge with mock values if sum is zero to avoid empty graphs
-      return rawMonths.map((m, idx) => ({
-        label: m,
-        value: monthlySum[idx] > 0 ? monthlySum[idx] : presets['Revenue'][idx],
-      }));
-    }
-
-    if (metric === 'Payroll cost') {
-      const payrolls = await prisma.payroll.findMany({
-        select: { totalGross: true, periodStart: true },
-      });
-      if (payrolls.length === 0) return getPresetSeries('Payroll cost');
-
-      const monthlySum = new Array(6).fill(0);
-      payrolls.forEach(p => {
-        const month = new Date(p.periodStart).getMonth();
-        const mapIdx = [11, 0, 1, 2, 3, 4].indexOf(month);
-        if (mapIdx !== -1) {
-          monthlySum[mapIdx] += Number(p.totalGross);
-        }
-      });
-      return rawMonths.map((m, idx) => ({
-        label: m,
-        value: monthlySum[idx] > 0 ? monthlySum[idx] : presets['Payroll cost'][idx],
-      }));
-    }
-
-    if (metric === 'Headcount') {
-      const headcount = await prisma.employee.count({
-        where: { isActive: true },
-      });
-      if (headcount === 0) return getPresetSeries('Headcount');
-
-      // Real active headcount, return series growing up to current count
-      return rawMonths.map((m, idx) => ({
-        label: m,
-        value: Math.max(headcount - (5 - idx), 1),
-      }));
-    }
-
-    if (metric === 'Expenses') {
-      const expenses = await prisma.operatingExpense.findMany({
-        select: { amount: true, expenseDate: true },
-      });
-      if (expenses.length === 0) return getPresetSeries('Expenses');
-
-      const monthlySum = new Array(6).fill(0);
-      expenses.forEach(e => {
-        const month = new Date(e.expenseDate).getMonth();
-        const mapIdx = [11, 0, 1, 2, 3, 4].indexOf(month);
-        if (mapIdx !== -1) {
-          monthlySum[mapIdx] += Number(e.amount);
-        }
-      });
-      return rawMonths.map((m, idx) => ({
-        label: m,
-        value: monthlySum[idx] > 0 ? monthlySum[idx] : presets['Expenses'][idx],
-      }));
-    }
-
-    if (metric === 'Margin %') {
-      const revSeries = await aggregateLast6MonthsData('Revenue');
-      const expSeries = await aggregateLast6MonthsData('Expenses');
-
-      return rawMonths.map((m, idx) => {
-        const rev = revSeries[idx].value;
-        const exp = expSeries[idx].value;
-        const margin = rev > 0 ? ((rev - exp) / rev) * 100 : 40; // fallback to 40% margin
-        return { label: m, value: Math.round(margin) };
-      });
-    }
-
-    // Default presets fallback
-    return getPresetSeries(metric);
-  } catch (err) {
-    console.error(`Error aggregating metric ${metric}:`, err);
-    return getPresetSeries(metric);
+  const stageTotals = new Map<string, { count: number; value: number }>();
+  for (const c of clients) {
+    const entry = stageTotals.get(c.pipelineStage) ?? { count: 0, value: 0 };
+    entry.count += 1;
+    entry.value +=
+      toNumber(c.monthlyRevenue) ||
+      toNumber(c.annualRevenue) / 12 ||
+      toNumber(c.lifetimeValue) / 24 ||
+      0;
+    stageTotals.set(c.pipelineStage, entry);
   }
+
+  const rows = PIPELINE_STAGES.map((stage) => stageTotals.get(stage) ?? { count: 0, value: 0 });
+  const maxCount = Math.max(...rows.map(r => r.count), 1);
+  const maxValue = Math.max(...rows.map(r => r.value), 1);
+
+  return rows.map((row, idx) => {
+    const dataRow: Record<string, any> = { month: PIPELINE_STAGES[idx] };
+    for (const metric of yAxisList) {
+      const val = metric === 'Deals Count' ? row.count : metric === 'Expected Value' ? Math.round(row.value) : 0;
+      dataRow[`${metric.replace(/\s+/g, '')}Val`] = val;
+      const overallMax = metric === 'Deals Count' ? maxCount : maxValue;
+      const pct = overallMax > 0 ? Math.round((val / overallMax) * 75) + 5 : 5;
+      dataRow[`${metric.replace(/\s+/g, '').replace('%', 'Pct')}Height`] = `${pct}%`;
+    }
+    return dataRow;
+  });
+}
+
+// Sales pipeline summary for KPI cards and charts
+export async function getSalesPipeline() {
+  const clients = await prisma.client.findMany({
+    select: { pipelineStage: true, monthlyRevenue: true, annualRevenue: true, lifetimeValue: true },
+  });
+
+  const stages = PIPELINE_STAGES.map((stage) => {
+    const inStage = clients.filter((c) => c.pipelineStage === stage);
+    return {
+      stage,
+      count: inStage.length,
+      expectedValue: Math.round(inStage.reduce((acc, c) => acc + (
+        toNumber(c.monthlyRevenue) ||
+        toNumber(c.annualRevenue) / 12 ||
+        toNumber(c.lifetimeValue) / 24 ||
+        0
+      ), 0)),
+    };
+  });
+
+  return {
+    stages,
+    totalCount: clients.length,
+    totalExpectedValue: stages.reduce((acc, s) => acc + s.expectedValue, 0),
+  };
+}
+
+// 3. KPI cards — sourced from the aggregated monthly_financial_summaries table
+export async function getKpis() {
+  const latest = await prisma.monthlyFinancialSummary.findFirst({
+    orderBy: [{ year: 'desc' }, { month: 'desc' }],
+  });
+
+  const monthKey = latest ? `${latest.year}-${latest.month}` : null;
+  const months = monthKey ? [monthKey] : [];
+  const summary = latest ?? undefined;
+
+  const [headcount, pipeline, pendingLive] = await Promise.all([
+    prisma.employee.count({ where: { isActive: true } }),
+    getSalesPipeline(),
+    latest
+      ? Promise.resolve(null)
+      : prisma.ledgerEntry.aggregate({
+          _sum: { amount: true },
+          where: { isVoided: false, hasFlag: true },
+        }),
+  ]);
+
+  const revenue = summary ? toNumber(summary.revenueTotal) : 0;
+  const expenses = summary ? toNumber(summary.opexTotal) : 0;
+  const payrollCost = summary ? toNumber(summary.payrollTotal) : 0;
+  const pendingReconciliation = summary
+    ? toNumber(summary.pendingReconciliation)
+    : toNumber(pendingLive?._sum.amount);
+
+  return {
+    period: months[0] ?? null,
+    revenue,
+    expenses,
+    payrollCost,
+    pendingReconciliation,
+    netMovement: summary ? toNumber(summary.netMovement) : 0,
+    marginPct: revenue > 0 ? Math.round(((revenue - expenses) / revenue) * 100) : 0,
+    headcount,
+    dealsCount: pipeline.totalCount,
+    expectedValue: pipeline.totalExpectedValue,
+  };
 }
 
 // 3. Create a new custom report
@@ -313,7 +426,14 @@ export async function createReport(userId: string, input: CreateReportInput) {
   });
 }
 
-// 4. Trigger manual run of a report
+function formatDuration(startedAt: number, endedAt: number): string {
+  const ms = endedAt - startedAt;
+  if (ms < 1000) return `${ms.toFixed(0)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+// 4. Execute a report: compute its config against the aggregated tables and
+//    record a real execution (duration, status) in the audit trail.
 export async function runReport(userId: string, reportId: string) {
   return await prisma.$transaction(async (tx) => {
     const report = await tx.bIReport.findUnique({
@@ -324,16 +444,31 @@ export async function runReport(userId: string, reportId: string) {
       throw new Error('Report not found');
     }
 
-    // Generate random execution time: e.g. "1.2s", "0.8s"
-    const randomDuration = `${(Math.random() * 3 + 0.5).toFixed(1)}s`;
+    const startedAt = Date.now();
+    let duration = '0ms';
+    let status = 'Completed';
+    let failed = false;
+
+    try {
+      const config = (report.config as { xAxis?: string; yAxis?: string[] } | null) ?? null;
+      const xAxis = config?.xAxis ?? 'Month';
+      const yAxis = config?.yAxis ?? ['Revenue'];
+      await getChartData(xAxis, yAxis);
+      duration = formatDuration(startedAt, Date.now());
+    } catch (err) {
+      duration = formatDuration(startedAt, Date.now());
+      status = 'Failed';
+      failed = true;
+      console.error(`BI report execution failed: ${report.title}`, err);
+    }
 
     const execution = await tx.bIExecution.create({
       data: {
         reportId: report.id,
         name: report.title,
-        duration: randomDuration,
-        status: 'Completed',
-        failed: false,
+        duration,
+        status,
+        failed,
         userId,
       },
     });

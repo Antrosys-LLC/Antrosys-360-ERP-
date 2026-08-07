@@ -2,13 +2,15 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { logFinancialActivity } from '../../shared/finance/financial-activity';
 import { pushLedgerEntry } from '../../shared/finance/ledger-push';
+import { aggregateBudgetVsActual, aggregateMonthlyFinancials } from '../../shared/aggregation/aggregate-finance';
 import type {
   CreateInvoiceBody,
   ListInvoicesQuery,
+  RecordPaymentBody,
   UpdateInvoiceBody,
 } from './invoice.schema';
 
-type MutationAction = 'INVOICE_CREATE' | 'INVOICE_UPDATE' | 'INVOICE_DELETE' | 'INVOICE_SEND';
+type MutationAction = 'INVOICE_CREATE' | 'INVOICE_UPDATE' | 'INVOICE_DELETE' | 'INVOICE_SEND' | 'INVOICE_PAYMENT';
 
 async function ensureCfoInvoiceApprovalTask(
   tx: Prisma.TransactionClient,
@@ -350,35 +352,31 @@ export async function updateInvoice(invoiceId: string, payload: UpdateInvoiceBod
       });
 
       if (updated.status === 'PAID' || updated.status === 'PARTIALLY_PAID') {
-        await logFinancialActivity(tx, {
-          category: 'INVOICE',
-          title: `Payment received for ${updated.invoiceNumber}`,
-          metadata: { invoiceId, totalDue: Number(updated.totalDue), status: updated.status },
+        const alreadyPaid = await tx.invoicePayment.aggregate({
+          _sum: { amount: true },
+          where: { invoiceId: updated.id },
         });
+        const remaining = Number(updated.totalDue) - Number(alreadyPaid._sum.amount || 0);
+        if (remaining > 0.001) {
+          const payment = await createPaymentAndPushLedger(tx, {
+            invoice: {
+              id: updated.id,
+              invoiceNumber: updated.invoiceNumber,
+              totalDue: updated.totalDue,
+              currencyCode: updated.currencyCode,
+            },
+            amount: remaining,
+            paidAt: new Date(),
+            userId,
+            hasFlag: updated.status === 'PARTIALLY_PAID',
+          });
 
-        await pushLedgerEntry(tx, {
-          date: new Date(),
-          ref: updated.invoiceNumber,
-          description: `Client payment - ${updated.invoiceNumber} (${updated.status})`,
-          entryType: 'CREDIT',
-          amount: Number(updated.totalDue),
-          accountCode: '4000',
-          currencyCode: updated.currencyCode,
-          hasFlag: updated.status === 'PARTIALLY_PAID',
-          createdByUserId: userId,
-        });
-
-        await pushLedgerEntry(tx, {
-          date: new Date(),
-          ref: updated.invoiceNumber,
-          description: `Payment received - ${updated.invoiceNumber} (${updated.status})`,
-          entryType: 'DEBIT',
-          amount: Number(updated.totalDue),
-          accountCode: '1000',
-          currencyCode: updated.currencyCode,
-          hasFlag: updated.status === 'PARTIALLY_PAID',
-          createdByUserId: userId,
-        });
+          await logFinancialActivity(tx, {
+            category: 'INVOICE',
+            title: `Payment received for ${updated.invoiceNumber}`,
+            metadata: { invoiceId, amount: payment.amount, status: updated.status },
+          });
+        }
       }
 
       await ensureCfoInvoiceApprovalTask(tx, updated, userId);
@@ -420,6 +418,116 @@ export async function cleanupOldAuditLogs() {
       createdAt: { lt: thirtyDaysAgo },
     },
   });
+}
+
+async function createPaymentAndPushLedger(
+  tx: Prisma.TransactionClient,
+  input: {
+    invoice: { id: string; invoiceNumber: string; totalDue: Prisma.Decimal; currencyCode: string };
+    amount: number;
+    paidAt: Date;
+    userId: string;
+    hasFlag: boolean;
+    paymentMethod?: string | null;
+    reference?: string | null;
+    notes?: string | null;
+  },
+) {
+  const payment = await tx.invoicePayment.create({
+    data: {
+      invoiceId: input.invoice.id,
+      amount: toDecimal(input.amount),
+      paidAt: input.paidAt,
+      paymentMethod: input.paymentMethod ?? null,
+      reference: input.reference ?? null,
+      notes: input.notes ?? null,
+      createdByUserId: input.userId,
+    },
+  });
+
+  await pushLedgerEntry(tx, {
+    date: input.paidAt,
+    ref: input.invoice.invoiceNumber,
+    description: `Client payment - ${input.invoice.invoiceNumber}`,
+    entryType: 'CREDIT',
+    amount: input.amount,
+    accountCode: '4000',
+    currencyCode: input.invoice.currencyCode,
+    hasFlag: input.hasFlag,
+    createdByUserId: input.userId,
+  });
+
+  await pushLedgerEntry(tx, {
+    date: input.paidAt,
+    ref: input.invoice.invoiceNumber,
+    description: `Payment received - ${input.invoice.invoiceNumber}`,
+    entryType: 'DEBIT',
+    amount: input.amount,
+    accountCode: '1000',
+    currencyCode: input.invoice.currencyCode,
+    hasFlag: input.hasFlag,
+    createdByUserId: input.userId,
+  });
+
+  return payment;
+}
+
+export async function recordInvoicePayment(invoiceId: string, userId: string, input: RecordPaymentBody) {
+  const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } });
+  if (!invoice) return null;
+  if (invoice.status === 'CANCELLED') {
+    throw new Error('Cancelled invoice cannot receive payments');
+  }
+
+  const alreadyPaid = await prisma.invoicePayment.aggregate({
+    _sum: { amount: true },
+    where: { invoiceId },
+  });
+  const remaining = Number(invoice.totalDue) - Number(alreadyPaid._sum.amount || 0);
+  if (input.amount > remaining + 0.001) {
+    throw new Error(`Payment exceeds remaining balance of ${remaining.toFixed(2)}`);
+  }
+
+  const fullyPaid = Math.abs(input.amount - remaining) < 0.01;
+  const nextStatus: 'PAID' | 'PARTIALLY_PAID' = fullyPaid ? 'PAID' : 'PARTIALLY_PAID';
+  const paidAt = input.paidAt ?? new Date();
+
+  const payment = await prisma.$transaction(async (tx) => {
+    const created = await createPaymentAndPushLedger(tx, {
+      invoice,
+      amount: input.amount,
+      paidAt,
+      userId,
+      hasFlag: nextStatus === 'PARTIALLY_PAID',
+      paymentMethod: input.paymentMethod,
+      reference: input.reference,
+      notes: input.notes,
+    });
+
+    await tx.invoice.update({
+      where: { id: invoiceId },
+      data: { status: nextStatus },
+    });
+
+    await writeAuditLog(tx, userId, 'INVOICE_PAYMENT', {
+      invoiceId,
+      invoiceNumber: invoice.invoiceNumber,
+      amount: input.amount,
+      nextStatus,
+    });
+
+    await logFinancialActivity(tx, {
+      category: 'INVOICE',
+      title: `Payment received for ${invoice.invoiceNumber}`,
+      metadata: { invoiceId, amount: input.amount, status: nextStatus },
+    });
+
+    return created;
+  });
+
+  await Promise.allSettled([aggregateBudgetVsActual(), aggregateMonthlyFinancials()]);
+
+  return payment;
 }
 
 export async function sendInvoice(invoiceId: string, userId: string) {

@@ -5,6 +5,7 @@ import {
   deleteInvoiceHandler,
   getInvoiceByIdHandler,
   listInvoicesHandler,
+  recordPaymentHandler,
   sendInvoiceHandler,
   updateInvoiceHandler,
 } from './invoice.controller';
@@ -33,6 +34,11 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
   fastify.patch('/:invoiceId', {
     preHandler: [fastify.requirePermission(INVOICE_WRITE_PERMISSION)],
     handler: updateInvoiceHandler,
+  });
+
+  fastify.post('/:invoiceId/payments', {
+    preHandler: [fastify.requirePermission(INVOICE_WRITE_PERMISSION)],
+    handler: recordPaymentHandler,
   });
 
   fastify.post('/:invoiceId/send', {
