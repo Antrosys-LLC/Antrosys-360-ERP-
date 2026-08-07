@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { pushLedgerEntry } from '../../shared/finance/ledger-push';
+import { aggregateBudgetVsActual, aggregateMonthlyFinancials } from '../../shared/aggregation/aggregate-finance';
 import type { ListItemsQuery, CreateItemBody, UpdateItemBody, ListCategoriesQuery, CreateCategoryBody, CreatePurchaseOrderBody } from './inventory.schema';
 
 type ItemWithCategory = {
@@ -294,30 +295,6 @@ export async function createPurchaseOrder(data: CreatePurchaseOrderBody, userId:
       },
     });
 
-    const totalAmount = Number(grandTotal);
-
-    await pushLedgerEntry(tx, {
-      date: new Date(),
-      ref: poNumber,
-      description: `Purchase order commitment - ${poNumber} (${data.supplier})`,
-      entryType: 'DEBIT',
-      amount: totalAmount,
-      accountCode: '1000',
-      currencyCode: data.currencyCode ?? 'PKR',
-      createdByUserId: userId,
-    });
-
-    await pushLedgerEntry(tx, {
-      date: new Date(),
-      ref: poNumber,
-      description: `Purchase order commitment - ${poNumber} (${data.supplier})`,
-      entryType: 'CREDIT',
-      amount: totalAmount,
-      accountCode: '2000',
-      currencyCode: data.currencyCode ?? 'PKR',
-      createdByUserId: userId,
-    });
-
     return {
       id: po.id,
       poNumber: po.poNumber,
@@ -381,6 +358,11 @@ export async function receivePurchaseOrder(poId: string, userId: string) {
       status: updated.status,
       receivedAt: updated.receivedAt,
     };
+  }).then(async (result) => {
+    if (result) {
+      await Promise.allSettled([aggregateBudgetVsActual(), aggregateMonthlyFinancials()]);
+    }
+    return result;
   });
 }
 

@@ -13,6 +13,10 @@ const TRACKER_CATEGORIES = [
   { key: 'tracker.capex', name: 'Capex', codePrefix: '1', budgetCode: '1000', entryType: 'DEBIT' as const },
 ] as const;
 
+function periodKey(year: number, month: number): string {
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
+
 function toNumber(value: Prisma.Decimal | bigint | number | null | undefined): number {
   if (value == null) return 0;
   if (typeof value === 'number') return value;
@@ -95,6 +99,7 @@ export async function aggregateMonthlyFinancials(monthsBack = 12) {
     const revenueTotal = sumCreditFor('4') - sumDebitFor('4');
     const opexTotal = sumDebitFor('6') - sumCreditFor('6');
     const capexTotal = sumDebitFor('1');
+    const payrollTotal = sumDebitFor('6100');
     const equityTotal = sumCreditFor('3') - sumDebitFor('3') + revenueTotal - opexTotal;
 
     const prevYear = month === 1 ? year - 1 : year;
@@ -124,6 +129,7 @@ export async function aggregateMonthlyFinancials(monthsBack = 12) {
         revenueTotal,
         opexTotal,
         capexTotal,
+        payrollTotal,
         computedAt: new Date(),
       },
       update: {
@@ -139,6 +145,7 @@ export async function aggregateMonthlyFinancials(monthsBack = 12) {
         revenueTotal,
         opexTotal,
         capexTotal,
+        payrollTotal,
         computedAt: new Date(),
       },
     });
@@ -149,24 +156,12 @@ export async function aggregateMonthlyFinancials(monthsBack = 12) {
   return { months: upserted };
 }
 
-export async function aggregateBudgetVsActual() {
-  const [accounts, debitActuals, creditActuals] = await Promise.all([
+export async function aggregateBudgetVsActual(monthsBack = 12) {
+  const [accounts] = await Promise.all([
     prisma.ledgerAccount.findMany({ select: { id: true, code: true, budgetAmount: true } }),
-    prisma.ledgerEntry.groupBy({
-      by: ['accountId'],
-      _sum: { amount: true },
-      where: { isVoided: false, entryType: 'DEBIT' },
-    }),
-    prisma.ledgerEntry.groupBy({
-      by: ['accountId'],
-      _sum: { amount: true },
-      where: { isVoided: false, entryType: 'CREDIT' },
-    }),
   ]);
 
   const accountsByCode = new Map(accounts.map((a) => [a.code, a]));
-  const debitByAccount = new Map(debitActuals.map((r) => [r.accountId, toNumber(r._sum.amount)]));
-  const creditByAccount = new Map(creditActuals.map((r) => [r.accountId, toNumber(r._sum.amount)]));
 
   const getBudgetFor = (codePrefix: string) => {
     const exact = accountsByCode.get(codePrefix);
@@ -176,23 +171,30 @@ export async function aggregateBudgetVsActual() {
       .reduce((acc, [, account]) => acc + toNumber(account.budgetAmount), 0);
   };
 
-  const getActualFor = (codePrefix: string, entryType: 'DEBIT' | 'CREDIT') => {
+  const getActualFor = (
+    debitByAccount: Map<string, number>,
+    creditByAccount: Map<string, number>,
+    codePrefix: string,
+    entryType: 'DEBIT' | 'CREDIT',
+  ) => {
     const map = entryType === 'DEBIT' ? debitByAccount : creditByAccount;
     return [...accountsByCode.entries()]
       .filter(([code]) => code.startsWith(codePrefix))
       .reduce((acc, [, account]) => acc + (map.get(account.id) ?? 0), 0);
   };
 
-  let updated = 0;
-
-  for (const category of BVA_CATEGORIES) {
-    const actual = getActualFor(category.codePrefix, 'DEBIT');
+  const writeSnapshot = async (
+    period: string,
+    category: (typeof BVA_CATEGORIES)[number],
+    debitByAccount: Map<string, number>,
+    creditByAccount: Map<string, number>,
+  ) => {
+    const actual = getActualFor(debitByAccount, creditByAccount, category.codePrefix, 'DEBIT');
     const budget = getBudgetFor(category.codePrefix);
     const percentage = budget > 0 ? Math.round((actual / budget) * 100) : 0;
-    // Skip categories with no real entries so seeded demo values are preserved.
-    if (actual <= 0) continue;
+    if (actual <= 0) return false;
     await prisma.budgetVsActualSnapshot.upsert({
-      where: { categoryKey: category.key },
+      where: { categoryKey_period: { categoryKey: category.key, period } },
       create: {
         categoryKey: category.key,
         kind: 'BVA',
@@ -200,20 +202,25 @@ export async function aggregateBudgetVsActual() {
         actual,
         budget,
         percentage,
+        period,
       },
       update: { actual, budget, percentage },
     });
-    updated += 1;
-  }
+    return true;
+  };
 
-  for (const category of TRACKER_CATEGORIES) {
-    const actual = getActualFor(category.codePrefix, category.entryType);
+  const writeTracker = async (
+    period: string,
+    category: (typeof TRACKER_CATEGORIES)[number],
+    debitByAccount: Map<string, number>,
+    creditByAccount: Map<string, number>,
+  ) => {
+    const actual = getActualFor(debitByAccount, creditByAccount, category.codePrefix, category.entryType);
     const budget = getBudgetFor(category.budgetCode);
     const percentage = budget > 0 ? Math.round((actual / budget) * 100) : 0;
-    // Skip categories with no real entries so seeded demo values are preserved.
-    if (actual <= 0) continue;
+    if (actual <= 0) return false;
     await prisma.budgetVsActualSnapshot.upsert({
-      where: { categoryKey: category.key },
+      where: { categoryKey_period: { categoryKey: category.key, period } },
       create: {
         categoryKey: category.key,
         kind: 'TRACKER',
@@ -221,10 +228,64 @@ export async function aggregateBudgetVsActual() {
         actual,
         budget,
         percentage,
+        period,
       },
       update: { actual, budget, percentage },
     });
-    updated += 1;
+    return true;
+  };
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+
+  let updated = 0;
+  let latestDebitByAccount = new Map<string, number>();
+  let latestCreditByAccount = new Map<string, number>();
+
+  for (let i = monthsBack; i >= 0; i -= 1) {
+    const target = new Date(currentYear, currentMonth - 1 - i, 1);
+    const year = target.getFullYear();
+    const month = target.getMonth() + 1;
+    const { start, end } = monthRange(year, month);
+
+    const [debitResult, creditResult] = await Promise.all([
+      prisma.ledgerEntry.groupBy({
+        by: ['accountId'],
+        _sum: { amount: true },
+        where: { isVoided: false, entryType: 'DEBIT', date: { gte: start, lte: end } },
+      }),
+      prisma.ledgerEntry.groupBy({
+        by: ['accountId'],
+        _sum: { amount: true },
+        where: { isVoided: false, entryType: 'CREDIT', date: { gte: start, lte: end } },
+      }),
+    ]);
+
+    const debitByAccount = new Map(debitResult.map((r) => [r.accountId, toNumber(r._sum.amount)]));
+    const creditByAccount = new Map(creditResult.map((r) => [r.accountId, toNumber(r._sum.amount)]));
+    const period = periodKey(year, month);
+
+    if (i === 0) {
+      latestDebitByAccount = debitByAccount;
+      latestCreditByAccount = creditByAccount;
+    }
+
+    for (const category of BVA_CATEGORIES) {
+      if (await writeSnapshot(period, category, debitByAccount, creditByAccount)) updated += 1;
+    }
+    for (const category of TRACKER_CATEGORIES) {
+      if (await writeTracker(period, category, debitByAccount, creditByAccount)) updated += 1;
+    }
+  }
+
+  // Keep the "current" alias pointing at the latest month so the Ledger
+  // dashboard reads stay compatible with the previous snapshot semantics.
+  for (const category of BVA_CATEGORIES) {
+    if (await writeSnapshot('current', category, latestDebitByAccount, latestCreditByAccount)) updated += 1;
+  }
+  for (const category of TRACKER_CATEGORIES) {
+    if (await writeTracker('current', category, latestDebitByAccount, latestCreditByAccount)) updated += 1;
   }
 
   return { categories: updated };

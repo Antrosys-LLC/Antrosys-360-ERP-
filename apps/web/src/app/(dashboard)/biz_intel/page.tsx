@@ -5,13 +5,16 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   fetchBiDashboard,
   fetchChartPreview,
+  fetchBiKpis,
   createReport,
   runReport,
   toggleFavourite,
   deleteReport,
   deleteSchedule,
+  createSchedule,
   BIReport,
   BIDashboardData,
+  BIKpis,
 } from '@/lib/biz-intel-api';
 
 import {
@@ -204,6 +207,11 @@ export default function BusinessIntelligenceDashboard() {
   const [exportFormat, setExportFormat] = useState(EXPORT_FORMATS[0]);
   const [reportTitle, setReportTitle] = useState('Custom Report');
   const [runningReportId, setRunningReportId] = useState<string | null>(null);
+  const [showNewScheduleForm, setShowNewScheduleForm] = useState(false);
+  const [scheduleTitle, setScheduleTitle] = useState('');
+  const [scheduleReportId, setScheduleReportId] = useState('');
+  const [scheduleCron, setScheduleCron] = useState('0 9 * * 1');
+  const [scheduleDelivery, setScheduleDelivery] = useState<'email' | 'pdf'>('email');
 
   const showToast = useCallback((message: string, type: 'success' | 'error') => {
     setToast({ message, type });
@@ -215,6 +223,13 @@ export default function BusinessIntelligenceDashboard() {
     queryKey: ['biz-intel', 'dashboard'],
     queryFn: fetchBiDashboard,
   });
+
+  const kpisQuery = useQuery({
+    queryKey: ['biz-intel', 'kpis'],
+    queryFn: fetchBiKpis,
+  });
+
+  const kpis: BIKpis | undefined = kpisQuery.data;
 
   const chartQuery = useQuery({
     queryKey: ['biz-intel', 'chart', xAxis, yAxisList.join(',')],
@@ -262,6 +277,20 @@ export default function BusinessIntelligenceDashboard() {
       showToast('Schedule removed.', 'success');
     },
     onError: () => showToast('Failed to remove schedule.', 'error'),
+  });
+
+  const createScheduleMutation = useMutation({
+    mutationFn: (input: { reportId: string; title: string; cronExpression: string; info: string; deliveryMethod: 'email' | 'pdf' }) =>
+      createSchedule(input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['biz-intel', 'dashboard'] });
+      setScheduleTitle('');
+      setScheduleReportId('');
+      setScheduleCron('0 9 * * 1');
+      setScheduleDelivery('email');
+      showToast('Schedule created.', 'success');
+    },
+    onError: () => showToast('Failed to create schedule.', 'error'),
   });
 
   const createReportMutation = useMutation({
@@ -381,6 +410,14 @@ export default function BusinessIntelligenceDashboard() {
     return `Updated: ${Math.floor(diffDays / 30)}m ago`;
   }
 
+  function formatCurrency(value: number) {
+    if (value === 0) return '$0';
+    const abs = Math.abs(value);
+    if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
+    if (abs >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
+    return `$${value.toFixed(0)}`;
+  }
+
   const isLoading = dashboardQuery.isLoading;
   const isError = dashboardQuery.isError;
 
@@ -491,7 +528,35 @@ export default function BusinessIntelligenceDashboard() {
               ))}
             </div>
 
-            {/* Row 2: Sparkline Mini Metrics */}
+            {/* Row 2: KPI Cards (aggregated from real ledger data) */}
+            {kpis && (
+              <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white rounded-md border border-gray-200 border-l-4 border-l-[#7B6AE6] p-4 shadow-sm">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Revenue</p>
+                  <p className="text-2xl font-extrabold text-gray-900 mt-1">{formatCurrency(kpis.revenue)}</p>
+                  <p className="text-[11px] text-gray-400 mt-1">Last 6 months{` · ${kpis.period ?? '—'}`}</p>
+                </div>
+                <div className="bg-white rounded-md border border-gray-200 border-l-4 border-l-rose-400 p-4 shadow-sm">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Expenses</p>
+                  <p className="text-2xl font-extrabold text-gray-900 mt-1">{formatCurrency(kpis.expenses)}</p>
+                  <p className="text-[11px] text-gray-400 mt-1">Incl. payroll {formatCurrency(kpis.payrollCost)}</p>
+                </div>
+                <div className="bg-white rounded-md border border-gray-200 border-l-4 border-l-emerald-400 p-4 shadow-sm">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Net Movement</p>
+                  <p className={`text-2xl font-extrabold mt-1 ${kpis.netMovement >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {formatCurrency(kpis.netMovement)}
+                  </p>
+                  <p className="text-[11px] text-gray-400 mt-1">Margin {kpis.marginPct.toFixed(1)}%</p>
+                </div>
+                <div className="bg-white rounded-md border border-gray-200 border-l-4 border-l-amber-400 p-4 shadow-sm">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Pending Reconciliation</p>
+                  <p className="text-2xl font-extrabold text-amber-600 mt-1">{formatCurrency(kpis.pendingReconciliation)}</p>
+                  <p className="text-[11px] text-gray-400 mt-1">{kpis.dealsCount} deals · {kpis.headcount} staff</p>
+                </div>
+              </section>
+            )}
+
+            {/* Row 3: Sparkline Mini Metrics */}
             <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {(dashboard?.miniMetrics ?? []).map((card, index) => (
                 <div
@@ -855,9 +920,96 @@ export default function BusinessIntelligenceDashboard() {
 
                 {/* Active Schedules */}
                 <div className="lg:col-span-5 space-y-2">
-                  <h5 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Active Schedules</h5>
+                  <div className="flex items-center justify-between">
+                    <h5 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Active Schedules</h5>
+                    <button
+                      onClick={() => setShowNewScheduleForm(true)}
+                      className="flex items-center gap-1 text-[11px] font-bold text-[#7B6AE6] hover:text-opacity-80 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" strokeWidth={2.5} /> New Schedule
+                    </button>
+                  </div>
 
-                  {(dashboard?.schedules ?? []).length === 0 ? (
+                  {showNewScheduleForm && (
+                    <div className="bg-white border border-[#7B6AE6]/40 rounded-md p-4 shadow-sm space-y-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Report</label>
+                        <select
+                          value={scheduleReportId}
+                          onChange={(e) => {
+                            setScheduleReportId(e.target.value);
+                            const report = (dashboard?.reports ?? []).find((r) => r.id === e.target.value);
+                            if (report) setScheduleTitle(report.title);
+                          }}
+                          className="w-full border border-gray-200 rounded px-2.5 py-1.5 text-xs bg-white shadow-sm outline-none focus:border-[#7B6AE6] transition-colors"
+                        >
+                          <option value="">Select a report…</option>
+                          {(dashboard?.reports ?? []).map((report) => (
+                            <option key={report.id} value={report.id}>{report.title}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Title</label>
+                        <input
+                          type="text"
+                          value={scheduleTitle}
+                          onChange={(e) => setScheduleTitle(e.target.value)}
+                          placeholder="e.g. Monthly P&L"
+                          className="w-full border border-gray-200 rounded px-2.5 py-1.5 text-xs bg-white shadow-sm outline-none focus:border-[#7B6AE6] transition-colors"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Cron (5-field)</label>
+                          <input
+                            type="text"
+                            value={scheduleCron}
+                            onChange={(e) => setScheduleCron(e.target.value)}
+                            placeholder="0 9 * * 1"
+                            className="w-full border border-gray-200 rounded px-2.5 py-1.5 text-xs bg-white shadow-sm outline-none focus:border-[#7B6AE6] transition-colors"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Delivery</label>
+                          <select
+                            value={scheduleDelivery}
+                            onChange={(e) => setScheduleDelivery(e.target.value as 'email' | 'pdf')}
+                            className="w-full border border-gray-200 rounded px-2.5 py-1.5 text-xs bg-white shadow-sm outline-none focus:border-[#7B6AE6] transition-colors"
+                          >
+                            <option value="email">Email</option>
+                            <option value="pdf">PDF</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          onClick={() => {
+                            if (!scheduleReportId || !scheduleTitle) return;
+                            createScheduleMutation.mutate({
+                              reportId: scheduleReportId,
+                              title: scheduleTitle,
+                              cronExpression: scheduleCron,
+                              info: `Cron: ${scheduleCron} · ${scheduleDelivery.toUpperCase()}`,
+                              deliveryMethod: scheduleDelivery,
+                            });
+                          }}
+                          disabled={createScheduleMutation.isPending || !scheduleReportId || !scheduleTitle}
+                          className="flex-1 bg-[#7B6AE6] hover:bg-opacity-95 text-white font-bold text-xs py-2 rounded shadow-sm uppercase transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          {createScheduleMutation.isPending ? 'Saving…' : 'Create'}
+                        </button>
+                        <button
+                          onClick={() => setShowNewScheduleForm(false)}
+                          className="flex-1 bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 font-bold text-xs py-2 rounded shadow-sm uppercase transition-all"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {(dashboard?.schedules ?? []).length === 0 && !showNewScheduleForm ? (
                     <p className="text-xs text-gray-400 italic">No active schedules.</p>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

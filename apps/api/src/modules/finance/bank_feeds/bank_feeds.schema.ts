@@ -39,3 +39,10 @@ export const connectBankBodySchema = z.object({
 });
 
 export type ConnectBankBody = z.infer<typeof connectBankBodySchema>;
+
+export const importTransactionsBodySchema = z.object({
+  accountId: z.string().min(1),
+  csv: z.string().min(1, 'CSV content is required'),
+});
+
+export type ImportTransactionsBody = z.infer<typeof importTransactionsBodySchema>;

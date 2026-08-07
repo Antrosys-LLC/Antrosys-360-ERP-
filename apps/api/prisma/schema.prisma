@@ -620,6 +620,7 @@ model Invoice {
   issuedByUserId    String
   issuedBy          User              @relation("InvoicesIssued", fields: [issuedByUserId], references: [id])
   lineItems         InvoiceLineItem[]
+  payments          InvoicePayment[]
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
@@ -628,6 +629,23 @@ model Invoice {
   @@index([invoiceDate])
   @@index([dueDate])
   @@map("invoices")
+}
+
+model InvoicePayment {
+  id               String   @id @default(cuid())
+  invoiceId        String
+  invoice          Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount           Decimal  @db.Decimal(14, 2)
+  paidAt           DateTime
+  paymentMethod    String?
+  reference        String?
+  notes            String?
+  createdByUserId  String
+  createdAt        DateTime @default(now())
+
+  @@index([invoiceId])
+  @@index([paidAt])
+  @@map("invoice_payments")
 }
 
 model InvoiceLineItem {
@@ -1557,6 +1575,7 @@ model MonthlyFinancialSummary {
   revenueTotal          Decimal  @default(0) @db.Decimal(14, 2)
   opexTotal             Decimal  @default(0) @db.Decimal(14, 2)
   capexTotal            Decimal  @default(0) @db.Decimal(14, 2)
+  payrollTotal          Decimal  @default(0) @db.Decimal(14, 2)
   currencyCode          String   @default("PKR") @db.VarChar(3)
   computedAt            DateTime @default(now())
   createdAt             DateTime @default(now())
@@ -1569,15 +1588,17 @@ model MonthlyFinancialSummary {
 
 model BudgetVsActualSnapshot {
   id          String   @id @default(cuid())
-  categoryKey String   @unique
+  categoryKey String
   kind        String
   name        String
   actual      Decimal  @default(0) @db.Decimal(14, 2)
   budget      Decimal  @default(0) @db.Decimal(14, 2)
   percentage  Int      @default(0)
+  period      String   @default("current")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  @@unique([categoryKey, period])
   @@map("budget_vs_actual")
 }
 

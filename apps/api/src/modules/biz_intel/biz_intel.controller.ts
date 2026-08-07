@@ -53,6 +53,38 @@ export async function getChartDataHandler(request: FastifyRequest, reply: Fastif
   }
 }
 
+export async function getKpisHandler(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const kpis = await bizIntelService.getKpis();
+    return reply.code(200).send({
+      status: 'success',
+      data: kpis,
+    });
+  } catch (error: any) {
+    request.log.error(error);
+    return reply.code(500).send({
+      status: 'error',
+      message: error.message || 'Failed to fetch KPI data',
+    });
+  }
+}
+
+export async function getSalesPipelineHandler(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const pipeline = await bizIntelService.getSalesPipeline();
+    return reply.code(200).send({
+      status: 'success',
+      data: pipeline,
+    });
+  } catch (error: any) {
+    request.log.error(error);
+    return reply.code(500).send({
+      status: 'error',
+      message: error.message || 'Failed to fetch sales pipeline',
+    });
+  }
+}
+
 export async function createReportHandler(request: FastifyRequest, reply: FastifyReply) {
   try {
     const parsedBody = createReportSchema.safeParse(request.body);

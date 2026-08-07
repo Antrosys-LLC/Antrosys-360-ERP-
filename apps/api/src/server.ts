@@ -3,8 +3,10 @@ import { env } from './config/env';
 import { prisma } from './config/database';
 import { markMissingAttendanceAsAbsent } from './shared/attendance/mark-absences';
 import { aggregateMonthlyFinancials, aggregateBudgetVsActual } from './shared/aggregation/aggregate-finance';
+import { runDueSchedules } from './modules/biz_intel/biz_intel.scheduler';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
+const ONE_MINUTE_MS = 60 * 1000;
 
 const DEMO_ANNOUNCEMENT_CONTENTS = [
   'Q3 Engineering All-Hands meeting schedule update',
@@ -65,6 +67,22 @@ async function start() {
     setInterval(() => {
       void runFinanceAggregation(app);
     }, ONE_HOUR_MS);
+
+    // BI scheduled reports: poll every minute and execute due cron schedules.
+    const runBiSchedules = async () => {
+      try {
+        const executed = await runDueSchedules();
+        if (executed > 0) {
+          app.log.info(`BI scheduler executed ${executed} schedule(s)`);
+        }
+      } catch (err) {
+        app.log.error({ err }, 'Failed to run BI schedules');
+      }
+    };
+    void runBiSchedules();
+    setInterval(() => {
+      void runBiSchedules();
+    }, ONE_MINUTE_MS);
   } catch (err) {
     app.log.error(err);
     process.exit(1);

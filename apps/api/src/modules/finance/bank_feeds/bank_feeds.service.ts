@@ -330,6 +330,38 @@ export async function getPriorityExceptions() {
   }));
 }
 
+// Flagged (hasFlag) ledger entries awaiting reconciliation — the same source
+// that feeds the "Pending Reconciliation" KPI. Confirming a bank match clears
+// the flag via confirmMatch.
+export async function getPendingReconciliation() {
+  const entries = await prisma.ledgerEntry.findMany({
+    where: { hasFlag: true, isVoided: false },
+    include: {
+      account: { select: { code: true, name: true } },
+    },
+    orderBy: { date: 'desc' },
+    take: 50,
+  });
+
+  const total = entries.reduce((acc, e) => acc + Number(e.amount), 0);
+
+  return {
+    total,
+    count: entries.length,
+    entries: entries.map((e) => ({
+      id: e.id,
+      date: formatDate(e.date),
+      ref: e.ref,
+      description: e.description,
+      entryType: e.entryType,
+      amount: formatCurrency(e.amount),
+      accountCode: e.account.code,
+      accountName: e.account.name,
+      currencyCode: e.currencyCode,
+    })),
+  };
+}
+
 export async function getConnections() {
   const connections = await prisma.bankConnection.findMany({
     include: {
@@ -483,6 +515,140 @@ export async function createJournalEntry(transactionId: string, userId: string) 
   await Promise.allSettled([aggregateBudgetVsActual(), aggregateMonthlyFinancials()]);
 
   return result;
+}
+
+export async function importTransactions(
+  accountId: string,
+  csv: string,
+  userId: string,
+) {
+  const account = await prisma.bankAccount.findUnique({ where: { id: accountId } });
+  if (!account) return null;
+
+  const rows = parseCsv(csv);
+  if (rows.length === 0) return { imported: 0, skipped: 0 };
+
+  const header = rows[0].map((h) => h.trim().toLowerCase());
+  const dateIdx = header.indexOf('date');
+  const descIdx = header.indexOf('description');
+  const refIdx = header.indexOf('reference');
+  const amountIdx = header.indexOf('amount');
+  const typeIdx = header.indexOf('type');
+  const currencyIdx = header.indexOf('currency');
+
+  if (dateIdx === -1 || descIdx === -1 || amountIdx === -1 || typeIdx === -1) {
+    throw new Error('CSV must include columns: date, description, amount, type (reference and currency are optional)');
+  }
+
+  let imported = 0;
+  let skipped = 0;
+
+  await prisma.$transaction(async (tx) => {
+    for (let i = 1; i < rows.length; i += 1) {
+      const raw = rows[i];
+      if (!raw.some((cell) => cell.trim() !== '')) continue;
+
+      const amountRaw = (raw[amountIdx] ?? '').replace(/[^\d.-]/g, '');
+      const amount = Number(amountRaw);
+      const type = (raw[typeIdx] ?? '').trim().toUpperCase();
+      if (!Number.isFinite(amount) || (type !== 'CREDIT' && type !== 'DEBIT')) {
+        skipped += 1;
+        continue;
+      }
+
+      const description = (raw[descIdx] ?? '').trim();
+      const reference = refIdx !== -1 ? (raw[refIdx] ?? '').trim() : null;
+      const currencyCode = currencyIdx !== -1 && (raw[currencyIdx] ?? '').trim()
+        ? (raw[currencyIdx] as string).trim().toUpperCase().slice(0, 3)
+        : account.currencyCode;
+
+      const transactionDate = new Date((raw[dateIdx] ?? '').trim());
+      if (Number.isNaN(transactionDate.getTime())) {
+        skipped += 1;
+        continue;
+      }
+
+      const existing = await tx.bankTransaction.findFirst({
+        where: {
+          accountId,
+          ...(reference ? { reference } : {}),
+          amount: new Prisma.Decimal(amount.toFixed(2)),
+          transactionDate,
+        },
+      });
+      if (existing) {
+        skipped += 1;
+        continue;
+      }
+
+      await tx.bankTransaction.create({
+        data: {
+          accountId,
+          transactionDate,
+          description,
+          reference: reference || null,
+          amount: new Prisma.Decimal(amount.toFixed(2)),
+          transactionType: type,
+          currencyCode,
+          confidenceScore: 0,
+          matchStatus: 'UNMATCHED',
+        },
+      });
+      imported += 1;
+    }
+
+    await tx.auditLog.create({
+      data: {
+        userId,
+        action: 'BANK_FEED_IMPORT',
+        metadata: { accountId, accountName: account.bankName, imported, skipped },
+      },
+    });
+  });
+
+  return { imported, skipped };
+}
+
+function parseCsv(input: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < input.length; i += 1) {
+    const char = input[i];
+    if (inQuotes) {
+      if (char === '"') {
+        if (input[i + 1] === '"') {
+          field += '"';
+          i += 1;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += char;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inQuotes = true;
+    } else if (char === ',') {
+      row.push(field);
+      field = '';
+    } else if (char === '\n' || char === '\r') {
+      if (char === '\r' && input[i + 1] === '\n') i += 1;
+      row.push(field);
+      field = '';
+      if (row.some((cell) => cell.trim() !== '')) rows.push(row);
+      row = [];
+    } else {
+      field += char;
+    }
+  }
+  row.push(field);
+  if (row.some((cell) => cell.trim() !== '')) rows.push(row);
+
+  return rows;
 }
 
 // ---- Helpers ----

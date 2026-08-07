@@ -75,8 +75,17 @@ export const sendInvoiceBodySchema = z.object({
   markAsSent: z.boolean().default(true),
 });
 
+export const recordPaymentBodySchema = z.object({
+  amount: z.coerce.number().positive(),
+  paidAt: z.coerce.date().optional(),
+  paymentMethod: z.string().max(50).optional(),
+  reference: z.string().max(100).optional(),
+  notes: z.string().max(1000).optional(),
+});
+
 export type CreateInvoiceBody = z.infer<typeof createInvoiceBodySchema>;
 export type UpdateInvoiceBody = z.infer<typeof updateInvoiceBodySchema>;
 export type InvoiceParams = z.infer<typeof invoiceParamsSchema>;
 export type ListInvoicesQuery = z.infer<typeof listInvoicesQuerySchema>;
 export type SendInvoiceBody = z.infer<typeof sendInvoiceBodySchema>;
+export type RecordPaymentBody = z.infer<typeof recordPaymentBodySchema>;
