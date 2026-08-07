@@ -330,8 +330,6 @@ async function main() {
 
   const { seedRecruitData } = await import('./recruit.seed');
   await seedRecruitData();
-  const { seedBizIntelData } = await import('./biz_intel.seed');
-  await seedBizIntelData(prisma);
 
   const { seedBankFeedsData } = await import('./bank_feeds.seed');
   await seedBankFeedsData(prisma);

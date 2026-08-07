@@ -330,6 +330,38 @@ export async function getPriorityExceptions() {
   }));
 }
 
+// Flagged (hasFlag) ledger entries awaiting reconciliation — the same source
+// that feeds the "Pending Reconciliation" KPI. Confirming a bank match clears
+// the flag via confirmMatch.
+export async function getPendingReconciliation() {
+  const entries = await prisma.ledgerEntry.findMany({
+    where: { hasFlag: true, isVoided: false },
+    include: {
+      account: { select: { code: true, name: true } },
+    },
+    orderBy: { date: 'desc' },
+    take: 50,
+  });
+
+  const total = entries.reduce((acc, e) => acc + Number(e.amount), 0);
+
+  return {
+    total,
+    count: entries.length,
+    entries: entries.map((e) => ({
+      id: e.id,
+      date: formatDate(e.date),
+      ref: e.ref,
+      description: e.description,
+      entryType: e.entryType,
+      amount: formatCurrency(e.amount),
+      accountCode: e.account.code,
+      accountName: e.account.name,
+      currencyCode: e.currencyCode,
+    })),
+  };
+}
+
 export async function getConnections() {
   const connections = await prisma.bankConnection.findMany({
     include: {

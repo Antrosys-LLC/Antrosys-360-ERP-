@@ -132,6 +132,14 @@ export async function getPriorityExceptionsHandler(
   return reply.code(200).send({ status: 'success', data: exceptions });
 }
 
+export async function getPendingReconciliationHandler(
+  _request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const pending = await bankFeedsService.getPendingReconciliation();
+  return reply.code(200).send({ status: 'success', data: pending });
+}
+
 export async function getConnectionsHandler(
   _request: FastifyRequest,
   reply: FastifyReply,

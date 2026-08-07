@@ -66,6 +66,22 @@ interface PriorityException {
   hasActions: boolean;
 }
 
+interface PendingReconciliation {
+  total: number;
+  count: number;
+  entries: Array<{
+    id: string;
+    date: string;
+    ref: string;
+    description: string;
+    entryType: string;
+    amount: string;
+    accountCode: string;
+    accountName: string;
+    currencyCode: string;
+  }>;
+}
+
 interface ConnectionStatus {
   bank: string;
   schedule: string;
@@ -80,6 +96,7 @@ export default function BankFeedsDashboard() {
   const [currentPage, setCurrentPage] = useState(1);
   const [priorityExceptions, setPriorityExceptions] = useState<PriorityException[]>([]);
   const [connectionStatuses, setConnectionStatuses] = useState<ConnectionStatus[]>([]);
+  const [pendingReconciliation, setPendingReconciliation] = useState<PendingReconciliation | null>(null);
 
   const [selectedLine, setSelectedLine] = useState<BankLine | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'review' | 'unmatched'>('all');
@@ -99,12 +116,13 @@ export default function BankFeedsDashboard() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [accountsRes, healthRes, linesRes, exceptionsRes, connectionsRes] = await Promise.all([
+      const [accountsRes, healthRes, linesRes, exceptionsRes, connectionsRes, pendingRes] = await Promise.all([
         apiClient.get('/finance/bank-feeds/accounts'),
         apiClient.get('/finance/bank-feeds/reconciliation-health'),
         apiClient.get(`/finance/bank-feeds/transactions?tab=${activeTab}&page=${currentPage}&limit=50${searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : ''}`),
         apiClient.get('/finance/bank-feeds/priority-exceptions'),
         apiClient.get('/finance/bank-feeds/connections'),
+        apiClient.get('/finance/bank-feeds/pending-reconciliation'),
       ]);
 
       setAccounts(accountsRes.data.data);
@@ -114,6 +132,7 @@ export default function BankFeedsDashboard() {
       setCurrentPage(linesRes.data.data.page);
       setPriorityExceptions(exceptionsRes.data.data);
       setConnectionStatuses(connectionsRes.data.data);
+      setPendingReconciliation(pendingRes.data.data);
     } catch (err: any) {
       showToast(err?.response?.data?.error || 'Failed to load data', 'error');
     } finally {
@@ -668,6 +687,59 @@ export default function BankFeedsDashboard() {
                             </Button>
                           </div>
                         )}
+                      </div>
+                    ))}
+              </div>
+            </section>
+
+            {/* PENDING RECONCILIATION */}
+            <section className="bg-card border border-border rounded-[var(--radius)] p-4 shadow-sm">
+              <div className="flex items-start justify-between mb-1">
+                <div className="flex items-start space-x-2">
+                  <span className="text-amber-500 text-sm mt-0.5">⚠</span>
+                  <div>
+                    <h3 className="text-xs font-bold text-foreground">Pending Reconciliation</h3>
+                    <p className="text-[11px] text-muted-foreground">Flagged ledger entries awaiting confirmation</p>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded-full">
+                  {pendingReconciliation?.count ?? 0}
+                </span>
+              </div>
+
+              {pendingReconciliation && pendingReconciliation.count > 0 && (
+                <div className="mt-1 pb-2 border-b border-border/60 flex items-center justify-between">
+                  <span className="text-[11px] text-muted-foreground">Total flagged amount</span>
+                  <span className="text-xs font-bold font-mono text-amber-900">
+                    {pendingReconciliation.total.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+
+              <div className="mt-3 space-y-3">
+                {loading
+                  ? Array.from({ length: 2 }).map((_, i) => (
+                      <div key={i} className="border border-border/80 rounded-[var(--radius)] bg-card overflow-hidden animate-pulse p-3">
+                        <div className="h-3 bg-muted rounded w-3/4 mb-2"></div>
+                        <div className="h-3 bg-muted rounded w-1/2"></div>
+                      </div>
+                    ))
+                  : !pendingReconciliation || pendingReconciliation.entries.length === 0
+                    ? (
+                      <div className="text-center py-4 text-[11px] text-muted-foreground">
+                        All caught up — no flagged entries
+                      </div>
+                    )
+                    : pendingReconciliation.entries.map((entry) => (
+                      <div key={entry.id} className="border border-border/80 rounded-[var(--radius)] bg-card overflow-hidden">
+                        <div className="p-3 bg-muted/20">
+                          <div className="flex justify-between text-[11px] text-muted-foreground">
+                            <span>{entry.date} • {entry.ref}</span>
+                            <span className="font-bold font-mono text-amber-950">{entry.entryType} {entry.amount} {entry.currencyCode}</span>
+                          </div>
+                          <h4 className="text-xs font-bold text-foreground mt-1">{entry.description}</h4>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">Account {entry.accountCode} · {entry.accountName}</p>
+                        </div>
                       </div>
                     ))}
               </div>

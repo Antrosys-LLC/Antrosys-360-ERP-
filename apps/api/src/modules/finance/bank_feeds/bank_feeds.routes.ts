@@ -8,6 +8,7 @@ import {
   rejectMatchHandler,
   getReconciliationHealthHandler,
   getPriorityExceptionsHandler,
+  getPendingReconciliationHandler,
   getConnectionsHandler,
   connectBankHandler,
   createJournalEntryHandler,
@@ -73,6 +74,11 @@ export async function bankFeedsRoutes(fastify: FastifyInstance) {
   fastify.get('/priority-exceptions', {
     preHandler: [fastify.requirePermission('bank_feeds:read')],
     handler: getPriorityExceptionsHandler,
+  });
+
+  fastify.get('/pending-reconciliation', {
+    preHandler: [fastify.requirePermission('bank_feeds:read')],
+    handler: getPendingReconciliationHandler,
   });
 
   fastify.get('/connections', {
