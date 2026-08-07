@@ -214,7 +214,6 @@ export async function seedInventoryData() {
     }
 
     console.log('  ✅ Created sample received PurchaseOrder with ledger entries');
-    }
   }
 
   console.log('✅ Inventory seed data created');
